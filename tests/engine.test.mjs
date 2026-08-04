@@ -11,6 +11,7 @@ import {
   buildCliArgs,
   detectEngine,
   supportsAgyModelSelection,
+  supportsAgySlashCommandOptOut,
   supportsAgyStdinPrompt
 } from "../plugins/gemini/scripts/lib/engine.mjs";
 
@@ -83,12 +84,27 @@ test("AGY stdin prompt capability begins at stable 1.1.2 and fails closed for un
   assert.equal(supportsAgyStdinPrompt("2.0.0"), true);
 });
 
-test("AGY model and effort selection begins at stable 1.1.5", () => {
+// 1.1.5 through 1.1.9 accept --model/--effort but drop them in headless runs
+// (fixed in AGY 1.1.10), so those versions must not be reported as supported.
+test("AGY model and effort selection begins at stable 1.1.10", () => {
   assert.equal(supportsAgyModelSelection("1.1.4"), false);
-  assert.equal(supportsAgyModelSelection("1.1.5-beta.1"), false);
+  assert.equal(supportsAgyModelSelection("agy 1.1.5"), false);
+  assert.equal(supportsAgyModelSelection("1.1.9"), false);
+  assert.equal(supportsAgyModelSelection("1.1.10-beta.1"), false);
   assert.equal(supportsAgyModelSelection("unknown"), false);
-  assert.equal(supportsAgyModelSelection("agy 1.1.5"), true);
+  assert.equal(supportsAgyModelSelection("agy 1.1.10"), true);
   assert.equal(supportsAgyModelSelection("1.2.0"), true);
+  assert.equal(supportsAgyModelSelection("2.0.0"), true);
+});
+
+test("AGY slash-command opt-out begins at stable 1.1.9", () => {
+  assert.equal(supportsAgySlashCommandOptOut("1.1.8"), false);
+  assert.equal(supportsAgySlashCommandOptOut("1.1.9-rc.1"), false);
+  assert.equal(supportsAgySlashCommandOptOut("unknown"), false);
+  assert.equal(supportsAgySlashCommandOptOut(null), false);
+  assert.equal(supportsAgySlashCommandOptOut("agy 1.1.9"), true);
+  assert.equal(supportsAgySlashCommandOptOut("1.1.10"), true);
+  assert.equal(supportsAgySlashCommandOptOut("2.0.0"), true);
 });
 
 test("AGY requires an exact model ID and preserves safe explicit IDs", () => {
@@ -143,6 +159,24 @@ test("AGY forwards an explicit model ID or effort as literal argv", () => {
     () => buildCliArgs("agy", { prompt: "hello", useStdin: true, model: "gemini-3.6-flash-high", effort: "high" }),
     /cannot combine --model with --effort/
   );
+});
+
+// AGY 1.1.9+ expands slash commands and skills in print mode. Task prompts are
+// raw user text at position 0, so "/clear the cache logic" would run AGY's
+// /clear instead of being read as instructions.
+test("agy opts out of print-mode slash expansion on 1.1.9 and newer", () => {
+  const modern = buildCliArgs("agy", { prompt: "/clear the cache logic", useStdin: true, agyVersion: "1.1.10" });
+  assert.ok(modern.includes("--disable-slash-commands"));
+});
+
+test("agy omits the slash opt-out where the flag does not exist", () => {
+  for (const agyVersion of ["1.1.8", null, "unknown"]) {
+    const args = buildCliArgs("agy", { prompt: "hello", useStdin: true, agyVersion });
+    assert.ok(
+      !args.includes("--disable-slash-commands"),
+      `AGY ${agyVersion} predates --disable-slash-commands and must not receive it`
+    );
+  }
 });
 
 test("agy write turn adds --new-project so files land in cwd, not agy's scratch dir", () => {

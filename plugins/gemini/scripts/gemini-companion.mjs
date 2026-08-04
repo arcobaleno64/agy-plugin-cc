@@ -693,12 +693,12 @@ function prepareEngineSelection(engineInfo, model, effort) {
 
   if (engineInfo.engine === "agy") {
     if (!supportsAgyModelSelection(engineInfo.version)) {
-      throw new Error(`AGY ${engineInfo.version} does not support --model/--effort. Upgrade to AGY 1.1.5 or newer, or select --engine gemini.`);
+      throw new Error(`AGY ${engineInfo.version} does not support --model/--effort. AGY 1.1.5 through 1.1.9 accept the flags but ignore them in headless runs. Upgrade to AGY 1.1.10 or newer, or select --engine gemini.`);
     }
     const agyModel = normalizeAgyRequestedModel(requestedModel);
     const agyEffort = normalizeAgyEffort(requestedEffort);
     if (agyModel && agyEffort) {
-      throw new Error("AGY 1.1.5 cannot combine --model with --effort for its available model IDs. Select a model or an effort level, not both.");
+      throw new Error("AGY cannot combine --model with --effort for its available model IDs. Select a model or an effort level, not both.");
     }
     return { model: agyModel, effort: agyEffort };
   }

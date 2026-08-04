@@ -134,7 +134,7 @@ export function collectGitContext(cwd = process.cwd()) {
 
 export function buildTransferSnapshot({ engine = 'auto', model = null, effort = null, instructions = '', cwd = process.cwd() }) {
   if (model && effort) {
-    throw new Error('AGY 1.1.5+ model selection and reasoning effort are mutually exclusive; specify either --model or --effort, not both.');
+    throw new Error('AGY model selection and reasoning effort are mutually exclusive; specify either --model or --effort, not both.');
   }
 
   const gitContext = collectGitContext(cwd);
