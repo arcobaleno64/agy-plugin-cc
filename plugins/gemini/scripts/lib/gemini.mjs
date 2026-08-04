@@ -633,41 +633,9 @@ export function getAgyAvailability() {
   return binaryAvailable("agy", ["--version"]);
 }
 
-export function getGeminiLoginStatus() {
-  const geminiHome = process.env.GEMINI_HOME ?? path.join(os.homedir(), ".gemini");
-  const credFile = path.join(geminiHome, "oauth_creds.json");
-  if (!fs.existsSync(credFile)) {
-    return { loggedIn: false, detail: `No credentials at ${credFile}. Run \`gemini\` to authenticate.` };
-  }
-  try {
-    const creds = JSON.parse(fs.readFileSync(credFile, "utf8"));
-    const expiry = creds?.expiry_date ?? creds?.expiry ?? creds?.token?.expiry_date;
-    if (expiry && Date.now() > Number(expiry)) {
-      return { loggedIn: false, detail: `OAuth token expired at ${new Date(Number(expiry)).toISOString()}. Run \`gemini\` to re-authenticate.` };
-    }
-  } catch {
-    return { loggedIn: false, detail: `Cannot read credentials at ${credFile}. Run \`gemini\` to authenticate.` };
-  }
-  return { loggedIn: true, detail: `OAuth credentials found at ${credFile}` };
-}
-
-// Personal (free) Gemini plans lose CLI access on 2026-06-18; Gemini Code Assist
-// Standard/Enterprise do not. The selected auth type is recorded in
-// ~/.gemini/settings.json as security.auth.selectedType (e.g. "oauth-personal").
-export function getGeminiPlanTier() {
-  const geminiHome = process.env.GEMINI_HOME ?? path.join(os.homedir(), ".gemini");
-  const settingsFile = path.join(geminiHome, "settings.json");
-  try {
-    const settings = JSON.parse(fs.readFileSync(settingsFile, "utf8"));
-    const selectedType = settings?.security?.auth?.selectedType ?? null;
-    if (typeof selectedType === "string") {
-      return { tier: /personal/i.test(selectedType) ? "personal" : "other", selectedType };
-    }
-  } catch {
-    // no settings.json / unreadable — tier unknown
-  }
-  return { tier: "unknown", selectedType: null };
-}
+// Moved to lib/gemini-auth.mjs so engine.mjs can consult credentials without an
+// import cycle. Re-exported here because these are the existing public names.
+export { getGeminiLoginStatus, getGeminiPlanTier } from "./gemini-auth.mjs";
 
 export function getAgyLoginStatus() {
   const status = binaryAvailable("agy", ["--version"]);

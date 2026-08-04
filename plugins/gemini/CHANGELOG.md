@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.12.0 — 2026-08-04 — Auto-routing checks credentials, not just presence
+
+### Fixed
+- **`auto` no longer selects an installed-but-unauthenticated Gemini CLI.** It picked gemini on `--version` success alone, so on any machine whose Gemini access has lapsed — the norm since Google ended consumer CLI access on 2026-06-18 — every `auto` command failed on auth while a working AGY sat beside it. Auto now requires the same "installed AND authenticated" condition `/gemini:setup` already reports as `geminiReady`. An explicit `--engine gemini` is unchanged: the check is a routing heuristic, not an authorization gate.
+- **`auto` distinguishes "no engine installed" from "gemini installed but unauthenticated"**, because the fix differs and the second case previously surfaced as a confusing downstream API error.
+
+### Changed
+- The comment justifying gemini-first routing claimed AGY "responses and conversation ids still depend on transcript recovery". That stopped being true in v0.11.0; the rationale is now stated accurately — gemini's remaining edge is its model aliases and effort-to-model mapping, neither of which applies to an unqualified `auto`.
+- `getGeminiLoginStatus` and `getGeminiPlanTier` moved to `lib/gemini-auth.mjs` so `engine.mjs` can consult credentials without an import cycle. Both are re-exported from `lib/gemini.mjs` under their existing names.
+- `GEMINI_API_KEY` / `GOOGLE_API_KEY` now count as a credential for routing purposes; an API-key user has no `oauth_creds.json` and must not be read as unauthenticated.
+
+### Added
+- Auto-routing had **no test coverage at all** — which is why this defect shipped. `detectEngine` accepts `binaryAvailableImpl` and `hasGeminiCredentialsImpl` (matching the existing `resolveBinaryPathImpl` seam), and five tests now pin every branch of the decision.
+
 ## 0.11.1 — 2026-08-04 — Testable engine-response path
 
 ### Changed

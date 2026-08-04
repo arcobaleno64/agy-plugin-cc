@@ -5,6 +5,7 @@ import { createFailureError } from "./failures.mjs";
 import { binaryAvailable, resolveBinaryPath } from "./process.mjs";
 import { EFFORT_MODEL_MAP, MODEL_ALIASES, VALID_EFFORT_LEVELS } from "./model-map.mjs";
 import { resolveAgyBrainRoot } from "./agy-transcript.mjs";
+import { hasGeminiCredentials } from "./gemini-auth.mjs";
 
 export const ENGINE_ENV = "GEMINI_ENGINE";
 export const AGY_POSITIONAL_PROMPT_SAFE_LIMIT = 24_000;
@@ -122,6 +123,10 @@ export function supportsAgyStructuredOutput(version) {
 }
 
 export function detectEngine(requestedEngine = null, options = {}) {
+  const {
+    hasGeminiCredentialsImpl: hasGeminiCredentialsFn = hasGeminiCredentials,
+    binaryAvailableImpl: binaryAvailableFn = binaryAvailable
+  } = options;
   const envEngine = process.env[ENGINE_ENV];
   const target = requestedEngine ?? envEngine ?? "auto";
   const normalized = String(target).trim().toLowerCase();
@@ -132,7 +137,7 @@ export function detectEngine(requestedEngine = null, options = {}) {
 
   if (normalized === "agy") {
     const binary = resolveAgyExecutablePath(options);
-    const status = binaryAvailable(binary, ["--version"]);
+    const status = binaryAvailableFn(binary, ["--version"]);
     if (!status.available) throw new Error("AGY engine requested but agy binary is not available.");
     const version = status.detail ?? "unknown";
     // Below 1.1.8 the on-disk transcript is the only source for the response,
@@ -147,26 +152,45 @@ export function detectEngine(requestedEngine = null, options = {}) {
   }
 
   if (normalized === "gemini") {
-    const status = binaryAvailable("gemini", ["--version"]);
+    const status = binaryAvailableFn("gemini", ["--version"]);
     if (!status.available) throw new Error("Gemini engine requested but gemini binary is not available.");
     return { engine: "gemini", binary: "gemini", version: status.detail ?? "unknown" };
   }
 
-  // auto: choose gemini first because it has the plugin's JSON/model contract,
-  // then choose the equally supported AGY engine. This is capability-based
-  // routing order, not a lower support tier; AGY responses and conversation ids
-  // still depend on transcript recovery in this adapter.
-  const geminiStatus = binaryAvailable("gemini", ["--version"]);
-  if (geminiStatus.available) {
+  // auto: prefer gemini when it is installed AND has a usable credential — the
+  // same "ready" notion `/gemini:setup` reports. An installed-but-unauthenticated
+  // gemini answers `--version` and then rejects every request, so selecting it on
+  // binary presence alone sent users to a guaranteed auth failure while a working
+  // AGY sat beside it (common since consumer access ended 2026-06-18).
+  //
+  // AGY is not a lower tier. Since plugin v0.11.0 it carries the same structured
+  // JSON contract, so gemini's remaining edge is only its model aliases and
+  // effort-to-model mapping, neither of which applies to an unqualified `auto`.
+  const geminiStatus = binaryAvailableFn("gemini", ["--version"]);
+  const geminiUsable = geminiStatus.available && hasGeminiCredentialsFn();
+  if (geminiUsable) {
     return { engine: "gemini", binary: "gemini", version: geminiStatus.detail ?? "unknown" };
   }
 
-  const agyBinary = resolveAgyExecutablePath(options);
-  const agyStatus = binaryAvailable(agyBinary, ["--version"]);
+  let agyBinary = null;
+  try {
+    agyBinary = resolveAgyExecutablePath(options);
+  } catch {
+    agyBinary = null;
+  }
+  const agyStatus = agyBinary ? binaryAvailableFn(agyBinary, ["--version"]) : { available: false };
   if (agyStatus.available) {
     return { engine: "agy", binary: agyBinary, version: agyStatus.detail ?? "unknown" };
   }
 
+  // Nothing usable. Distinguish "no engine installed" from "gemini installed but
+  // unauthenticated", because the fix differs and the second case used to be
+  // reported as a confusing downstream API error.
+  if (geminiStatus.available) {
+    throw new Error(
+      "Gemini CLI is installed but has no usable credential, and no AGY binary was found. Run `gemini` to authenticate, set GEMINI_API_KEY, or install AGY. See `/gemini:setup`."
+    );
+  }
   throw new Error("No Gemini or AGY engine found. Install either supported engine and retry.");
 }
 
