@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 
-import { buildCliArgs, detectEngine, mapEffortToModel, normalizeRequestedModel, supportsAgyStdinPrompt } from "./engine.mjs";
+import { buildCliArgs, detectEngine, mapEffortToModel, normalizeAgyEffort, normalizeAgyRequestedModel, normalizeRequestedModel, supportsAgyModelSelection, supportsAgyStdinPrompt } from "./engine.mjs";
 import { classifyCliFailure } from "./failures.mjs";
 import { binaryAvailable, runCommand } from "./process.mjs";
 import { resolveAgyBrainRoot, listConvDirs, recoverAgyResponse } from "./agy-transcript.mjs";
@@ -127,21 +127,22 @@ export function tryParseJsonFromText(text) {
 }
 
 export async function runGeminiTurn(cwd, options = {}) {
-  const { prompt, effort, write = true, resumeLast = false, engine: requestedEngine, onProgress } = options;
+  const { prompt, effort: requestedEffort, write = true, resumeLast = false, engine: requestedEngine, onProgress } = options;
   let { model } = options;
+  let effort = requestedEffort;
 
   onProgress?.({ message: "Detecting engine...", phase: "starting" });
 
   const engineInfo = detectEngine(requestedEngine ?? null);
 
   if (engineInfo.engine === "agy") {
-    // AGY versions have their own model surface, but Gemini aliases / effort
-    // tiers are gemini-engine concepts. Until this plugin has an explicit AGY
-    // mapping contract, leave model choice to AGY's configured/default behavior.
     if (model || effort) {
-      process.stderr.write(`[gemini-companion] Note: --engine agy currently uses AGY's configured/default model; this plugin does not translate --model/--effort to AGY arguments. Use --engine gemini for plugin-managed model selection.\n`);
+      if (!supportsAgyModelSelection(engineInfo.version)) {
+        throw new Error(`AGY ${engineInfo.version} does not support --model/--effort. Upgrade to AGY 1.1.5 or newer, or select --engine gemini.`);
+      }
+      model = normalizeAgyRequestedModel(model);
+      effort = normalizeAgyEffort(effort);
     }
-    model = null;
   } else {
     if (!model && effort) {
       model = mapEffortToModel(effort);
@@ -174,6 +175,7 @@ export async function runGeminiTurn(cwd, options = {}) {
   const args = buildCliArgs(engineInfo.engine, {
     prompt,
     model,
+    effort,
     write,
     resumeLast,
     timeoutMs: engineInfo.engine === "agy" ? agyPrintTimeoutMs : spawnTimeoutMs,
@@ -294,7 +296,7 @@ export async function runGeminiTurn(cwd, options = {}) {
 }
 
 export async function runGeminiReview(cwd, options = {}) {
-  const { prompt, model: requestedModel, engine: requestedEngine, isAdversarial = true, onProgress } = options;
+  const { prompt, model: requestedModel, effort: requestedEffort, engine: requestedEngine, isAdversarial = true, onProgress } = options;
 
   // Mode-aware label: the standard /review and adversarial /adversarial-review
   // share this runner, so the progress line must reflect the actual mode.
@@ -311,7 +313,22 @@ export async function runGeminiReview(cwd, options = {}) {
     useJson = false;
   }
 
-  const model = normalizeRequestedModel(requestedModel) ?? (engineInfo.engine === "gemini" ? "gemini-2.5-flash" : null);
+  let model;
+  let effort = null;
+  if (engineInfo.engine === "agy") {
+    if (requestedModel || requestedEffort) {
+      if (!supportsAgyModelSelection(engineInfo.version)) {
+        throw new Error(`AGY ${engineInfo.version} does not support --model/--effort. Upgrade to AGY 1.1.5 or newer, or select --engine gemini.`);
+      }
+      model = normalizeAgyRequestedModel(requestedModel);
+      effort = normalizeAgyEffort(requestedEffort);
+    }
+  } else {
+    if (!requestedModel && requestedEffort) {
+      model = mapEffortToModel(requestedEffort);
+    }
+    model = normalizeRequestedModel(model ?? requestedModel) ?? "gemini-2.5-flash";
+  }
 
   const useStdin = engineInfo.engine === "gemini"
     || (engineInfo.engine === "agy" && supportsAgyStdinPrompt(engineInfo.version));
@@ -333,6 +350,7 @@ export async function runGeminiReview(cwd, options = {}) {
   const args = buildCliArgs(engineInfo.engine, {
     prompt,
     model,
+    effort,
     write: false,
     outputJson: useJson,
     // approvalModePlan requires TTY input and conflicts with stdin prompt delivery

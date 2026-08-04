@@ -22,12 +22,13 @@ campaign matrix for the full three-way comparison.
 
 ## Security posture (shared with siblings)
 
-- **agy free-text prompt travels via argv** (AGY has no stdin mode — upstream
-  limitation). Safety comes from resolving `agy` to an absolute `.exe` path so
-  it spawns `shell:false` and never traverses cmd.exe; if it cannot resolve to
-  an executable, `detectEngine` fails closed rather than falling back to a bare
-  name (WP-3 r2). The `quoteForWindowsShell` helper is a no-op safety net for
-  fixed-constant argv only and is explicitly NOT relied on for free text.
+- **AGY prompt transport is version-gated.** Stable AGY 1.1.2+ receives free
+  text through stdin; older, prerelease, and unparseable versions retain the
+  positional fallback with NUL and 24,000-character preflight checks. AGY is
+  resolved to an absolute `.exe` and spawned with `shell:false`; if that cannot
+  be guaranteed, `detectEngine` fails closed rather than falling back to a bare
+  name. The `quoteForWindowsShell` helper is a no-op safety net for
+  fixed-constant argv only and is explicitly not relied on for free text.
 
 ## Follow-ups (adversarial-review groups, low priority)
 

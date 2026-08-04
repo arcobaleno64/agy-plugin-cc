@@ -8,6 +8,7 @@ import { resolveAgyBrainRoot } from "./agy-transcript.mjs";
 
 export const ENGINE_ENV = "GEMINI_ENGINE";
 export const AGY_POSITIONAL_PROMPT_SAFE_LIMIT = 24_000;
+export const AGY_EFFORT_LEVELS = new Set(["low", "medium", "high"]);
 
 const AGY_EXECUTABLE_PATH_ERROR =
   "AGY could not be resolved to an executable .exe path; the plugin refuses to spawn it via the shell to avoid argv injection on Windows. Ensure agy is on PATH or use --engine gemini.";
@@ -54,6 +55,35 @@ function resolveAgyExecutablePath({ resolveBinaryPathImpl = resolveBinaryPath } 
   return resolved;
 }
 
+export function normalizeAgyRequestedModel(model) {
+  if (model == null) return null;
+  const requested = String(model).trim();
+  const normalized = requested.toLowerCase();
+  if (!normalized) return null;
+  if (MODEL_ALIASES.has(normalized)) {
+    throw new Error(
+      `AGY does not accept the Gemini model alias "${requested}". Run \`agy models\` and pass an exact AGY model ID, or select --engine gemini.`
+    );
+  }
+  const resolved = requested;
+  if (!SAFE_MODEL_ID.test(resolved)) {
+    throw new Error(
+      `Invalid model id "${requested}". Model ids may contain only letters, digits, dot, underscore, and hyphen.`
+    );
+  }
+  return resolved;
+}
+
+export function normalizeAgyEffort(effort) {
+  if (effort == null) return null;
+  const normalized = String(effort).trim().toLowerCase();
+  if (!normalized) return null;
+  if (!AGY_EFFORT_LEVELS.has(normalized)) {
+    throw new Error(`AGY supports --effort values: ${[...AGY_EFFORT_LEVELS].join(", ")}. Use --engine gemini for other effort tiers.`);
+  }
+  return normalized;
+}
+
 export function supportsAgyStdinPrompt(version) {
   const match = String(version ?? "").trim().match(/(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?/);
   if (!match || match[4]) return false;
@@ -61,6 +91,15 @@ export function supportsAgyStdinPrompt(version) {
   const minor = Number(match[2]);
   const patch = Number(match[3]);
   return major > 1 || (major === 1 && (minor > 1 || (minor === 1 && patch >= 2)));
+}
+
+export function supportsAgyModelSelection(version) {
+  const match = String(version ?? "").trim().match(/(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?/);
+  if (!match || match[4]) return false;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  const patch = Number(match[3]);
+  return major > 1 || (major === 1 && (minor > 1 || (minor === 1 && patch >= 5)));
 }
 
 export function detectEngine(requestedEngine = null, options = {}) {
@@ -138,7 +177,7 @@ function assertAgyPromptSafe(prompt) {
 }
 
 export function buildCliArgs(engine, options = {}) {
-  const { prompt = "", model, write = false, resumeLast = false, outputJson = false, approvalModePlan = false, timeoutMs, useStdin = false } = options;
+  const { prompt = "", model, effort, write = false, resumeLast = false, outputJson = false, approvalModePlan = false, timeoutMs, useStdin = false } = options;
 
   if (engine === "agy") {
     // AGY >=1.1.2 auto-enters print mode when a prompt is piped on stdin; adding
@@ -149,6 +188,16 @@ export function buildCliArgs(engine, options = {}) {
       assertAgyPromptSafe(prompt);
       args.push("--print", prompt);
     }
+    const agyModel = normalizeAgyRequestedModel(model);
+    const agyEffort = normalizeAgyEffort(effort);
+    // AGY 1.1.5 accepts each flag, but the locally reported model IDs reject
+    // the combination. Refuse it before spawn rather than replacing a useful
+    // AGY diagnostic with a transcript-missing failure.
+    if (agyModel && agyEffort) {
+      throw new Error("AGY 1.1.5 cannot combine --model with --effort for its available model IDs. Select a model or an effort level, not both.");
+    }
+    if (agyModel) args.push("--model", agyModel);
+    if (agyEffort) args.push("--effort", agyEffort);
     if (write) args.push("--dangerously-skip-permissions");
     if (resumeLast) {
       args.push("--continue");

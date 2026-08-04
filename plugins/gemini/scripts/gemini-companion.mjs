@@ -7,7 +7,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { parseArgs, splitRawArgumentString } from "./lib/args.mjs";
-import { detectEngine, ENGINE_ENV, normalizeRequestedModel, VALID_EFFORT_LEVELS } from "./lib/engine.mjs";
+import { detectEngine, ENGINE_ENV, normalizeAgyEffort, normalizeAgyRequestedModel, normalizeRequestedModel, supportsAgyModelSelection, VALID_EFFORT_LEVELS } from "./lib/engine.mjs";
 import { collectReviewContext, ensureGitRepository, resolveReviewTarget } from "./lib/git.mjs";
 import { readStdinIfPiped } from "./lib/fs.mjs";
 import { binaryAvailable, terminateProcessTree } from "./lib/process.mjs";
@@ -91,8 +91,8 @@ function printUsage() {
     [
       "Usage:",
       "  node scripts/gemini-companion.mjs setup [--json] [--enable-review-gate|--disable-review-gate]",
-      "  node scripts/gemini-companion.mjs adversarial-review [--wait|--background] [--deep] [--base <ref>] [--scope <auto|working-tree|branch>] [--engine agy|gemini|auto] [--engines gemini,agy] [focus text]",
-      "  node scripts/gemini-companion.mjs review [--wait|--background] [--deep] [--base <ref>] [--scope <auto|working-tree|branch>] [--engine agy|gemini|auto]",
+      "  node scripts/gemini-companion.mjs adversarial-review [--wait|--background] [--deep] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--effort <level>] [--engine agy|gemini|auto] [--engines gemini,agy] [focus text]",
+      "  node scripts/gemini-companion.mjs review [--wait|--background] [--deep] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--effort <level>] [--engine agy|gemini|auto]",
       "  node scripts/gemini-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--model <model>] [--effort <low|medium|high>] [--engine agy|gemini|auto] [prompt]",
       "  node scripts/gemini-companion.mjs status [job-id] [--all] [--json]",
       "  node scripts/gemini-companion.mjs result [job-id] [--json]",
@@ -422,6 +422,7 @@ async function executeReviewRun(request) {
   const result = await runGeminiReviewResilient(request.cwd, {
     prompt,
     model: request.model,
+    effort: request.effort,
     engine: request.engine,
     isAdversarial: templateName === "adversarial-review",
     onProgress: request.onProgress
@@ -596,12 +597,13 @@ function buildTaskRequest({ cwd, model, effort, engine, prompt, write, resumeLas
 // review re-resolves base/scope when the worker runs. A grouped blind review may
 // supply one preparedReview snapshot so every engine receives byte-identical
 // input even if the working tree changes between worker starts.
-function buildReviewRequest({ cwd, base, scope, model, engine, focusText, reviewName, templateName, deep = false, preparedReview = null }) {
+function buildReviewRequest({ cwd, base, scope, model, effort, engine, focusText, reviewName, templateName, deep = false, preparedReview = null }) {
   return {
     cwd,
     base,
     scope,
     model,
+    effort,
     engine,
     focusText,
     reviewName,
@@ -685,9 +687,52 @@ function enqueueBackgroundJob(cwd, job, request, workerCommand, { spawnFn = spaw
   };
 }
 
-export function dispatchBackgroundReview(request, { spawnFn = spawn } = {}) {
+function validateEffortLevel(effort) {
+  if (effort != null && !VALID_EFFORT_LEVELS.has(String(effort).trim().toLowerCase())) {
+    throw new Error(`Invalid --effort "${effort}". Valid values: ${[...VALID_EFFORT_LEVELS].join(", ")}.`);
+  }
+}
+
+// Detached workers must never be started with a selection that their target
+// engine will reject. Preserve the engine-specific representation in the
+// persisted request so the worker has no extra normalization responsibility.
+function prepareEngineSelection(engineInfo, model, effort) {
+  const requestedModel = model ?? null;
+  const requestedEffort = effort ?? null;
+  validateEffortLevel(requestedEffort);
+  if (!requestedModel && !requestedEffort) return { model: requestedModel, effort: requestedEffort };
+
+  if (engineInfo.engine === "agy") {
+    if (!supportsAgyModelSelection(engineInfo.version)) {
+      throw new Error(`AGY ${engineInfo.version} does not support --model/--effort. Upgrade to AGY 1.1.5 or newer, or select --engine gemini.`);
+    }
+    const agyModel = normalizeAgyRequestedModel(requestedModel);
+    const agyEffort = normalizeAgyEffort(requestedEffort);
+    if (agyModel && agyEffort) {
+      throw new Error("AGY 1.1.5 cannot combine --model with --effort for its available model IDs. Select a model or an effort level, not both.");
+    }
+    return { model: agyModel, effort: agyEffort };
+  }
+
+  return { model: normalizeRequestedModel(requestedModel), effort: requestedEffort };
+}
+
+function prepareBackgroundSelection(request, detectEngineFn) {
+  const model = request.model ?? null;
+  const effort = request.effort ?? null;
+  validateEffortLevel(effort);
+  if (!model && !effort) return { model, effort };
+  return prepareEngineSelection(
+    detectEngineFn(request.engine ?? null),
+    model,
+    effort
+  );
+}
+
+export function dispatchBackgroundReview(request, { spawnFn = spawn, detectEngineFn = detectEngine } = {}) {
   const cwd = path.resolve(request.cwd ?? process.cwd());
   const workspaceRoot = resolveWorkspaceRoot(cwd);
+  const selection = prepareBackgroundSelection(request, detectEngineFn);
   const reviewName = request.reviewName ?? "Review";
   const templateName = request.templateName ?? "review";
   ensureGitRepository(cwd);
@@ -707,7 +752,8 @@ export function dispatchBackgroundReview(request, { spawnFn = spawn } = {}) {
     cwd,
     base: request.base,
     scope: request.scope,
-    model: request.model,
+    model: selection.model,
+    effort: selection.effort,
     engine: request.engine,
     focusText: request.focusText ?? "",
     reviewName,
@@ -733,8 +779,7 @@ export function dispatchAdversarialReview(request, {
   const unavailable = [];
   for (const engine of requestedEngines) {
     try {
-      detectEngineFn(engine);
-      available.push(engine);
+      available.push({ engine, info: detectEngineFn(engine) });
     } catch (error) {
       unavailable.push({ engine, error: error instanceof Error ? error.message : String(error) });
     }
@@ -743,8 +788,13 @@ export function dispatchAdversarialReview(request, {
     throw new Error(`None of the requested review engines are available: ${unavailable.map(({ engine, error }) => `${engine} (${error})`).join("; ")}.`);
   }
 
+  const availableEngines = available.map(({ engine }) => engine);
+  if (availableEngines.length > 1 && request.model != null) {
+    throw new Error("--model cannot be used with --engines gemini,agy because model IDs are engine-specific. Run separate reviews with --engine.");
+  }
+
   const warning = unavailable.length > 0
-    ? `Adversarial review degraded to ${available.join(", ")}; unavailable: ${unavailable.map(({ engine }) => engine).join(", ")}.`
+    ? `Adversarial review degraded to ${availableEngines.join(", ")}; unavailable: ${unavailable.map(({ engine }) => engine).join(", ")}.`
     : null;
   if (warning) stderr.write(`${warning}\n`);
 
@@ -755,19 +805,26 @@ export function dispatchAdversarialReview(request, {
     reviewName: "Adversarial Review",
     templateName: "adversarial-review"
   }) : null;
-  const jobs = available.map((engine) => dispatchBackgroundReview({
+  // Validate every selected engine before the first detached worker is spawned.
+  // Otherwise a later validation error can orphan an earlier group member.
+  const preparedSelections = available.map(({ engine, info }) => ({
+    engine,
+    selection: prepareEngineSelection(info, request.model, request.effort)
+  }));
+  const jobs = preparedSelections.map(({ engine, selection }) => dispatchBackgroundReview({
     ...request,
+    ...selection,
     engine,
     groupId,
     preparedReview,
     reviewName: "Adversarial Review",
     templateName: "adversarial-review"
-  }, { spawnFn }));
+  }, { spawnFn, detectEngineFn }));
   return {
     groupId,
     jobIds: jobs.map((job) => job.jobId),
     jobs,
-    engines: available,
+    engines: availableEngines,
     unavailableEngines: unavailable.map(({ engine }) => engine),
     degraded: unavailable.length > 0,
     warning
@@ -778,14 +835,10 @@ function renderQueuedReviewGroupLaunch(payload) {
   return `Gemini adversarial review group ${payload.groupId} started in the background (${payload.engines.join(", ")}). Check /gemini:status ${payload.groupId} for progress.\n`;
 }
 
-export function dispatchBackgroundTask(request, { spawnFn = spawn } = {}) {
+export function dispatchBackgroundTask(request, { spawnFn = spawn, detectEngineFn = detectEngine } = {}) {
   const cwd = path.resolve(request.cwd ?? process.cwd());
   const workspaceRoot = resolveWorkspaceRoot(cwd);
-  const model = normalizeRequestedModel(request.model);
-  const effort = request.effort ?? null;
-  if (effort != null && !VALID_EFFORT_LEVELS.has(String(effort).trim().toLowerCase())) {
-    throw new Error(`Invalid --effort "${effort}". Valid values: ${[...VALID_EFFORT_LEVELS].join(", ")}.`);
-  }
+  const { model, effort } = prepareBackgroundSelection(request, detectEngineFn);
   const prompt = request.prompt ?? "";
   const resumeLast = Boolean(request.resumeLast);
   requireTaskRequest(prompt, resumeLast);
@@ -806,7 +859,7 @@ export function dispatchBackgroundTask(request, { spawnFn = spawn } = {}) {
 
 async function handleReviewCommand(argv, { reviewName, templateName, supportsFocus, supportsEngines = false }) {
   const { options, positionals } = parseCommandInput(argv, {
-    valueOptions: ["base", "scope", "model", "engine", "cwd", ...(supportsEngines ? ["engines"] : [])],
+    valueOptions: ["base", "scope", "model", "effort", "engine", "cwd", ...(supportsEngines ? ["engines"] : [])],
     booleanOptions: ["json", "wait", "background", "deep"],
     aliasMap: { m: "model" }
   });
@@ -814,6 +867,7 @@ async function handleReviewCommand(argv, { reviewName, templateName, supportsFoc
   const cwd = resolveCommandCwd(options);
   const workspaceRoot = resolveCommandWorkspace(options);
   const focusText = supportsFocus ? positionals.join(" ").trim() : "";
+  validateEffortLevel(options.effort);
 
   if (supportsEngines && options.engines != null) {
     if (options.engine != null) throw new Error("Choose either --engine or --engines, not both.");
@@ -823,6 +877,7 @@ async function handleReviewCommand(argv, { reviewName, templateName, supportsFoc
       base: options.base,
       scope: options.scope,
       model: options.model,
+      effort: options.effort ?? null,
       engines: String(options.engines).split(","),
       focusText,
       deep: options.deep
@@ -851,6 +906,7 @@ async function handleReviewCommand(argv, { reviewName, templateName, supportsFoc
       base: options.base,
       scope: options.scope,
       model: options.model,
+      effort: options.effort ?? null,
       engine: options.engine,
       focusText,
       reviewName,
@@ -882,6 +938,7 @@ async function handleReviewCommand(argv, { reviewName, templateName, supportsFoc
         base: options.base,
         scope: options.scope,
         model: options.model,
+        effort: options.effort ?? null,
         engine: options.engine,
         focusText,
         reviewName,
@@ -915,11 +972,9 @@ async function handleTask(argv) {
 
   const cwd = resolveCommandCwd(options);
   const workspaceRoot = resolveCommandWorkspace(options);
-  const model = normalizeRequestedModel(options.model);
+  const model = options.model ?? null;
   const engine = options.engine ?? null;
-  if (options.effort != null && !VALID_EFFORT_LEVELS.has(String(options.effort).trim().toLowerCase())) {
-    throw new Error(`Invalid --effort "${options.effort}". Valid values: ${[...VALID_EFFORT_LEVELS].join(", ")}.`);
-  }
+  validateEffortLevel(options.effort);
   const prompt = readTaskPrompt(cwd, options, positionals);
 
   const resumeLast = Boolean(options["resume-last"] || options.resume);

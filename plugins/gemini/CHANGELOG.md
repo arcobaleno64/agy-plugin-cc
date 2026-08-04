@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.10.0 — 2026-08-04 — Session transfer command & AGY 1.1.10 updates
+
+### Added
+- **`/gemini:transfer` session handoff command.** Introduced `/gemini:transfer` to export workspace context (git status, diff, instructions) into a structured JSON snapshot and generate single-quoted POSIX Bash and Windows PowerShell launch commands for AGY or Gemini CLI. Includes secret redaction (`.env*`, `.npmrc`, `.p12`, `.key`, `id_rsa`), git conflict locking, per-file diff truncation, and automated `.omc/transfers/` LRU pruning (keeps latest 20 snapshots).
+- **AGY 1.1.10 release alignment.** Documented Application Default Credentials (ADC) & Gemini Enterprise / WIF authentication options and the read-only `.git` sandbox rule in README documentation.
+
+### Fixed
+- **The MCP rescue parity test no longer depends on a locally installed Gemini CLI.** It now injects the runtime's existing engine-detection seam for both dispatch paths, so CI verifies byte-identical job prompts independently of developer-machine binaries.
+
+## 0.9.0 — 2026-07-22 — AGY model and effort selection
+
+### Changed
+- **AGY 1.1.5 model or reasoning selection is now supported.** Task, review, and adversarial-review validate a selected engine before starting background work, then forward one of AGY's native `--model` or `--effort` flags. AGY model selection requires an exact ID from `agy models`; Gemini aliases fail before spawn, AGY accepts only `low|medium|high`, a model-plus-effort combination fails before spawn, and `--model` is rejected for a dual-engine review because model IDs are engine-specific. AGY versions below stable 1.1.5 reject these options with an upgrade message. Gemini's existing aliases, effort-to-model mapping, and fallback behavior are unchanged.
+
+### Documentation
+- Corrected the installation and update guidance: third-party marketplaces do not auto-update by default; this versioned plugin is updated only when its resolved manifest version changes; an update reported during a running session still requires `/reload-plugins`; and a tag-pinned marketplace remains pinned until it is removed and re-added at another tag. No runtime behavior changed.
+- Corrected the AGY model-selection limitation: AGY 1.1.5+ now supports either an exact `agy models` ID or native `low`, `medium`, or `high` reasoning effort, with the documented engine-specific constraints.
+
 ## 0.8.0 — 2026-07-15 — First-class AGY and Git hardening
 
 ### Security

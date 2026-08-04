@@ -3,10 +3,14 @@ import assert from "node:assert/strict";
 
 import {
   MODEL_ALIASES,
+  AGY_EFFORT_LEVELS,
   normalizeRequestedModel,
+  normalizeAgyEffort,
+  normalizeAgyRequestedModel,
   mapEffortToModel,
   buildCliArgs,
   detectEngine,
+  supportsAgyModelSelection,
   supportsAgyStdinPrompt
 } from "../plugins/gemini/scripts/lib/engine.mjs";
 
@@ -79,6 +83,27 @@ test("AGY stdin prompt capability begins at stable 1.1.2 and fails closed for un
   assert.equal(supportsAgyStdinPrompt("2.0.0"), true);
 });
 
+test("AGY model and effort selection begins at stable 1.1.5", () => {
+  assert.equal(supportsAgyModelSelection("1.1.4"), false);
+  assert.equal(supportsAgyModelSelection("1.1.5-beta.1"), false);
+  assert.equal(supportsAgyModelSelection("unknown"), false);
+  assert.equal(supportsAgyModelSelection("agy 1.1.5"), true);
+  assert.equal(supportsAgyModelSelection("1.2.0"), true);
+});
+
+test("AGY requires an exact model ID and preserves safe explicit IDs", () => {
+  assert.equal(normalizeAgyRequestedModel("gemini-3.6-flash-high"), "gemini-3.6-flash-high");
+  assert.throws(() => normalizeAgyRequestedModel("flash"), /does not accept the Gemini model alias/);
+  assert.throws(() => normalizeAgyRequestedModel("lite"), /does not accept the Gemini model alias/);
+  assert.throws(() => normalizeAgyRequestedModel("--model"), /Invalid model id/);
+});
+
+test("AGY accepts only its documented effort levels", () => {
+  assert.deepEqual([...AGY_EFFORT_LEVELS], ["low", "medium", "high"]);
+  assert.equal(normalizeAgyEffort("HIGH"), "high");
+  assert.throws(() => normalizeAgyEffort("xhigh"), /AGY supports --effort values/);
+});
+
 test("agy positional prompt rejects NUL bytes before argv construction", () => {
   assert.throws(
     () => buildCliArgs("agy", { prompt: "hello\0world" }),
@@ -107,6 +132,17 @@ test("AGY stdin mode omits --print and prompt while preserving execution flags",
   assert.ok(args.includes("--dangerously-skip-permissions"));
   assert.ok(args.includes("--new-project"));
   assert.deepEqual(args.slice(-2), ["--print-timeout", "2m"]);
+});
+
+test("AGY forwards an explicit model ID or effort as literal argv", () => {
+  const modelArgs = buildCliArgs("agy", { prompt: "hello", useStdin: true, model: "gemini-3.6-flash-high" });
+  const effortArgs = buildCliArgs("agy", { prompt: "hello", useStdin: true, effort: "high" });
+  assert.deepEqual(modelArgs.slice(0, 2), ["--model", "gemini-3.6-flash-high"]);
+  assert.deepEqual(effortArgs.slice(0, 2), ["--effort", "high"]);
+  assert.throws(
+    () => buildCliArgs("agy", { prompt: "hello", useStdin: true, model: "gemini-3.6-flash-high", effort: "high" }),
+    /cannot combine --model with --effort/
+  );
 });
 
 test("agy write turn adds --new-project so files land in cwd, not agy's scratch dir", () => {

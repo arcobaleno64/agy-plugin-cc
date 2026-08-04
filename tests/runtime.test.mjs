@@ -31,7 +31,8 @@ import {
 } from "../plugins/gemini/scripts/lib/state.mjs";
 import {
   buildReviewPrompt,
-  dispatchAdversarialReview
+  dispatchAdversarialReview,
+  dispatchBackgroundTask
 } from "../plugins/gemini/scripts/gemini-companion.mjs";
 import { classifyCliFailure } from "../plugins/gemini/scripts/lib/failures.mjs";
 
@@ -435,6 +436,16 @@ test("review forwards the default gemini model and JSON output flags", () => {
   const state = readFakeState(binDir);
   assert.ok(state.lastInvocation.args.includes("gemini-2.5-flash"));
   assert.ok(state.lastInvocation.args.includes("--output-format"));
+});
+
+test("review maps effort to a Gemini model when no model is given", () => {
+  const { repo, binDir } = setupRepo("review-clean");
+  commit(repo, "src/app.js", "export const value = 1;\n");
+  fs.writeFileSync(path.join(repo, "src", "app.js"), "export const value = 2;\n");
+
+  const result = run("node", [SCRIPT, "review", "--effort", "high"], { cwd: repo, env: buildEnv(binDir) });
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(readFakeState(binDir).lastInvocation.args.includes("gemini-3.1-pro-preview"));
 });
 
 test("review degrades gracefully to the GA model when the requested model is not found", () => {
@@ -881,6 +892,55 @@ test("dispatchAdversarialReview degrades to one available engine with a stderr w
     fs.rmSync(repo, { recursive: true, force: true });
     fs.rmSync(dataDir, { recursive: true, force: true });
   }
+});
+
+test("dispatchAdversarialReview rejects a single model override for heterogeneous engines before spawning", () => {
+  const { repo } = setupRepo("review-findings");
+  commit(repo, "src/app.js", "export const value = 1;\n");
+  fs.writeFileSync(path.join(repo, "src", "app.js"), "export const value = 2;\n");
+  let spawned = false;
+
+  assert.throws(
+    () => dispatchAdversarialReview({ cwd: repo, scope: "working-tree", engines: ["gemini", "agy"], model: "flash" }, {
+      spawnFn() { spawned = true; return { pid: 1, unref() {} }; },
+      detectEngineFn(engine) { return { engine, version: "1.1.5" }; }
+    }),
+    /--model cannot be used with --engines gemini,agy/
+  );
+  assert.equal(spawned, false);
+  fs.rmSync(repo, { recursive: true, force: true });
+});
+
+test("dispatchAdversarialReview validates every engine before spawning a group worker", () => {
+  const { repo } = setupRepo("review-findings");
+  commit(repo, "src/app.js", "export const value = 1;\n");
+  fs.writeFileSync(path.join(repo, "src", "app.js"), "export const value = 2;\n");
+  let spawnCount = 0;
+
+  assert.throws(
+    () => dispatchAdversarialReview({ cwd: repo, scope: "working-tree", engines: ["gemini", "agy"], effort: "xhigh" }, {
+      spawnFn() { spawnCount += 1; return { pid: spawnCount, unref() {} }; },
+      detectEngineFn(engine) { return { engine, version: "1.1.5" }; }
+    }),
+    /AGY supports --effort values/
+  );
+  assert.equal(spawnCount, 0);
+  fs.rmSync(repo, { recursive: true, force: true });
+});
+
+test("background AGY task validates model and effort before spawning", () => {
+  const { repo } = setupRepo("task");
+  let spawned = false;
+
+  assert.throws(
+    () => dispatchBackgroundTask({ cwd: repo, engine: "agy", model: "gemini-3.6-flash-low", effort: "high", prompt: "diagnose" }, {
+      spawnFn() { spawned = true; return { pid: 1, unref() {} }; },
+      detectEngineFn() { return { engine: "agy", version: "1.1.5" }; }
+    }),
+    /cannot combine --model with --effort/
+  );
+  assert.equal(spawned, false);
+  fs.rmSync(repo, { recursive: true, force: true });
 });
 
 test("task --background enqueues a detached worker and reports completion", async () => {

@@ -34,6 +34,7 @@
 ## 功能特色
 
 - **`/gemini:rescue`** — 將調查、除錯或實作任務委派給所選的 Gemini CLI 或 AGY 引擎。可在前景執行或以背景工作方式分離執行。
+- **`/gemini:transfer`** — 匯出當前工作區情境（git status、diff、接續指令）為結構化 JSON 快照，並產生 POSIX Bash 與 Windows PowerShell 之 AGY / Gemini CLI 接手命令。
 - **`/gemini:review`** — 對當前 diff 或分支執行標準（務實）程式碼審查，找出真實 bug、缺漏之錯誤處理與未竟之程式路徑。加 `--deep` 可進行 agentic 探查、看 diff 以外的 repo 脈絡。
 - **`/gemini:adversarial-review`** — 對當前 diff 或分支執行對抗性程式碼審查，挑戰設計決策，回傳含嚴重程度評級的結構化發現。
 - **`/gemini:setup`** — 檢查 Gemini CLI / AGY 的可用性與 OAuth 狀態。
@@ -56,7 +57,7 @@
 
 **安裝 AGY**（使用 `--engine agy` 時必須安裝）：`curl -fsSL https://antigravity.google/cli/install.sh | bash`
 
-**認證**：兩個引擎各自認證。Gemini 引擎請執行一次 `gemini`；AGY 引擎請互動式執行一次 `agy`。Headless setup probe 無法可靠驗證 AGY 認證，因此 `/gemini:setup --engine agy` 會將其標為 unknown，直到真實 AGY 命令成功。不需要 API 金鑰。
+**認證**：兩個引擎各自認證。Gemini 引擎請執行一次 `gemini`；AGY 引擎請互動式執行一次 `agy`。AGY 1.1.10+ 亦支援 Application Default Credentials (ADC) 與 Gemini Enterprise / Workforce Identity Federation (WIF)。Headless setup probe 無法可靠驗證 AGY 認證，因此 `/gemini:setup --engine agy` 會將其標為 unknown，直到真實 AGY 命令成功。不需要 API 金鑰。
 
 > **重要提示（貼近現實）：**
 > - **2026-06-18 consumer transition**：Google 宣布免費／個人版、Google AI Pro、Google AI Ultra 的 Gemini CLI requests 於此日期後停止服務；Standard/Enterprise access 維持。詳見 Google 的 [Gemini CLI to Antigravity CLI announcement](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/)。
@@ -66,7 +67,7 @@
 
 ## 安裝
 
-### 最新版（追蹤 `main`，自動更新）
+### 發布通道（marketplace 來源追蹤 `main`）
 
 ```
 # 1. 加入 marketplace
@@ -79,17 +80,31 @@
 /reload-plugins
 ```
 
-### 釘選發布版（指定某個已發布版本）
+此 marketplace 的來源追蹤 repository 的 `main` 分支，但這**不表示**每次啟動 Claude Code 都一定會自動安裝並啟用新程式碼：
 
-將 marketplace 釘到某個 release 標籤——例如 `v0.8.0`：
+- Claude Code 依本外掛 manifest 中的明確版本號辨識更新。既有安裝只會在該版本號提高時更新（通常隨正式發布進行）；若 `main` 只有新 commit、manifest 版本號不變，該 commit 不會被當成外掛更新交付。
+- 第三方 marketplace 預設關閉自動更新。如要啟用，請開啟 `/plugin`，選擇 **Marketplaces** → **gemini-plugin-cc** → **Enable auto-update**。啟用後，Claude Code 會在啟動時檢查 marketplace，並更新 resolved version 已變更的已安裝外掛。
+- 若 Claude Code 顯示外掛已更新，請先執行 `/reload-plugins`，再於目前 session 使用。因此，僅打開 Claude Code 不能保證剛發布的版本已經生效。
+
+若不啟用自動更新，可明確執行：
 
 ```
-/plugin marketplace add arcobaleno64/gemini-plugin-cc@v0.8.0
+/plugin marketplace update gemini-plugin-cc
+/plugin update gemini@gemini-plugin-cc
+/reload-plugins
+```
+
+### 釘選發布版（指定某個已發布版本）
+
+將 marketplace 釘到某個 release 標籤——例如 `v0.9.1`：
+
+```
+/plugin marketplace add arcobaleno64/gemini-plugin-cc@v0.9.1
 /plugin install gemini@gemini-plugin-cc
 /reload-plugins
 ```
 
-> Claude Code 從 git tree 安裝外掛，**並非**從 GitHub Releases 的 tarball——`@<tag>` 選的是 [Release](https://github.com/arcobaleno64/gemini-plugin-cc/releases) 背後的 git 標籤。釘版安裝**不會**自動更新；欲升至新版，請以新標籤重新加入 marketplace（例如 `…@v0.8.1`）。
+> Claude Code 從 git tree 安裝外掛，**並非**從 GitHub Releases 的 tarball——`@<tag>` 選的是 [Release](https://github.com/arcobaleno64/gemini-plugin-cc/releases) 背後的 git 標籤。即使啟用 marketplace 自動更新，釘選的 marketplace 仍會停在該標籤。若要移至另一個 release，請先移除既有 marketplace（這也會解除安裝由它安裝的外掛），再以新標籤加入 repository、重新安裝外掛，最後執行 `/reload-plugins`。
 
 接著對 `auto`／Gemini 執行 `/gemini:setup`，或對 AGY 執行 `/gemini:setup --engine agy`。只需安裝所選引擎的 dependency；若缺少，setup 會提供對應安裝選項。
 
@@ -133,8 +148,12 @@
 | `--resume-last` | 繼續最近一次的 Gemini 工作階段 |
 | `--fresh` | 強制開啟全新 Gemini 工作階段，忽略可接續的執行緒 |
 | `--engine <gemini\|agy\|auto>` | 覆蓋引擎選擇 |
-| `--model <別名\|ID>` | 指定模型（`flash`、`pro`、`lite`） |
-| `--effort <low\|medium\|high\|xhigh>` | 以努力等級對應模型選擇 |
+| `--model <別名\|ID>` | 指定模型。Gemini 解析其別名；AGY 1.1.5+ 要求使用 `agy models` 列出的精確 model ID。AGY 的模型選擇不可與 `--effort` 或雙引擎（`--engines gemini,agy`）審查合併。 |
+| `--effort <low\|medium\|high\|xhigh>` | Gemini 將 effort 映射為模型；AGY 1.1.5+ 在未指定 AGY model 時，原生傳遞 `low`、`medium` 或 `high` 推理強度。 |
+
+### `/gemini:transfer [--engine <gemini|agy|auto>] [instructions...]`
+
+匯出當前工作區情境（git diff、status、接續指令），並產生可直接複製執行的 CLI 接手命令（`agy`/`gemini`），移交給獨立終端機進行互動開發。包含自動化機密遮蔽（`.env*`、憑證）與 Git 衝突安全鎖定。
 
 ### `/gemini:review`
 
@@ -148,6 +167,7 @@
 | `--scope <auto\|working-tree\|branch>` | Diff 範圍 |
 | `--engine <gemini\|agy\|auto>` | 覆蓋引擎 |
 | `--model <別名\|ID>` | 指定模型 |
+| `--effort <level>` | Gemini 的模型選擇；未指定 AGY model 時的 AGY 1.1.5+ 原生推理強度（`low`、`medium`、`high`） |
 
 ### `/gemini:adversarial-review [焦點]`
 
@@ -160,6 +180,7 @@
 | `--scope <auto\|working-tree\|branch>` | Diff 範圍 |
 | `--engine <gemini\|agy\|auto>` | 覆蓋引擎 |
 | `--model <別名\|ID>` | 指定模型 |
+| `--effort <level>` | Gemini 的模型選擇；未指定 AGY model 時的 AGY 1.1.5+ 原生推理強度（`low`、`medium`、`high`） |
 
 ### `/gemini:setup`
 
@@ -233,7 +254,7 @@
 
 可透過 `--engine` 旗標或 `GEMINI_ENGINE` 環境變數覆蓋。
 
-> `--model` 與 `--effort` 只由 **gemini** 引擎管理。`--engine agy` 目前讓 AGY 使用其 configured/default model；本外掛不會把 Gemini aliases 或 effort tiers 翻譯成 AGY 參數。
+> **AGY 1.1.5+ 選擇機制：** 使用 `agy models` 所列的 `--model <精確 ID>`，或使用 `--effort <low|medium|high>` 二者之一。Gemini alias 不是有效的 AGY model ID，model 與 effort 不可合併；雙引擎審查不可使用 `--model`，因為 model ID 具引擎特性。Gemini 仍維持其獨立的 alias 與 effort-to-model 映射。
 
 > **AGY transcript recovery 仍是權威來源。** 舊版 positional `agy --print` 沒有 piped response（上游 [google-gemini/gemini-cli#27466](https://github.com/google-gemini/gemini-cli/issues/27466)，已於 macOS AGY 1.0.7 重現）。外掛 v0.7.1 對 AGY 1.1.2 以上改走自動 print 的 stdin 路徑，但完成回應、DONE 狀態、thinking 與 conversation ID 仍取自磁碟 transcript。已知 brain root 為 `~/.gemini/antigravity-cli/brain`（已於 Windows、macOS AGY 1.0.7 與 Linux AGY 1.1.2 驗證）及 `~/.antigravity-cli/brain`（較舊的 Linux 1.0.2，回報）。1.1.2 stdin 路徑已於 Windows 與 Ubuntu 24.04 WSL2 live 驗證，並有 POSIX integration fixture；真實 macOS 1.1.2 驗證刻意列為 optional，尚未執行。若找不到 brain root，請先執行一次 `agy` 或開 issue 回報實際位置。
 
@@ -243,9 +264,10 @@
 
 - **Stdin 傳遞**：Gemini prompt 與 AGY 1.1.2 以上 prompt 透過 Node.js `spawnSync` 的 `input` 傳遞，不進入 argv。AGY 1.1.2 以下或版本無法解析時保留 positional 相容路徑與 24,000 字元上限；處理不可信內容時請使用 Gemini 或 AGY 1.1.2 以上。
 - **Windows process 邊界**：Gemini 的 npm `.cmd` shim 以 `shell:true` 啟動，但 prompt 留在 stdin，argv 只有已驗證旗標。AGY 必須解析成絕對 `.exe`，並固定以 `shell:false` 啟動。
-- **Git process 邊界**：repository-derived ref 一律以 literal argv 與 `shell:false` 傳給 Git（Windows 亦同）；Git helper 不繼承 `.cmd` wrapper fallback。
+- **Git process 邊界**：repository-derived ref 一律以 literal argv 與 `shell:false` 傳給 Git（Windows 亦同）；Git helper 不繼承 `.cmd` wrapper fallback。此處與上游 Codex 外掛 [v1.0.6 移除 Git shell expansion](https://github.com/openai/codex-plugin-cc/releases/tag/v1.0.6) 的 hardening 方向一致。
 - **DEP0190 警告屬無害**：於 Windows 上可能見到 `(node:NNN) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.`。此處**可安心忽略**——該 deprecation 針對的是在 `shell: true` 下把*提示內容*放入 argv，但本外掛的 gemini 引擎從不如此：提示走 stdin，僅受控旗標進入 argv（且各自驗證，如 model id 須符合 `^[A-Za-z0-9][A-Za-z0-9._-]*$`）。此警告是 Node 對該通用模式的提醒，並非本程式路徑中的實際注入點。
 - **AGY transport 回退**：只有可穩定解析為 1.1.2 以上的版本才啟用 stdin；未知版與 prerelease 字串一律 fail closed 至既有 positional 路徑，不假設上游能力。
+- **AGY 1.1.10+ `.git` 沙箱規則**：AGY 1.1.10 在沙箱模式下實作 `.git` 目錄唯讀防護規則，保護版本庫 metadata 與 commit 歷史在審查及子代理人任務期間不被意外修改。
 - **憑證處理**：`~/.gemini/oauth_creds.json` 之 OAuth 憑證僅用於 `getGeminiLoginStatus()` 檢查 token 是否過期；本外掛從不記錄、複製或傳輸之。
 - **`.gitignore`**：`.omc/` 狀態目錄（工作日誌、會話狀態）已排除於版本控制之外。
 
@@ -284,6 +306,12 @@ Claude Code
 背景模式會產生一個分離的 `task-worker` 子程序並立即回傳工作 ID。狀態持久化於 `.omc/state/`，可透過 `/gemini:status` 查詢。
 
 ---
+            └─ renderTaskResult()   → Markdown 輸出至 Claude
+```
+
+背景模式會產生一個分離的 `task-worker` 子程序並立即回傳工作 ID。狀態持久化於 `.omc/state/`，可透過 `/gemini:status` 查詢。
+
+---
 
 ## 與 codex-plugin-cc 的對應
 
@@ -297,6 +325,7 @@ Claude Code
 | `/codex:review` | `/gemini:review` | **最佳等效** — prompt／CLI adapter 審查，非原生審查器 |
 | `/codex:adversarial-review` | `/gemini:adversarial-review` | **最佳等效** — 對同一 diff target 施以對抗性 prompt |
 | `/codex:rescue` | `/gemini:rescue` | **1:1 對等** — 相同的 forwarder／subagent 合約與旗標 |
+| `/codex:transfer` | `/gemini:transfer` | **1:1 對等** — 匯出會話快照並產生 AGY / Gemini CLI 移交接手啟動命令 |
 | `/codex:status` | `/gemini:status` | **1:1 對等** — 相同工作模型；`--all` 跨 Claude session |
 | `/codex:result` | `/gemini:result` | **Gemini 專屬差異** — 顯示 Gemini session id 與 `gemini --resume` |
 | `/codex:cancel` | `/gemini:cancel` | **1:1 對等** — 相同的 process-tree 終止（POSIX 與 Windows） |

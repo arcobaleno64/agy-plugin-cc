@@ -128,6 +128,7 @@ test("CLI runtime and MCP rescue dispatch persist byte-identical job prompts", a
   const previousData = process.env.GEMINI_COMPANION_DATA;
   process.env.GEMINI_COMPANION_DATA = dataDir;
   const spawnFn = () => ({ pid: 12345, unref() {} });
+  const detectEngineFn = () => ({ engine: "gemini", version: "0.45.0" });
   const prompt = "Inspect src/auth.js exactly; do not edit.\nPreserve this second line.";
 
   try {
@@ -137,7 +138,7 @@ test("CLI runtime and MCP rescue dispatch persist byte-identical job prompts", a
       engine: "gemini",
       model: "flash",
       effort: "high"
-    }, { spawnFn });
+    }, { spawnFn, detectEngineFn });
     const mcpDispatch = await handleRequest(toolRequest("gemini_rescue", {
       workspace,
       prompt,
@@ -147,7 +148,7 @@ test("CLI runtime and MCP rescue dispatch persist byte-identical job prompts", a
     }), {
       runtime: {
         dispatchBackgroundTask(input) {
-          return dispatchBackgroundTask(input, { spawnFn });
+          return dispatchBackgroundTask(input, { spawnFn, detectEngineFn });
         }
       }
     });
