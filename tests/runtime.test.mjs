@@ -753,7 +753,11 @@ test("AGY 1.1.10 task takes the response and conversation id from the stdout env
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /AGY_ENVELOPE_RESPONSE/);
   assert.doesNotMatch(result.stdout, /AGY_TRANSCRIPT_MUST_NOT_WIN/);
-  assert.match(result.stdout, /11111111-2222-3333-4444-555555555555/);
+
+  // The foreground command prints only the final message; the conversation id
+  // is persisted on the job and surfaced by /gemini:status.
+  const state = JSON.parse(fs.readFileSync(path.join(resolveStateDir(repo), "state.json"), "utf8"));
+  assert.equal(state.jobs[0].threadId, "11111111-2222-3333-4444-555555555555");
 
   const capture = JSON.parse(fs.readFileSync(capturePath, "utf8"));
   assert.ok(capture.args.includes("--output-format"), "1.1.10 must request the JSON envelope");
