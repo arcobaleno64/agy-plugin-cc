@@ -1,6 +1,0 @@
-{
-  "name": "gemini:transfer",
-  "description": "Export current session context and generate ready-to-run CLI launch commands to hand off work to an interactive Gemini CLI or AGY session.",
-  "argumentHint": "[--engine <gemini|agy|auto>] [instructions...]",
-  "script": "node ${PLUGIN_DIR}/scripts/transfer.mjs"
-}

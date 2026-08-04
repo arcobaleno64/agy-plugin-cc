@@ -36,7 +36,7 @@ Compared with AGY-only, multi-host plugins, this project keeps the Gemini CLI pa
 ## Features
 
 - **`/gemini:rescue`** — Delegate investigation, debugging, or implementation tasks to the selected Gemini CLI or AGY engine. Runs in the foreground or detached in the background.
-- **`/gemini:transfer`** — Export current session context (git status, diff, instructions) into a structured JSON snapshot and generate single-quoted POSIX Bash and Windows PowerShell launch commands for AGY or Gemini CLI.
+- **`/gemini:transfer`** — Export current session context (git status, diff, instructions) into a structured JSON snapshot and print a single-quoted launch command for AGY or Gemini CLI (POSIX Bash form everywhere, plus a PowerShell form on Windows).
 - **`/gemini:review`** — Standard (pragmatic) code review over the current diff or branch. Finds real bugs, missing error handling, and incomplete code paths. Add `--deep` for an agentic pass that explores repo context beyond the diff.
 - **`/gemini:adversarial-review`** — Adversarial code review that challenges design decisions over the current diff or branch. Returns structured findings with severity ratings.
 - **`/gemini:setup`** — Check Gemini CLI / AGY availability and OAuth status.
@@ -153,9 +153,15 @@ Delegates a task to Gemini. Reads from stdin if no prompt is given.
 | `--model <alias\|id>` | Model override. Gemini resolves its aliases; AGY 1.1.5+ requires an exact model ID from `agy models`. AGY model selection cannot be combined with `--effort` or a dual-engine (`--engines gemini,agy`) review. |
 | `--effort <low\|medium\|high\|xhigh>` | Gemini maps effort to a model; AGY 1.1.5+ forwards `low`, `medium`, or `high` as native reasoning effort when no AGY model is selected. |
 
-### `/gemini:transfer [--engine <gemini|agy|auto>] [instructions...]`
+### `/gemini:transfer [instructions...]`
 
-Exports current workspace context (git diff, status, instructions) and generates ready-to-run CLI commands (`agy`/`gemini`) to hand off work to an interactive terminal session. Includes automated secret redaction (`.env*`, credentials) and git conflict safeguards.
+Exports current workspace context (git diff, status, instructions) and generates ready-to-run CLI commands (`agy`/`gemini`) to hand off work to an interactive terminal session. Includes automated secret redaction (`.env*`, credentials) and git conflict safeguards. The generated commands are printed for you to paste into a terminal; the plugin never runs them.
+
+| Flag | Description |
+|---|---|
+| `--engine <gemini\|agy\|auto>` | Which handoff commands to print. `auto` (default) prints both |
+| `--model <id>` | Model override carried into the generated command. AGY requires an exact ID from `agy models` |
+| `--effort <low\|medium\|high\|xhigh>` | Reasoning effort carried into the generated AGY command. Cannot be combined with `--model` |
 
 ### `/gemini:review`
 

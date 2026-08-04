@@ -14,7 +14,7 @@
 
 | 原修正項 | 狀態 | 落實摘要 |
 |---|---|---|
-| **v0.10.0** `/gemini:transfer` 與 AGY 1.1.10 對齊 | ✅ 已補 | 實作 `/gemini:transfer` Session handoff 命令，對齊 upstream v1.0.5 功能；補強機密檔案過濾、Git conflict 鎖定、Per-file 截斷、LRU 快照清理與 Posix/PowerShell 引號安全轉義。 |
+| **v0.10.0** `/gemini:transfer` 與 AGY 1.1.10 對齊 | ✅ 已補（v0.10.1 補正註冊） | 實作 `/gemini:transfer` Session handoff 命令，對齊 upstream v1.0.5 功能；補強機密檔案過濾、Git conflict 鎖定、Per-file 截斷、LRU 快照清理與 Posix/PowerShell 引號安全轉義。**更正**：v0.10.0 之命令檔誤以 `commands/transfer.json` 形式交付，Claude Code 命令載入器僅辨識 `.md`，故該版之 `/gemini:transfer` 從未實際註冊，僅腳本存在；v0.10.1 改為 `commands/transfer.md` 並以「`commands/` 不得含非 `.md` 檔」之測試守則鎖定。 |
 | **P0** rescue `available`↔`found` | ✅ 已修 | companion 改回 `available`（棄 `found`），rescue 續接提示得以觸發;守則測試鎖定欄位名。 |
 | **P1** 背景 review 無持久化 | ✅ 已修 | 新增 `review-worker`（仿 task-worker），背景 review 結果可持久化並經 `/status`/`/result` 取回。 |
 | **P1** 死碼 `renderNativeReviewResult` | ✅ 已修 | 移除。 |

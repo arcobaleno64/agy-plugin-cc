@@ -19,10 +19,19 @@ test("all expected command files are present", () => {
     "result.md",
     "review.md",
     "setup.md",
-    "status.md"
+    "status.md",
+    "transfer.md"
   ].sort();
   const actual = fs.readdirSync(COMMANDS_DIR).filter((f) => f.endsWith(".md")).sort();
   assert.deepEqual(actual, expected);
+});
+
+// Claude Code only discovers Markdown command files. A command shipped in any
+// other format (e.g. a JSON manifest) is silently skipped by the loader and
+// never appears in /plugin, so the directory must hold nothing else.
+test("commands directory contains only Markdown command files", () => {
+  const stray = fs.readdirSync(COMMANDS_DIR).filter((f) => !f.endsWith(".md"));
+  assert.deepEqual(stray, [], `non-Markdown files in commands/ are never loaded as slash commands: ${stray.join(", ")}`);
 });
 
 test("review command calls gemini-companion review subcommand", () => {
@@ -114,6 +123,15 @@ test("setup authenticates by running gemini, not a nonexistent `gemini login`", 
   assert.match(source, /OAuth/i);
 });
 
+test("transfer is a deterministic runner that calls scripts/transfer.mjs", () => {
+  const source = readCommand("transfer.md");
+  assert.match(source, /disable-model-invocation:\s*true/);
+  assert.match(source, /allowed-tools:\s*Bash\(node:\*\)/);
+  assert.match(source, /scripts\/transfer\.mjs"?\s+"\$ARGUMENTS"/);
+  // The generated launch commands are user-pasted, never executed by Claude.
+  assert.match(source, /Do not run the generated commands/i);
+});
+
 // --- Shell-safety: $ARGUMENTS must always be quoted when handed to the companion ---
 // Unquoted $ARGUMENTS lets the shell word-split, glob, or command-substitute the
 // user's raw slash-command text before the companion's parser/validation runs.
@@ -121,7 +139,7 @@ test("every command quotes $ARGUMENTS in its companion invocation", () => {
   const files = fs.readdirSync(COMMANDS_DIR).filter((f) => f.endsWith(".md"));
   for (const file of files) {
     for (const line of readCommand(file).split(/\r?\n/)) {
-      if (line.includes("gemini-companion.mjs") && line.includes("$ARGUMENTS")) {
+      if (line.includes(".mjs") && line.includes("$ARGUMENTS")) {
         assert.match(
           line,
           /"\$ARGUMENTS"/,

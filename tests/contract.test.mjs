@@ -9,7 +9,7 @@ import { makeTempDir, run } from "./helpers.mjs";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BUMP = path.join(ROOT, "scripts", "bump-version.mjs");
 const VERIFY = path.join(ROOT, "scripts", "verify-contracts.mjs");
-const COMMANDS = ["setup", "review", "adversarial-review", "rescue", "status", "result", "cancel"];
+const COMMANDS = ["setup", "review", "adversarial-review", "rescue", "status", "result", "cancel", "transfer"];
 
 function writeJson(filePath, json) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
