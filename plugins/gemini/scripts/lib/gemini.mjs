@@ -134,7 +134,15 @@ export function tryParseJsonFromText(text) {
 function readAgyEnvelope(rawStdout) {
   const parsed = tryParseJsonFromText(rawStdout);
   if (!parsed || typeof parsed !== "object") return null;
-  if (typeof parsed.status !== "string" || typeof parsed.conversation_id !== "string") return null;
+  // A terminal status plus a payload slot is what identifies the envelope.
+  // Do not require a specific status value: only SUCCESS and ERROR have been
+  // observed, and whether that vocabulary is closed is an open question with
+  // upstream (antigravity-cli#546). Treat anything other than SUCCESS as failure.
+  if (typeof parsed.status !== "string" || !parsed.status) return null;
+  if (!("response" in parsed) && !("error" in parsed)) return null;
+  // conversation_id is "" on the observed ERROR envelope and may be absent
+  // altogether; it identifies the conversation, not the envelope.
+  if (parsed.conversation_id != null && typeof parsed.conversation_id !== "string") return null;
   return parsed;
 }
 
@@ -167,7 +175,7 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
 
   return {
     text,
-    threadId: envelope.conversation_id || null,
+    threadId: typeof envelope.conversation_id === "string" && envelope.conversation_id ? envelope.conversation_id : null,
     exitCode: succeeded ? 0 : failedExit,
     failure: succeeded
       ? null

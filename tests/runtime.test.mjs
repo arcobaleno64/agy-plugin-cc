@@ -803,6 +803,35 @@ test("AGY 1.1.10 task classifies an ERROR envelope and surfaces its error text",
   assert.equal(state.jobs[0].failure.category, "model-unavailable");
 });
 
+// Review finding on #30: conversation_id identifies the conversation, not the
+// envelope. An ERROR envelope without it must still classify on its `error`
+// rather than degrading to invalid-json.
+test("AGY 1.1.10 accepts an ERROR envelope that omits conversation_id", { skip: process.platform === "win32" }, () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installCapturingAgyExecutable(binDir, { version: "1.1.10" });
+  initGitRepo(repo);
+  commit(repo, "README.md", "hello\n");
+
+  const envelope = { status: "ERROR", error: "model bogus is not recognized as a known model" };
+
+  const result = run("node", [SCRIPT, "task", "--engine", "agy", "do something"], {
+    cwd: repo,
+    env: {
+      ...buildFailingAgyEnv(binDir),
+      FAKE_AGY_CAPTURE: path.join(binDir, "agy-capture.json"),
+      FAKE_AGY_RESPONSE: "AGY_TRANSCRIPT_MUST_NOT_WIN",
+      FAKE_AGY_STDOUT: `${JSON.stringify(envelope)}\n`,
+      FAKE_AGY_EXIT: "1"
+    }
+  });
+
+  assert.notEqual(result.status, 0);
+  const state = JSON.parse(fs.readFileSync(path.join(resolveStateDir(repo), "state.json"), "utf8"));
+  assert.equal(state.jobs[0].failure.category, "model-unavailable");
+  assert.equal(state.jobs[0].threadId ?? null, null);
+});
+
 test("AGY 1.1.7 keeps transcript recovery and never asks for the envelope", { skip: process.platform === "win32" }, () => {
   const repo = makeTempDir();
   const binDir = makeTempDir();
