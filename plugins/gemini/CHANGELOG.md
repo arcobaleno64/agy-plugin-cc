@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.13.0 — 2026-08-04 — Secret redaction on the review path
+
+### Security
+- **`/gemini:review` and `/gemini:adversarial-review` no longer send secret file contents to the model.** `transfer-context.mjs` had redacted secret-looking filenames since 0.10.0, but the review path collected `git diff` whole, with no filter — so the same `.env` change was redacted by `/gemini:transfer` and disclosed by `/gemini:review`. Untracked files were worse: `formatUntrackedFile` read them in full, so a new untracked `.env` was sent whole. See [`docs/THREAT-MODEL.md` §7.4](../../docs/THREAT-MODEL.md).
+- **The secret pattern now catches stage-named stores.** It was anchored at `^\.env`, matching `.env` and `.env.production` but not `prod.env` or `staging.env`. Both the review and transfer paths now catch those.
+
+### Added
+- `lib/secrets.mjs` is the single definition of secret detection. `redactSecretsFromDiff` splits a unified diff on its `diff --git` boundaries and withholds the body of a secret file while keeping the header, so a review still knows the file changed without seeing its contents. `isSecretFile` is re-exported from `transfer-context.mjs` under its existing name.
+- A 400,000-character cap on the review payload. Truncation is announced **inside the content**, so the model reports it rather than silently reviewing half a diff — the failure mode fixed for empty reviews in 0.6.4 applied to oversized ones too.
+
+### Known limits
+- Detection is filename-based. A credential pasted into an ordinary source file is not redacted on any path, and this is not a secret scanner.
+
 ## 0.12.0 — 2026-08-04 — Auto-routing checks credentials, not just presence
 
 ### Fixed

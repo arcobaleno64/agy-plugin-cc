@@ -53,10 +53,10 @@ The plugin's function is to take content it did not author and hand it to an age
 
 | # | Flow | Write-capable | Bound |
 |---|---|---|---|
-| A | repo diff → review prompt → model → rendered output → **Claude Code's context** | no (`write: false`, `lib/gemini.mjs`) | none on the output |
+| A | repo diff → review prompt → model → rendered output → **Claude Code's context** | no (`write: false`, `lib/gemini.mjs`) | filename redaction + size cap on the input (7.4); none on the output |
 | B | repo content → rescue agent → **filesystem and shell** | **yes by default** (7.2) | none |
 | C | repo diff → `.omc/transfers/*.json` → an interactive AGY session started with `--add-dir .` | inherits that session's mode | filename redaction + size caps |
-| D | repo diff → stop-review-gate hook → model, with no explicit user action | no | none |
+| D | repo diff → stop-review-gate hook → model, with no explicit user action | no | same as A |
 
 ### 7.2 PI-1 — Write-capable delegation without a sandbox (High)
 
@@ -84,15 +84,17 @@ Calibrate that result honestly: it shows one model refusing one obvious payload.
 
 **Mitigation candidate**: render delegated output inside a delimited block labelled as untrusted data. That preserves verbatim reproduction while removing the ambiguity about whether it is addressed to the parent.
 
-### 7.4 PI-3 — No redaction or size bound on the review path (Medium)
+### 7.4 PI-3 — No redaction or size bound on the review path — **fixed in v0.13.0**
 
 `LLM02 Sensitive Information Disclosure`, `LLM10 Unbounded Consumption`
 
-`transfer-context.mjs` redacts secret-looking **filenames** and caps output at 5,000 characters per file and 25,000 overall. The review path has neither: `collectWorkingTreeContext` (`lib/git.mjs:182-183`) collects `git diff` output whole, with no filter and no cap.
+**The defect.** `transfer-context.mjs` redacted secret-looking filenames and capped its output, while the review path collected `git diff` whole with no filter and no cap. `/gemini:review` on a diff touching `.env` sent its contents to the model; `/gemini:transfer` on the same diff redacted them. Untracked files were worse — `formatUntrackedFile` read them in full, so a new untracked `.env` was sent whole.
 
-So `/gemini:review` on a diff that touches `.env`, a private key, or a credentials file sends its contents to the model, while `/gemini:transfer` on the same diff would redact it. Two paths, same repository, different policies.
+**The fix.** Detection moved to `lib/secrets.mjs`, shared by both paths. `redactSecretsFromDiff` splits a unified diff on its `diff --git` boundaries and withholds the body of any secret-looking file, keeping the header so the review still knows the file changed. `formatUntrackedFile` applies the same check before reading. A 400,000-character cap bounds the payload, and truncation is announced inside the content so the model reports it — a silently truncated review that returns "looks good" about code it never saw is a worse failure than an expensive one.
 
-Note the transfer filter is filename-based only: a secret pasted into `config.js` is not redacted on either path.
+**Widened while fixing.** The inherited pattern was anchored at `^\.env`, so it matched `.env` and `.env.production` but not `prod.env` or `staging.env`. Both paths now catch those.
+
+**Still true**: detection is filename-based. A credential pasted into `config.js` is not redacted on either path, and nothing here should be relied on as a secret scanner.
 
 ### 7.5 PI-4 — Automatic exposure via the stop-review gate (Low)
 
@@ -118,6 +120,6 @@ Note the transfer filter is filename-based only: a secret pasted into `config.js
 ### 7.7 Priority
 
 1. **7.2** — the only item where a successful injection reaches the filesystem. Make `--write` opt-in, and adopt an AGY path boundary when one exists.
-2. **7.4** — cheap to fix by reusing `isSecretFile` and the caps that already exist in `transfer-context.mjs`.
+2. ~~**7.4**~~ — **fixed in v0.13.0**; detection is shared between both paths and the review payload is bounded.
 3. **7.3** — output framing; low cost, and it does not weaken the verbatim rule.
 4. **7.5** — accept, or make the gate opt-in per repository.
