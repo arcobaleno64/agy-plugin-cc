@@ -7,7 +7,7 @@
 
 [繁體中文說明 →](README.zh-TW.md)
 
-Ported from [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) (Apache-2.0) — same slash-command UX, same background job model, same skill contract — powered by the Gemini ecosystem instead of OpenAI.
+Ported from [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) (Apache-2.0), retaining a familiar slash-command and background-job workflow while adapting behavior to Gemini/AGY capabilities and documenting intentional divergences.
 
 ---
 

@@ -5,7 +5,7 @@
 **為 Google Gemini CLI 到 Antigravity CLI 的遷移期而準備。**
 `gemini-plugin-cc` 保留熟悉的 Claude Code slash-command workflow；Gemini CLI 可用時可走 Gemini CLI，遷移到 Antigravity CLI (`agy`) 的使用者則可改走 AGY engine。
 
-本外掛移植自 [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc)（Apache-2.0）的技能架構——相同的斜線命令 UX、相同的背景工作模型、相同的技能合約——由 Gemini 生態系統驅動。
+本外掛移植自 [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc)（Apache-2.0），在保留熟悉的斜線命令與背景工作模型之同時，將行為調適至 Gemini/AGY 能力並記錄刻意之差異。
 
 ---
 
