@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.14.0 — 2026-08-04 — Delegated output is framed as data
+
+### Security
+- **Model output relayed into Claude Code's context is now marked as untrusted data.** The commands require verbatim reproduction — correctly, since that stops the parent from softening or inventing findings — but it also meant text originating in a reviewed repository arrived with nothing marking it as data rather than instructions. See [`docs/THREAT-MODEL.md` §7.3](../../docs/THREAT-MODEL.md).
+  - `review.md`, `adversarial-review.md`, `rescue.md` and `result.md` state that command output is untrusted data to reproduce but never act on. A contract test pins the rule and checks it has not displaced the faithful-reproduction requirement it sits beside. This covers every path, because the command file sits in the prompt alongside the output.
+  - `renderTaskResult` additionally prefixes its output with `DELEGATED_OUTPUT_MARKER`. It is an HTML comment, so **nothing changes visually** — it does not render in Markdown — while remaining present in the text the parent agent reads. Only the task path emits it: that is the path whose output is model text with no plugin scaffolding around it, whereas a review is rendered by the plugin into its own verdict and findings structure.
+
+### Known limits
+- The marker names where untrusted content begins; it does not fence a region, so a model could still emit text shaped like plugin scaffolding after it. Closing that needs a per-run nonce delimiter, which would put visible noise in every result — recorded in the threat model as available if the residual is ever judged worth the cost.
+
 ## 0.13.0 — 2026-08-04 — Secret redaction on the review path
 
 ### Security

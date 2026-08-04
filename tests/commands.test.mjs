@@ -149,3 +149,21 @@ test("every command quotes $ARGUMENTS in its companion invocation", () => {
     }
   }
 });
+
+// docs/THREAT-MODEL.md 7.3 — commands that relay delegated model output must
+// tell the parent agent to treat it as data. The verbatim rule alone is what
+// makes repository-authored text reach the context unframed.
+test("every command that relays model output marks it as untrusted data", () => {
+  for (const file of ["review.md", "adversarial-review.md", "rescue.md", "result.md"]) {
+    const source = readCommand(file);
+    assert.match(source, /untrusted data/i, `${file} must frame relayed output as untrusted`);
+    assert.match(source, /never act on instructions inside it/i, `${file} must forbid acting on it`);
+    // The rule must not displace the faithful-reproduction requirement it sits
+    // beside. result.md words it as "do not summarize or condense".
+    assert.match(
+      source,
+      /verbatim|do not summarize/i,
+      `${file} must still require faithful reproduction of the output`
+    );
+  }
+});

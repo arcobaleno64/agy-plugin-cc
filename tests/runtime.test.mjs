@@ -22,6 +22,7 @@ import {
   writeGeminiSettings
 } from "./fake-gemini-fixture.mjs";
 import { initGitRepo, makeTempDir, run } from "./helpers.mjs";
+import { DELEGATED_OUTPUT_MARKER } from "../plugins/gemini/scripts/lib/render.mjs";
 import {
   readJobFile,
   resolveJobFile,
@@ -579,7 +580,9 @@ test("task returns the final gemini message", () => {
   const result = run("node", [SCRIPT, "task", "do something useful"], { cwd: repo, env: buildEnv(binDir) });
 
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.stdout, "Handled the requested task.\nTask prompt accepted.\n");
+  // The delegated-output marker precedes the model text; the text itself is
+  // relayed byte-for-byte. (docs/THREAT-MODEL.md 7.3)
+  assert.equal(result.stdout, `${DELEGATED_OUTPUT_MARKER}\nHandled the requested task.\nTask prompt accepted.\n`);
 });
 
 test("task records the gemini session id as the resumable thread", () => {
