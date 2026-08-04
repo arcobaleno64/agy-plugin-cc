@@ -57,7 +57,9 @@
 
 **安裝 AGY**（使用 `--engine agy` 時必須安裝）：`curl -fsSL https://antigravity.google/cli/install.sh | bash`
 
-**認證**：兩個引擎各自認證。Gemini 引擎請執行一次 `gemini`；AGY 引擎請互動式執行一次 `agy`。AGY 1.1.10+ 亦支援 Application Default Credentials (ADC) 與 Gemini Enterprise / Workforce Identity Federation (WIF)。Headless setup probe 無法可靠驗證 AGY 認證，因此 `/gemini:setup --engine agy` 會將其標為 unknown，直到真實 AGY 命令成功。不需要 API 金鑰。
+**認證**：兩個引擎各自認證。Gemini 引擎請執行一次 `gemini`；AGY 引擎請互動式執行一次 `agy`。AGY 1.1.10+ 亦支援 Application Default Credentials (ADC) 與 Gemini Enterprise / Workforce Identity Federation (WIF)。Headless setup probe 無法可靠驗證 AGY 認證，因此 `/gemini:setup --engine agy` 會將其標為 unknown，直到真實 AGY 命令成功。
+
+> **Gemini 引擎現在需要 Standard／Enterprise 帳戶或 API 金鑰。** Google 已於 2026-06-18 終止消費級 Gemini CLI 存取。個人帳戶下 gemini CLI 0.52.0 仍可安裝、`--version` 也正常，但所有請求都回 `API key not valid`（`API_KEY_INVALID`）——2026-08-04 實測。AGY 引擎不受影響，實務上就是預設引擎；若 `auto` 選到未認證的 gemini binary，請改用 `--engine agy` 或設定 `GEMINI_ENGINE=agy`。
 
 > **重要提示（貼近現實）：**
 > - **2026-06-18 consumer transition**：Google 宣布免費／個人版、Google AI Pro、Google AI Ultra 的 Gemini CLI requests 於此日期後停止服務；Standard/Enterprise access 維持。詳見 Google 的 [Gemini CLI to Antigravity CLI announcement](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/)。
