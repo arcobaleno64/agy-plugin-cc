@@ -6,21 +6,26 @@
 // Preview model IDs (those ending in `-preview`) track Google's Gemini preview
 // channel and can change without notice; override any alias with `--model <id>`.
 //
-//   lastVerified: model IDs last checked against gemini CLI 0.44.1 on 2026-06-02.
-//   source:       gemini CLI model listing / Google Gemini API model names.
+//   lastVerified: every id below re-confirmed 2026-08-05 against the live
+//                 generativelanguage.googleapis.com v1beta models.list, which
+//                 returned 58 models. All six ids used here were present.
+//   source:       Google Gemini API models.list (authoritative for id validity;
+//                 the gemini CLI forwards these ids to the same API).
 //
-// Re-verification attempted 2026-08-04 against gemini CLI 0.52.0 and could not
-// advance the date. Google ended consumer Gemini CLI access on 2026-06-18, so a
-// personal account now answers every model probe with `API key not valid`
-// (API_KEY_INVALID) rather than a model-validity signal. Re-verifying these ids
-// requires a Standard/Enterprise account or an API key; until then the 2026-06
-// date stands and preview ids should be assumed drifted.
+// Note on method: consumer Gemini CLI access ended 2026-06-18, so an OAuth
+// personal account can no longer probe models — it answers API_KEY_INVALID. A
+// Standard/Enterprise account or an API key is required to repeat this check.
 export const MODEL_MAP_METADATA = {
-  lastVerified: "2026-06",
-  source: "gemini CLI 0.44.1 live model probe on 2026-06-02 / Google Gemini API model names",
-  reverifyBlockedSince: "2026-06-18",
-  note: "Preview model IDs (…-preview) may change; override with --model <id>. The 2026-06-02 probe returned 404 for gemini-3.5-flash/-pro on gemini CLI 0.44.1. Re-verification on 2026-08-04 (gemini CLI 0.52.0) was blocked: consumer access ended 2026-06-18 and probes return API_KEY_INVALID, so these ids are unverified rather than confirmed. Unknown/unavailable model ids degrade gracefully to the GA fallback at runtime."
+  lastVerified: "2026-08",
+  source: "Google Gemini API v1beta models.list, probed 2026-08-05",
+  note: "Preview model IDs (…-preview) track Google's preview channel and may change; override with --model <id>. As of the 2026-08-05 probe all ids below resolve. gemini-3.5-pro is still absent from the listing, but gemini-3.5-flash and gemini-3.6-flash are now GA — see the alias note below. Unknown/unavailable model ids degrade gracefully to the GA fallback at runtime."
 };
+
+// Open question, deliberately not changed here: `flash` and `pro` resolve to
+// preview ids while GA equivalents now exist (gemini-3.6-flash, gemini-3.5-flash
+// per the 2026-08-05 listing). Repointing them would cut the drift risk this
+// file warns about, but it changes which model every unqualified run uses, so it
+// belongs in its own release with its own decision.
 
 // Ordered alias entries. `preview: true` marks IDs that can change.
 export const MODEL_ALIAS_ENTRIES = [
@@ -42,11 +47,13 @@ export const MODEL_ALIASES = new Map(MODEL_ALIAS_ENTRIES.map((entry) => [entry.a
 //
 // AGY has its own model surface and takes exact ids from `agy models`; the two
 // namespaces do not overlap, which is why normalizeAgyRequestedModel rejects
-// Gemini aliases outright. Verified live on AGY 1.1.10, 2026-08-04 — `agy models`
-// returned gemini-3.6-flash-{high,medium,low}, gemini-3.5-flash-{high,medium,low},
-// gemini-3.1-pro-{high,low}, claude-sonnet-4-6, claude-opus-4-6-thinking and
-// gpt-oss-120b-medium, none of which is a valid id here. AGY 1.1.10+ also accepts
-// native --effort low|medium|high; see supportsAgyModelSelection in engine.mjs.
+// Gemini aliases outright. Re-confirmed on AGY 1.1.10, 2026-08-05 — `agy models`
+// returns gemini-3.6-flash-{high,medium,low} (now GA),
+// gemini-3.5-flash-{high,medium,low}, gemini-3.1-pro-{high,low},
+// claude-sonnet-4-6, claude-opus-4-6-thinking and gpt-oss-120b-medium. None of
+// those is a valid id here: AGY encodes the effort tier into the id, while this
+// map keeps model and effort separate. AGY 1.1.10+ also accepts native
+// --effort low|medium|high; see supportsAgyModelSelection in engine.mjs.
 export const EFFORT_MODEL_MAP = new Map([
   ["none", "gemini-2.5-flash-lite"],
   ["minimal", "gemini-2.5-flash-lite"],
