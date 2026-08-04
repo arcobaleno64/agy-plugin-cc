@@ -1,5 +1,7 @@
 # gemini-plugin-cc × codex-plugin-cc 鏡像度與可用性稽核報告
 
+> **最新重評：[`PARITY_AUDIT_v0.11.1.md`](PARITY_AUDIT_v0.11.1.md)**（2026-08-04，對照 upstream v1.0.6）。本檔以 v0.6.0 稽核快照為主體並保留作為基準，另含第〇節的 v0.6.1 修復彙整（該表後續亦補入 v0.10.x 的更正註記）。
+>
 > 對象：`arcobaleno64/gemini-plugin-cc` v0.6.0（下稱 **port**）
 > 基準：`openai/codex-plugin-cc` v1.0.4（下稱 **upstream**）
 > 日期：2026-06-02 ｜ 方法：靜態原始碼回讀 + 既有測試 + 實跑採樣（Gemini/AGY 引擎，Windows）
