@@ -25,11 +25,11 @@ This document formalizes the threat model and risk mitigations for `gemini-plugi
 
 | Threat | Existing Mitigation | Implementation |
 |---|---|---|
-| Command Injection (CWE-78) | Forced `shell: false` on Git operations | `lib/git.mjs`, `lib/transfer-context.mjs` |
-| Argument Injection | Strict regex validation of flags (`--model`) | `lib/engine.mjs` |
-| Credential Leakage | Automated secret file redaction (`.env*`, `.pem`, `.npmrc`) | `lib/transfer-context.mjs` |
-| Argv Overflow | Transport prompts exclusively via Stdin / JSON payload | `lib/gemini.mjs`, `scripts/transfer.mjs` |
-| File Mutation Risks | Gate background file modifications behind explicit `--write` | `scripts/lib/job-control.mjs` |
+| Command Injection (CWE-78) | Forced `shell: false` on Git operations | `plugins/gemini/scripts/lib/git.mjs`, `plugins/gemini/scripts/lib/transfer-context.mjs` |
+| Argument Injection | Strict regex validation of flags (`--model`) | `plugins/gemini/scripts/lib/engine.mjs` |
+| Credential Leakage | Automated secret file redaction (`.env*`, `.pem`, `.npmrc`) | `plugins/gemini/scripts/lib/transfer-context.mjs` |
+| Prompt Transport / Argv Risk | Gemini and AGY 1.1.2+ use stdin; older, prerelease, or unparseable AGY versions use a validated positional fallback with NUL and 24,000-character preflight limits | `plugins/gemini/scripts/lib/gemini.mjs`, `plugins/gemini/scripts/lib/engine.mjs` |
+| File Mutation Risks | Gate background file modifications behind explicit `--write` | `plugins/gemini/scripts/lib/job-control.mjs` |
 
 ## 6. Residual Risks & Codex Security Verification Scope
 - **Malicious Repository Content Boundary**: Audit edge cases where malformed git diffs or file paths might evade regex filters.

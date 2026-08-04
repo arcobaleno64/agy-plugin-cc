@@ -9,13 +9,13 @@
 
 ## Security Model & Trust Boundaries
 
-`gemini-plugin-cc` acts as a local CLI bridge between Anthropic's Claude Code environment and the local Gemini/AGY binaries.
+`gemini-plugin-cc` acts as a local CLI bridge between Anthropic's Claude Code environment and local Gemini/AGY binaries.
 
 ### In-Scope Components
-- Stdin transport and prompt escaping logic (`lib/gemini.mjs`, `scripts/transfer.mjs`).
+- Stdin transport and prompt escaping logic (`plugins/gemini/scripts/lib/gemini.mjs`, `plugins/gemini/scripts/transfer.mjs`).
 - Argument validation and flag parsing (preventing flag injection into CLI subprocesses).
-- Process boundary security (forcing `shell: false` on Git operations).
-- Secret file redaction filters (`isSecretFile()` in `lib/transfer-context.mjs`).
+- Process boundary security (forcing `shell: false` on Git operations in `plugins/gemini/scripts/lib/git.mjs`).
+- Secret file redaction filters (`isSecretFile()` in `plugins/gemini/scripts/lib/transfer-context.mjs`).
 - Background job state directory isolation (`.omc/`).
 
 ### Out-of-Scope Components
@@ -29,7 +29,6 @@ If you discover a potential security vulnerability within `gemini-plugin-cc`, pl
 
 Instead, report it responsibly via:
 - **Private Security Disclosure**: Submit via [GitHub Security Advisories](https://github.com/arcobaleno64/gemini-plugin-cc/security/advisories/new)
-- **Maintainer Contact**: Email the primary maintainer directly.
 
 ### Response Expectations
 - **Initial Response**: Within 48 hours.
