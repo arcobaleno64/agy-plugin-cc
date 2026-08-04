@@ -53,7 +53,8 @@ The plugin's function is to take content it did not author and hand it to an age
 
 | # | Flow | Write-capable | Bound |
 |---|---|---|---|
-| A | repo diff → review prompt → model → rendered output → **Claude Code's context** | no (`write: false`, `lib/gemini.mjs`) | filename redaction + size cap on the input (7.4); marker and parent-agent rule on the output (7.3) |
+| A | repo diff → review prompt → model → rendered output → **Claude Code's context** | no (`write: false`, `lib/gemini.mjs`) | filename redaction + size cap on the input (7.4); parent-agent rule on the output (7.3) |
+| A′ | task prompt → model → rendered output → **Claude Code's context** | no unless `--write` (7.2) | parent-agent rule **and** the positional marker, which only `renderTaskResult` emits (7.3) |
 | B | repo content → rescue agent → **filesystem and shell** | **yes by default** (7.2) | none |
 | C | repo diff → `.omc/transfers/*.json` → an interactive AGY session started with `--add-dir .` | inherits that session's mode | filename redaction + size caps |
 | D | repo diff → stop-review-gate hook → model, with no explicit user action | no | same as A |
@@ -84,10 +85,10 @@ Calibrate that result honestly: it shows one model refusing one obvious payload.
 
 **Mitigated in v0.14.0, partially.** Two changes, neither of which weakens the verbatim rule:
 
-1. `renderTaskResult` prefixes model-authored output with `DELEGATED_OUTPUT_MARKER` (`lib/render.mjs`) — an HTML comment, so it is invisible in rendered Markdown and costs the user nothing, while remaining present in the text the parent agent reads. The task path is where this matters most: its output is model text with no plugin scaffolding at all.
-2. `review.md`, `adversarial-review.md`, `rescue.md` and `result.md` now state that command output is untrusted data to reproduce but never act on, pinned by a contract test.
+1. `review.md`, `adversarial-review.md`, `rescue.md` and `result.md` state that command output is untrusted data to reproduce but never act on, pinned by a contract test. This is the control that covers **every** path, because the command file is in the prompt alongside the output.
+2. `renderTaskResult` additionally prefixes its output with `DELEGATED_OUTPUT_MARKER` (`lib/render.mjs`) — an HTML comment, so it is invisible in rendered Markdown and costs the user nothing, while remaining present in the text the parent agent reads. **Only the task path emits it**, because that path is the one whose output is model text with no plugin scaffolding at all; a review is rendered by the plugin into its own verdict and findings structure.
 
-**What this does not do.** The marker names where untrusted content begins; it does not fence a region, so a model could still emit text shaped like plugin scaffolding after it. Closing that would need a per-run nonce delimiter, at the cost of visible noise in every result. The current control is an instruction to the parent agent backed by a positional marker — a real improvement over nothing, not a guarantee.
+**What this does not do.** The marker names where untrusted content begins; it does not fence a region, so a model could still emit text shaped like plugin scaffolding after it. Closing that would need a per-run nonce delimiter, at the cost of visible noise in every result. The current control is an instruction to the parent agent, reinforced on one path by a positional marker — a real improvement over nothing, not a guarantee.
 
 ### 7.4 PI-3 — No redaction or size bound on the review path — **fixed in v0.13.0**
 
