@@ -59,11 +59,11 @@
 
 **認證**：兩個引擎各自認證。Gemini 引擎請執行一次 `gemini`；AGY 引擎請互動式執行一次 `agy`。AGY 1.1.10+ 亦支援 Application Default Credentials (ADC) 與 Gemini Enterprise / Workforce Identity Federation (WIF)。Headless setup probe 無法可靠驗證 AGY 認證，因此 `/gemini:setup --engine agy` 會將其標為 unknown，直到真實 AGY 命令成功。
 
-> **Gemini 引擎現在需要 Standard／Enterprise 帳戶或 API 金鑰。** Google 已於 2026-06-18 終止消費級 Gemini CLI 存取。個人帳戶下 gemini CLI 0.52.0 仍可安裝、`--version` 也正常，但所有請求都回 `API key not valid`（`API_KEY_INVALID`）——2026-08-04 實測。AGY 引擎不受影響，實務上就是預設引擎；若 `auto` 選到未認證的 gemini binary，請改用 `--engine agy` 或設定 `GEMINI_ENGINE=agy`。
+> **Gemini 引擎現在需要 Standard／Enterprise 帳戶或 API 金鑰。** Google 已於 2026-06-18 終止消費級 Gemini CLI 存取。個人帳戶下 gemini CLI 0.53.1 仍可安裝、`--version` 也正常，但所有請求都回 `API key not valid`（`API_KEY_INVALID`）——2026-08-04 實測。AGY 引擎不受影響，實務上就是預設引擎；若 `auto` 選到未認證的 gemini binary，請改用 `--engine agy` 或設定 `GEMINI_ENGINE=agy`。
 
 > **重要提示（貼近現實）：**
 > - **2026-06-18 consumer transition**：Google 宣布免費／個人版、Google AI Pro、Google AI Ultra 的 Gemini CLI requests 於此日期後停止服務；Standard/Enterprise access 維持。詳見 Google 的 [Gemini CLI to Antigravity CLI announcement](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/)。
-> - **模型可用性會隨 CLI 版本漂移。** 2026-06-02 以 gemini CLI 0.44.1 實測時，`gemini-3.5-*` 回 `404 ModelNotFound`；新版 CLI 可能不同。若所請求 id 不可用，外掛會優雅降級至 GA 模型。詳見 [模型別名](#模型別名) 與 [docs/MODEL_COMPARISON.md](docs/MODEL_COMPARISON.md)。
+> - **模型可用性會隨 CLI 版本漂移。** 2026-08-05 實測 Gemini API 模型清單，`gemini-3.5-flash` 與 `gemini-3.6-flash` 已為 GA，`gemini-3.5-pro` 仍不存在——2026-06-02 實測時兩個 3.5 id 都回 `404 ModelNotFound`。若所請求 id 不可用，外掛會優雅降級至 GA 模型。詳見 [模型別名](#模型別名) 與 [docs/MODEL_COMPARISON.md](docs/MODEL_COMPARISON.md)。
 
 ---
 
@@ -246,8 +246,8 @@
 
 - 別名與努力等級集中於單一來源——`plugins/gemini/scripts/lib/model-map.mjs`——且 `npm test` 會以其驗證上表，二者不致漂移。
 - **努力對映**（於提供 `--effort` 但未給 `--model` 時套用）：`none`/`minimal` → `gemini-2.5-flash-lite`；`low`/`medium` → `gemini-3-flash-preview`；`high`/`xhigh` → `gemini-3.1-pro-preview`。
-- **CLI probe snapshot。** 上表反映 2026-06-02 以 gemini CLI 0.44.1 進行的 model-map 實測；新版 Gemini CLI 可能提供不同 model ID。若某別名無法解析，以 `--model <精確 ID>` 覆蓋——任何非已知別名之值將原樣透傳給 CLI。
-- **Gemini 3.5 可用性會漂移。** 2026-06-02 以 gemini CLI 0.44.1 實測時，`gemini-3.5-flash` 與 `gemini-3.5-pro` 回 `404 ModelNotFound`；新版 CLI 可能不同。未知或不可用 model ID 會優雅降級至 GA fallback。
+- **CLI probe snapshot。** 上表最後於 2026-08-05 對 Gemini API 模型清單複驗，所用的六個 id 全數有效。Google 可能隨時下架 preview id。若某別名無法解析，以 `--model <精確 ID>` 覆蓋——任何非已知別名之值將原樣透傳給 CLI。
+- **Gemini 3.5 可用性已變動。** 2026-06-02 實測時 `gemini-3.5-flash` 與 `gemini-3.5-pro` 皆回 `404 ModelNotFound`；至 2026-08-05，`gemini-3.5-flash` 已為 GA，`gemini-3.5-pro` 仍不存在。未知或不可用 model ID 會優雅降級至 GA fallback。
 - **模型優雅降級。** 若所請求之 model id 在你的 gemini CLI 上找不到（preview/已退役 id，或 CLI 版本落差），外掛會**以 GA fallback `gemini-2.5-flash` 重試一次**並印出明確提示——讓過時 id 優雅降級，而非硬性失敗。
 - **AGY model selection 尚未由本外掛管理。** 部分 AGY 版本提供自己的 `--model` 介面，但 `--engine agy` 目前走 AGY 的 configured/default model；本外掛不會把 `--model` 或 `--effort` 翻譯成 AGY 參數。若要由外掛管理 model selection，請用 `--engine gemini`。
 
