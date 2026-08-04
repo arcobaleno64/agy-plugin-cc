@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.10.0 — 2026-08-04 — Session transfer command & AGY 1.1.10 updates
 
-## 0.9.1 — 2026-07-22 — CI test isolation
+### Added
+- **`/gemini:transfer` session handoff command.** Introduced `/gemini:transfer` to export workspace context (git status, diff, instructions) into a structured JSON snapshot and generate single-quoted POSIX Bash and Windows PowerShell launch commands for AGY or Gemini CLI. Includes secret redaction (`.env*`, `.npmrc`, `.p12`, `.key`, `id_rsa`), git conflict locking, per-file diff truncation, and automated `.omc/transfers/` LRU pruning (keeps latest 20 snapshots).
+- **AGY 1.1.10 release alignment.** Documented Application Default Credentials (ADC) & Gemini Enterprise / WIF authentication options and the read-only `.git` sandbox rule in README documentation.
 
 ### Fixed
 - **The MCP rescue parity test no longer depends on a locally installed Gemini CLI.** It now injects the runtime's existing engine-detection seam for both dispatch paths, so CI verifies byte-identical job prompts independently of developer-machine binaries.

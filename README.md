@@ -152,6 +152,10 @@ Delegates a task to Gemini. Reads from stdin if no prompt is given.
 | `--model <alias\|id>` | Model override. Gemini resolves its aliases; AGY 1.1.5+ requires an exact model ID from `agy models`. AGY model selection cannot be combined with `--effort` or a dual-engine (`--engines gemini,agy`) review. |
 | `--effort <low\|medium\|high\|xhigh>` | Gemini maps effort to a model; AGY 1.1.5+ forwards `low`, `medium`, or `high` as native reasoning effort when no AGY model is selected. |
 
+### `/gemini:transfer [--engine <gemini|agy|auto>] [instructions...]`
+
+Exports current workspace context (git diff, status, instructions) and generates ready-to-run CLI commands (`agy`/`gemini`) to hand off work to an interactive terminal session. Includes automated secret redaction (`.env*`, credentials) and git conflict safeguards.
+
 ### `/gemini:review`
 
 Runs a standard, pragmatic review over the current working tree or branch diff — real bugs, missing error handling, and incomplete code paths. Not steerable and takes no focus text; use `/gemini:adversarial-review` to challenge a specific decision.

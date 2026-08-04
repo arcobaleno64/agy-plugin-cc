@@ -150,6 +150,10 @@
 | `--model <別名\|ID>` | 指定模型。Gemini 解析其別名；AGY 1.1.5+ 要求使用 `agy models` 列出的精確 model ID。AGY 的模型選擇不可與 `--effort` 或雙引擎（`--engines gemini,agy`）審查合併。 |
 | `--effort <low\|medium\|high\|xhigh>` | Gemini 將 effort 映射為模型；AGY 1.1.5+ 在未指定 AGY model 時，原生傳遞 `low`、`medium` 或 `high` 推理強度。 |
 
+### `/gemini:transfer [--engine <gemini|agy|auto>] [instructions...]`
+
+匯出當前工作區情境（git diff、status、接續指令），並產生可直接複製執行的 CLI 接手命令（`agy`/`gemini`），移交給獨立終端機進行互動開發。包含自動化機密遮蔽（`.env*`、憑證）與 Git 衝突安全鎖定。
+
 ### `/gemini:review`
 
 對當前工作樹或分支 diff 執行標準、務實之審查——真實 bug、缺漏之錯誤處理、未竟之程式路徑。不可導向、不接受焦點文字；如需挑戰特定決策請用 `/gemini:adversarial-review`。
