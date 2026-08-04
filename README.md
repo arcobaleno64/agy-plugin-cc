@@ -58,7 +58,7 @@ Compared with AGY-only, multi-host plugins, this project keeps the Gemini CLI pa
 
 **Install AGY** (required for `--engine agy`): `curl -fsSL https://antigravity.google/cli/install.sh | bash`
 
-**Authentication**: Each engine authenticates independently. Run `gemini` once for the Gemini engine, or run `agy` once interactively for the AGY engine. AGY authentication cannot be verified reliably from a headless setup probe, so `/gemini:setup --engine agy` reports it as unknown until a real AGY command succeeds. No API key is required.
+**Authentication**: Each engine authenticates independently. Run `gemini` once for the Gemini engine, or run `agy` once interactively for the AGY engine. AGY 1.1.10+ also supports Application Default Credentials (ADC) and Gemini Enterprise / Workforce Identity Federation (WIF). AGY OAuth authentication cannot be verified reliably from a headless setup probe, so `/gemini:setup --engine agy` reports it as unknown until a real AGY command succeeds. No API key is required.
 
 > **Heads-up (reality check):**
 > - **2026-06-18 consumer transition**: Google announced that free/personal, Google AI Pro, and Google AI Ultra Gemini CLI requests stop being served after this date; Standard/Enterprise access remains. See Google's [Gemini CLI to Antigravity CLI announcement](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/).
@@ -264,6 +264,7 @@ Override via `--engine` flag or the `GEMINI_ENGINE` environment variable.
 - **Git process boundary**: Repository-derived refs are always passed to Git as literal argv with `shell:false`, including on Windows; Git helpers never inherit the `.cmd` wrapper fallback. This aligns with the upstream Codex plugin's [v1.0.6 Git shell-expansion removal](https://github.com/openai/codex-plugin-cc/releases/tag/v1.0.6).
 - **DEP0190 warning is benign**: On Windows you may see `(node:NNN) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.` This is **safe to ignore here** — the deprecation is about *prompt content* placed in argv under `shell: true`, but this plugin never does that for the gemini engine: the prompt travels on stdin, and only controlled flags reach argv (each validated, e.g. model ids must match `^[A-Za-z0-9][A-Za-z0-9._-]*$`). The warning is Node flagging the general pattern, not an actual injection vector in this code path.
 - **AGY transport fallback**: Only a stable parsed version of 1.1.2 or newer enables stdin. Unknown and prerelease version strings fail closed to the existing positional path, preserving compatibility rather than assuming an upstream capability.
+- **AGY 1.1.10+ `.git` sandbox rule**: AGY 1.1.10 implements read-only `.git` sandbox rules during sandboxed execution, protecting git repository metadata and commit history against accidental modification during review and subagent tasks.
 - **Credential handling**: OAuth credentials in `~/.gemini/oauth_creds.json` are read only to check token expiry via `getGeminiLoginStatus()`; they are never logged, copied elsewhere, or transmitted by this plugin.
 - **`.gitignore`**: The `.omc/` state directory (job logs, session state) is excluded from version control.
 

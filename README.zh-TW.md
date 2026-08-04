@@ -56,7 +56,7 @@
 
 **安裝 AGY**（使用 `--engine agy` 時必須安裝）：`curl -fsSL https://antigravity.google/cli/install.sh | bash`
 
-**認證**：兩個引擎各自認證。Gemini 引擎請執行一次 `gemini`；AGY 引擎請互動式執行一次 `agy`。Headless setup probe 無法可靠驗證 AGY 認證，因此 `/gemini:setup --engine agy` 會將其標為 unknown，直到真實 AGY 命令成功。不需要 API 金鑰。
+**認證**：兩個引擎各自認證。Gemini 引擎請執行一次 `gemini`；AGY 引擎請互動式執行一次 `agy`。AGY 1.1.10+ 亦支援 Application Default Credentials (ADC) 與 Gemini Enterprise / Workforce Identity Federation (WIF)。Headless setup probe 無法可靠驗證 AGY 認證，因此 `/gemini:setup --engine agy` 會將其標為 unknown，直到真實 AGY 命令成功。不需要 API 金鑰。
 
 > **重要提示（貼近現實）：**
 > - **2026-06-18 consumer transition**：Google 宣布免費／個人版、Google AI Pro、Google AI Ultra 的 Gemini CLI requests 於此日期後停止服務；Standard/Enterprise access 維持。詳見 Google 的 [Gemini CLI to Antigravity CLI announcement](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/)。
@@ -262,6 +262,7 @@
 - **Git process 邊界**：repository-derived ref 一律以 literal argv 與 `shell:false` 傳給 Git（Windows 亦同）；Git helper 不繼承 `.cmd` wrapper fallback。此處與上游 Codex 外掛 [v1.0.6 移除 Git shell expansion](https://github.com/openai/codex-plugin-cc/releases/tag/v1.0.6) 的 hardening 方向一致。
 - **DEP0190 警告屬無害**：於 Windows 上可能見到 `(node:NNN) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.`。此處**可安心忽略**——該 deprecation 針對的是在 `shell: true` 下把*提示內容*放入 argv，但本外掛的 gemini 引擎從不如此：提示走 stdin，僅受控旗標進入 argv（且各自驗證，如 model id 須符合 `^[A-Za-z0-9][A-Za-z0-9._-]*$`）。此警告是 Node 對該通用模式的提醒，並非本程式路徑中的實際注入點。
 - **AGY transport 回退**：只有可穩定解析為 1.1.2 以上的版本才啟用 stdin；未知版與 prerelease 字串一律 fail closed 至既有 positional 路徑，不假設上游能力。
+- **AGY 1.1.10+ `.git` 沙箱規則**：AGY 1.1.10 在沙箱模式下實作 `.git` 目錄唯讀防護規則，保護版本庫 metadata 與 commit 歷史在審查及子代理人任務期間不被意外修改。
 - **憑證處理**：`~/.gemini/oauth_creds.json` 之 OAuth 憑證僅用於 `getGeminiLoginStatus()` 檢查 token 是否過期；本外掛從不記錄、複製或傳輸之。
 - **`.gitignore`**：`.omc/` 狀態目錄（工作日誌、會話狀態）已排除於版本控制之外。
 
