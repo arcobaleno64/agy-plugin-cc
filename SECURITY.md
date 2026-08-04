@@ -4,8 +4,8 @@
 
 | Version | Supported |
 |---|---|
-| 0.10.x | :white_check_mark: |
-| < 0.10.0 | :x: |
+| 0.12.x | :white_check_mark: |
+| < 0.12.0 | :x: |
 
 ## Security Model & Trust Boundaries
 
@@ -17,6 +17,7 @@
 - Process boundary security (forcing `shell: false` on Git operations in `plugins/gemini/scripts/lib/git.mjs`).
 - Secret file redaction filters (`isSecretFile()` in `plugins/gemini/scripts/lib/transfer-context.mjs`).
 - Background job state directory isolation (`.omc/`).
+- **Prompt injection and delegated agency** — the plugin hands repository content it did not author to an agent that can be write-capable. Modelled in [`docs/THREAT-MODEL.md` §7](docs/THREAT-MODEL.md), mapped against the OWASP Top 10 for LLM Applications. Read that section before reporting: the highest-rated item (`/gemini:rescue` defaulting to a write-capable run with no path sandbox) is **known and documented**, not an undisclosed flaw.
 
 ### Out-of-Scope Components
 - Third-party CLI binary vulnerabilities within Google's `gemini` or `agy` executables.
