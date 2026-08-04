@@ -167,3 +167,27 @@ test("formatUntrackedFile inlines a small text file", () => {
   assert.match(out, /### note\.txt/);
   assert.match(out, /hello content/);
 });
+
+// docs/THREAT-MODEL.md 7.4 — the review path used to send secret files whole
+// while /gemini:transfer redacted them from the same diff.
+test("collectReviewContext withholds secret file content from a working-tree review", () => {
+  const cwd = makeTempDir();
+  initGitRepo(cwd);
+  fs.writeFileSync(path.join(cwd, ".env"), "API_KEY=old\n");
+  fs.writeFileSync(path.join(cwd, "app.js"), "const a = 1;\n");
+  run("git", ["add", "-A"], { cwd });
+  run("git", ["commit", "-m", "init"], { cwd });
+
+  fs.writeFileSync(path.join(cwd, ".env"), "API_KEY=TRACKED_LEAK\n");
+  fs.writeFileSync(path.join(cwd, "app.js"), "const a = 2;\n");
+  fs.writeFileSync(path.join(cwd, ".env.production"), "TOKEN=UNTRACKED_LEAK\n");
+
+  const context = collectReviewContext(cwd, { mode: "working-tree" });
+  const payload = JSON.stringify(context);
+
+  assert.ok(!payload.includes("TRACKED_LEAK"), "a modified secret file must not reach the model");
+  assert.ok(!payload.includes("UNTRACKED_LEAK"), "an untracked secret file must not be sent whole");
+  assert.ok(payload.includes("const a = 2"), "ordinary code must still be reviewed");
+  // The filename survives so the review can still flag that the file changed.
+  assert.ok(payload.includes(".env"));
+});

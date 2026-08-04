@@ -3,22 +3,11 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import crypto from 'node:crypto';
 
-const SECRET_PATTERNS = [
-  /^\.env(\..+)?$/i,
-  /\.pem$/i,
-  /\.key$/i,
-  /\.(p12|pfx|crt|keystore)$/i,
-  /^\.npmrc$/i,
-  /credentials\.json$/i,
-  /_creds\.json$/i,
-  /secrets?\.(json|yml|yaml|env)$/i,
-  /id_rsa/i,
-];
-
-export function isSecretFile(filepath) {
-  const filename = path.basename(filepath);
-  return SECRET_PATTERNS.some((pattern) => pattern.test(filename));
-}
+// Moved to lib/secrets.mjs so the review path shares one definition. Imported
+// (not just re-exported) because this module calls it too, and re-exported
+// because this is the existing public name.
+import { isSecretFile } from "./secrets.mjs";
+export { isSecretFile };
 
 export function checkGitConflict(cwd = process.cwd()) {
   const gitDir = path.join(cwd, '.git');
