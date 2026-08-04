@@ -59,7 +59,9 @@ Compared with AGY-only, multi-host plugins, this project keeps the Gemini CLI pa
 
 **Install AGY** (required for `--engine agy`): `curl -fsSL https://antigravity.google/cli/install.sh | bash`
 
-**Authentication**: Each engine authenticates independently. Run `gemini` once for the Gemini engine, or run `agy` once interactively for the AGY engine. AGY 1.1.10+ also supports Application Default Credentials (ADC) and Gemini Enterprise / Workforce Identity Federation (WIF). AGY OAuth authentication cannot be verified reliably from a headless setup probe, so `/gemini:setup --engine agy` reports it as unknown until a real AGY command succeeds. No API key is required.
+**Authentication**: Each engine authenticates independently. Run `gemini` once for the Gemini engine, or run `agy` once interactively for the AGY engine. AGY 1.1.10+ also supports Application Default Credentials (ADC) and Gemini Enterprise / Workforce Identity Federation (WIF). AGY OAuth authentication cannot be verified reliably from a headless setup probe, so `/gemini:setup --engine agy` reports it as unknown until a real AGY command succeeds.
+
+> **The Gemini engine now needs a Standard/Enterprise account or an API key.** Google ended consumer Gemini CLI access on 2026-06-18. On a personal account, gemini CLI 0.52.0 still installs and answers `--version`, but every request returns `API key not valid` (`API_KEY_INVALID`) — verified 2026-08-04. The AGY engine is unaffected and is the practical default; pass `--engine agy`, or set `GEMINI_ENGINE=agy`, if `auto` selects an unauthenticated gemini binary.
 
 > **Heads-up (reality check):**
 > - **2026-06-18 consumer transition**: Google announced that free/personal, Google AI Pro, and Google AI Ultra Gemini CLI requests stop being served after this date; Standard/Enterprise access remains. See Google's [Gemini CLI to Antigravity CLI announcement](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/).

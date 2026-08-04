@@ -8,10 +8,18 @@
 //
 //   lastVerified: model IDs last checked against gemini CLI 0.44.1 on 2026-06-02.
 //   source:       gemini CLI model listing / Google Gemini API model names.
+//
+// Re-verification attempted 2026-08-04 against gemini CLI 0.52.0 and could not
+// advance the date. Google ended consumer Gemini CLI access on 2026-06-18, so a
+// personal account now answers every model probe with `API key not valid`
+// (API_KEY_INVALID) rather than a model-validity signal. Re-verifying these ids
+// requires a Standard/Enterprise account or an API key; until then the 2026-06
+// date stands and preview ids should be assumed drifted.
 export const MODEL_MAP_METADATA = {
   lastVerified: "2026-06",
   source: "gemini CLI 0.44.1 live model probe on 2026-06-02 / Google Gemini API model names",
-  note: "Preview model IDs (…-preview) may change; override with --model <id>. The 2026-06-02 probe returned 404 for gemini-3.5-flash/-pro on gemini CLI 0.44.1, but newer CLI releases may differ. Unknown/unavailable model ids degrade gracefully to the GA fallback at runtime."
+  reverifyBlockedSince: "2026-06-18",
+  note: "Preview model IDs (…-preview) may change; override with --model <id>. The 2026-06-02 probe returned 404 for gemini-3.5-flash/-pro on gemini CLI 0.44.1. Re-verification on 2026-08-04 (gemini CLI 0.52.0) was blocked: consumer access ended 2026-06-18 and probes return API_KEY_INVALID, so these ids are unverified rather than confirmed. Unknown/unavailable model ids degrade gracefully to the GA fallback at runtime."
 };
 
 // Ordered alias entries. `preview: true` marks IDs that can change.
@@ -30,11 +38,15 @@ export const MODEL_ALIAS_ENTRIES = [
 export const MODEL_ALIASES = new Map(MODEL_ALIAS_ENTRIES.map((entry) => [entry.alias, entry.model]));
 
 // Reasoning-effort tier -> resolved model, used when --effort is supplied
-// without an explicit --model. These apply to the GEMINI engine only. The AGY
-// CLI has its own model surface in newer versions, but this plugin does not
-// translate Gemini aliases / effort tiers to AGY arguments yet, so plugin-managed
-// model selection remains a gemini-engine feature.
-// See lib/gemini.mjs (the agy branch nulls model and emits a note).
+// without an explicit --model. These apply to the GEMINI engine only.
+//
+// AGY has its own model surface and takes exact ids from `agy models`; the two
+// namespaces do not overlap, which is why normalizeAgyRequestedModel rejects
+// Gemini aliases outright. Verified live on AGY 1.1.10, 2026-08-04 — `agy models`
+// returned gemini-3.6-flash-{high,medium,low}, gemini-3.5-flash-{high,medium,low},
+// gemini-3.1-pro-{high,low}, claude-sonnet-4-6, claude-opus-4-6-thinking and
+// gpt-oss-120b-medium, none of which is a valid id here. AGY 1.1.10+ also accepts
+// native --effort low|medium|high; see supportsAgyModelSelection in engine.mjs.
 export const EFFORT_MODEL_MAP = new Map([
   ["none", "gemini-2.5-flash-lite"],
   ["minimal", "gemini-2.5-flash-lite"],
