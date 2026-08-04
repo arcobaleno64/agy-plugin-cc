@@ -117,7 +117,9 @@ export function installCapturingAgyExecutable(binDir, { version = "1.1.2" } = {}
     "fs.mkdirSync(logDir, { recursive: true });",
     'const row = { step_index: 1, source: "MODEL", type: "PLANNER_RESPONSE", status: "DONE", content: process.env.FAKE_AGY_RESPONSE || "FAKE_AGY_TRANSCRIPT_OK", thinking: "fixture reasoning" };',
     'fs.writeFileSync(path.join(logDir, "transcript_full.jsonl"), JSON.stringify(row) + "\\n", "utf8");',
-    'process.stdout.write(process.env.FAKE_AGY_STDOUT || "FAKE_AGY_STDOUT_DECOY\\n");'
+    'process.stdout.write(process.env.FAKE_AGY_STDOUT || "FAKE_AGY_STDOUT_DECOY\\n");',
+    // AGY >=1.1.8 exits non-zero alongside its ERROR envelope; let callers say so.
+    "process.exit(Number(process.env.FAKE_AGY_EXIT || 0));"
   ].join("\n");
 
   writeExecutable(path.join(binDir, "agy"), source);
@@ -127,10 +129,17 @@ export function installCapturingAgyExecutable(binDir, { version = "1.1.2" } = {}
 // fails the real print invocation without creating a transcript. Windows AGY
 // must resolve to an absolute .exe, so a copied Node executable provides a
 // safe, deterministic non-zero unknown-option response there.
+//
+// Windows caveat: that copied node.exe answers --version with Node's own
+// version, which parses as a very new AGY, so the run takes the >=1.1.8
+// structured path rather than transcript recovery. The stand-in cannot report a
+// chosen version — an absolute .exe is required, and a .cmd shim is refused on
+// purpose (CVE-2024-27980). Match on the generic rejection rather than a
+// specific flag name, since which flag node rejects first tracks argv order.
 export function installFailingAgyExecutable(binDir) {
   if (process.platform === "win32") {
     fs.copyFileSync(process.execPath, path.join(binDir, "agy.exe"));
-    return /bad option: --print-timeout/i;
+    return /bad option:/i;
   }
 
   writeExecutable(

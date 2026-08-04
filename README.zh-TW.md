@@ -19,7 +19,7 @@
 - 對目前 diff 或 branch 執行 pragmatic code review 與 adversarial review。
 - 用 background task delegation 處理較長時間的 companion-agent 工作。
 - Gemini model aliases、graceful model fallback 與 transient review retry。
-- 具版本分流的 AGY prompt transport，並以 transcript recovery 為權威來源。
+- 具版本分流的 AGY prompt transport：1.1.8 以上採原生 JSON envelope，更舊版本才用 transcript recovery。
 - Gemini 與 AGY 1.1.2 以上採用較安全的 stdin prompt delivery。
 
 | 需求 | 適合使用本外掛的情境 |
@@ -262,7 +262,9 @@
 
 > **AGY 1.1.10+ 選擇機制：** 使用 `agy models` 所列的 `--model <精確 ID>`，或使用 `--effort <low|medium|high>` 二者之一。Gemini alias 不是有效的 AGY model ID，model 與 effort 不可合併；雙引擎審查不可使用 `--model`，因為 model ID 具引擎特性。Gemini 仍維持其獨立的 alias 與 effort-to-model 映射。
 
-> **AGY transcript recovery 仍是權威來源。** 舊版 positional `agy --print` 沒有 piped response（上游 [google-gemini/gemini-cli#27466](https://github.com/google-gemini/gemini-cli/issues/27466)，已於 macOS AGY 1.0.7 重現）。外掛 v0.7.1 對 AGY 1.1.2 以上改走自動 print 的 stdin 路徑，但完成回應、DONE 狀態、thinking 與 conversation ID 仍取自磁碟 transcript。已知 brain root 為 `~/.gemini/antigravity-cli/brain`（已於 Windows、macOS AGY 1.0.7 與 Linux AGY 1.1.2 驗證）及 `~/.antigravity-cli/brain`（較舊的 Linux 1.0.2，回報）。1.1.2 stdin 路徑已於 Windows 與 Ubuntu 24.04 WSL2 live 驗證，並有 POSIX integration fixture；真實 macOS 1.1.2 驗證刻意列為 optional，尚未執行。若找不到 brain root，請先執行一次 `agy` 或開 issue 回報實際位置。
+> **AGY 1.1.8+ 改用原生 JSON envelope；更舊版本才退回 transcript recovery。** AGY 1.1.8 加入 `--output-format json`，於 stdout 回傳回應、conversation ID 與終止狀態。自外掛 v0.11.0 起，AGY 1.1.8 以上以該 envelope 為權威來源，完全不讀磁碟 transcript，也不需要 brain root。一項後果：AGY 結果不再顯示推理摘要區塊——envelope 只有 `thinking_tokens` 計數、沒有 thinking 文字（`stream-json` 亦然）。Gemini 引擎不受影響，其推理摘要取自 stderr。
+>
+> AGY 1.1.8 以下仍以 transcript 為權威：舊版 positional `agy --print` 沒有 piped response（上游 [google-gemini/gemini-cli#27466](https://github.com/google-gemini/gemini-cli/issues/27466)，已於 macOS AGY 1.0.7 重現），且 1.1.8 之前沒有任何版本會在 stdout 給出 conversation ID。這些版本的完成回應、DONE 狀態、thinking 與 conversation ID 仍取自磁碟。已知 brain root 為 `~/.gemini/antigravity-cli/brain`（已於 Windows、macOS AGY 1.0.7 與 Linux AGY 1.1.2 驗證）及 `~/.antigravity-cli/brain`（較舊的 Linux 1.0.2，回報）。若在這類版本上找不到 brain root，請先執行一次 `agy`、升級至 1.1.8 以上，或開 issue 回報實際位置。
 
 ---
 

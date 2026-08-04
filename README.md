@@ -21,7 +21,7 @@ Compared with AGY-only, multi-host plugins, this project keeps the Gemini CLI pa
 - Pragmatic and adversarial code review over the current diff or branch.
 - Background task delegation for longer-running companion-agent work.
 - Gemini model aliases, graceful model fallback, and transient review retry.
-- Version-gated AGY prompt transport with transcript-authoritative recovery.
+- Version-gated AGY prompt transport: native JSON envelope on 1.1.8+, transcript recovery below it.
 - Safer stdin prompt delivery on Gemini and AGY 1.1.2 or newer.
 
 | Need | Use this plugin when... |
@@ -264,7 +264,9 @@ Override via `--engine` flag or the `GEMINI_ENGINE` environment variable.
 
 > **AGY 1.1.10+ selection:** use either `--model <exact-id>` from `agy models` or `--effort <low|medium|high>`. Gemini aliases are not valid AGY model IDs, model and effort cannot be combined, and `--model` is unavailable for a dual-engine review because IDs are engine-specific. Gemini retains its separate alias and effort-to-model mapping.
 
-> **AGY transcript recovery remains authoritative.** Positional `agy --print` produced no piped response on older releases (upstream [google-gemini/gemini-cli#27466](https://github.com/google-gemini/gemini-cli/issues/27466); reproduced on macOS AGY 1.0.7). Plugin v0.7.1 uses the auto-print stdin path on AGY 1.1.2 or newer, but still takes the completed response, DONE status, thinking, and conversation ID from the on-disk transcript. Known brain roots are `~/.gemini/antigravity-cli/brain` (verified on Windows, macOS AGY 1.0.7, and Linux AGY 1.1.2) and `~/.antigravity-cli/brain` (older Linux 1.0.2, reported). The 1.1.2 stdin path is live-verified on Windows and Ubuntu 24.04 WSL2, and covered by a POSIX integration fixture; real macOS 1.1.2 verification is intentionally optional and has not been run. If no brain root is found, run `agy` once or open an issue with its actual location.
+> **AGY 1.1.8+ uses the native JSON envelope; older AGY falls back to transcript recovery.** AGY 1.1.8 added `--output-format json`, which returns the response, conversation ID, and a terminal status on stdout. From plugin v0.11.0 that envelope is the source of truth on AGY 1.1.8 or newer, and the on-disk transcript is not read at all — no brain root is required. One consequence: the reasoning-summary section is not shown for AGY results, because the envelope reports only a `thinking_tokens` count and carries no thinking text (`stream-json` does not either). The Gemini engine is unaffected; it takes its reasoning summary from stderr.
+>
+> Below AGY 1.1.8 the transcript remains authoritative, because positional `agy --print` produced no piped response on older releases (upstream [google-gemini/gemini-cli#27466](https://github.com/google-gemini/gemini-cli/issues/27466); reproduced on macOS AGY 1.0.7) and no version before 1.1.8 surfaces the conversation ID on stdout. Those runs still take the completed response, DONE status, thinking, and conversation ID from disk. Known brain roots are `~/.gemini/antigravity-cli/brain` (verified on Windows, macOS AGY 1.0.7, and Linux AGY 1.1.2) and `~/.antigravity-cli/brain` (older Linux 1.0.2, reported). If no brain root is found on such a version, run `agy` once, upgrade to 1.1.8 or newer, or open an issue with its actual location.
 
 ---
 
