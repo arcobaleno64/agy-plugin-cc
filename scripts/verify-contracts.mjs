@@ -17,7 +17,8 @@ const REQUIRED_COMMANDS = [
   "rescue",
   "status",
   "result",
-  "cancel"
+  "cancel",
+  "transfer"
 ];
 
 function parseArgs(argv) {

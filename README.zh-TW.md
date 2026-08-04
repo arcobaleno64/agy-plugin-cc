@@ -34,7 +34,7 @@
 ## 功能特色
 
 - **`/gemini:rescue`** — 將調查、除錯或實作任務委派給所選的 Gemini CLI 或 AGY 引擎。可在前景執行或以背景工作方式分離執行。
-- **`/gemini:transfer`** — 匯出當前工作區情境（git status、diff、接續指令）為結構化 JSON 快照，並產生 POSIX Bash 與 Windows PowerShell 之 AGY / Gemini CLI 接手命令。
+- **`/gemini:transfer`** — 匯出當前工作區情境（git status、diff、接續指令）為結構化 JSON 快照，並輸出單引號跳脫之 AGY / Gemini CLI 接手命令（各平台皆印 POSIX Bash 形式，Windows 另加印 PowerShell 形式）。
 - **`/gemini:review`** — 對當前 diff 或分支執行標準（務實）程式碼審查，找出真實 bug、缺漏之錯誤處理與未竟之程式路徑。加 `--deep` 可進行 agentic 探查、看 diff 以外的 repo 脈絡。
 - **`/gemini:adversarial-review`** — 對當前 diff 或分支執行對抗性程式碼審查，挑戰設計決策，回傳含嚴重程度評級的結構化發現。
 - **`/gemini:setup`** — 檢查 Gemini CLI / AGY 的可用性與 OAuth 狀態。
@@ -151,9 +151,15 @@
 | `--model <別名\|ID>` | 指定模型。Gemini 解析其別名；AGY 1.1.5+ 要求使用 `agy models` 列出的精確 model ID。AGY 的模型選擇不可與 `--effort` 或雙引擎（`--engines gemini,agy`）審查合併。 |
 | `--effort <low\|medium\|high\|xhigh>` | Gemini 將 effort 映射為模型；AGY 1.1.5+ 在未指定 AGY model 時，原生傳遞 `low`、`medium` 或 `high` 推理強度。 |
 
-### `/gemini:transfer [--engine <gemini|agy|auto>] [instructions...]`
+### `/gemini:transfer [instructions...]`
 
-匯出當前工作區情境（git diff、status、接續指令），並產生可直接複製執行的 CLI 接手命令（`agy`/`gemini`），移交給獨立終端機進行互動開發。包含自動化機密遮蔽（`.env*`、憑證）與 Git 衝突安全鎖定。
+匯出當前工作區情境（git diff、status、接續指令），並產生可直接複製執行的 CLI 接手命令（`agy`/`gemini`），移交給獨立終端機進行互動開發。包含自動化機密遮蔽（`.env*`、憑證）與 Git 衝突安全鎖定。產生的命令僅供使用者自行貼上執行，plugin 不會代為執行。
+
+| 旗標 | 說明 |
+|---|---|
+| `--engine <gemini\|agy\|auto>` | 決定輸出哪一種接手命令；`auto`（預設）兩種都印 |
+| `--model <ID>` | 帶入產生命令的模型指定。AGY 要求使用 `agy models` 列出的精確 ID |
+| `--effort <low\|medium\|high\|xhigh>` | 帶入產生之 AGY 命令的推理強度，不可與 `--model` 併用 |
 
 ### `/gemini:review`
 

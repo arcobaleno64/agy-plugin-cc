@@ -4,6 +4,44 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { isSecretFile, checkGitConflict, pruneOldTransfers, buildTransferSnapshot } from '../plugins/gemini/scripts/lib/transfer-context.mjs';
+import { parseTransferArgs } from '../plugins/gemini/scripts/transfer.mjs';
+
+// The slash command passes the entire user tail as one quoted "$ARGUMENTS"
+// token, so flags only work if that single string is re-split first.
+test('parseTransferArgs splits a single quoted $ARGUMENTS string into flags and instructions', () => {
+  const parsed = parseTransferArgs(['--engine agy --effort high finish the login refactor']);
+
+  assert.equal(parsed.engine, 'agy');
+  assert.equal(parsed.effort, 'high');
+  assert.equal(parsed.model, null);
+  assert.equal(parsed.instructions, 'finish the login refactor');
+});
+
+test('parseTransferArgs handles a pre-split argv and --flag=value form', () => {
+  const parsed = parseTransferArgs(['--engine=gemini', '--model', 'gemini-3.5-pro', 'continue', 'here']);
+
+  assert.equal(parsed.engine, 'gemini');
+  assert.equal(parsed.model, 'gemini-3.5-pro');
+  assert.equal(parsed.instructions, 'continue here');
+});
+
+test('parseTransferArgs defaults to auto and keeps --json out of the instructions', () => {
+  const parsed = parseTransferArgs(['--json hand off the current state']);
+
+  assert.equal(parsed.engine, 'auto');
+  assert.equal(parsed.instructions, 'hand off the current state');
+});
+
+test('parseTransferArgs rejects an unknown engine', () => {
+  assert.throws(() => parseTransferArgs(['--engine copilot']), /Unknown engine "copilot"/);
+});
+
+test('parseTransferArgs treats an empty $ARGUMENTS as no arguments', () => {
+  const parsed = parseTransferArgs(['']);
+
+  assert.equal(parsed.engine, 'auto');
+  assert.equal(parsed.instructions, '');
+});
 
 test('isSecretFile correctly identifies sensitive credential file patterns', () => {
   assert.equal(isSecretFile('.env'), true);

@@ -73,6 +73,17 @@ export function parseArgs(argv, config = {}) {
   return { options, positionals };
 }
 
+export function normalizeArgv(argv) {
+  if (argv.length === 1) {
+    const [raw] = argv;
+    if (!raw || !raw.trim()) {
+      return [];
+    }
+    return splitRawArgumentString(raw);
+  }
+  return argv;
+}
+
 export function splitRawArgumentString(raw) {
   const tokens = [];
   let current = "";

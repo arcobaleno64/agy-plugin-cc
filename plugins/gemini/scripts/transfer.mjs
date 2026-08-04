@@ -1,36 +1,53 @@
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parseArgs, normalizeArgv } from './lib/args.mjs';
 import { buildTransferSnapshot } from './lib/transfer-context.mjs';
 
-function parseArgs(args) {
-  let engine = 'auto';
-  let model = null;
-  let effort = null;
-  let isJson = false;
-  const positional = [];
+const SELF_PATH = fileURLToPath(import.meta.url);
+const VALID_ENGINES = new Set(['auto', 'gemini', 'agy']);
 
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === '--engine' && i + 1 < args.length) {
-      engine = args[++i];
-    } else if (arg === '--model' && i + 1 < args.length) {
-      model = args[++i];
-    } else if (arg === '--effort' && i + 1 < args.length) {
-      effort = args[++i];
-    } else if (arg === '--json') {
-      isJson = true;
-    } else {
-      positional.push(arg);
-    }
+// The slash command hands the whole user tail over as one quoted "$ARGUMENTS"
+// token, so it has to go through the same normalize + parse path as every
+// gemini-companion subcommand.
+export function parseTransferArgs(argv) {
+  const { options, positionals } = parseArgs(normalizeArgv(argv), {
+    valueOptions: ['engine', 'model', 'effort'],
+    booleanOptions: ['json'],
+  });
+
+  const engine = String(options.engine ?? 'auto').trim().toLowerCase();
+  if (!VALID_ENGINES.has(engine)) {
+    throw new Error(`Unknown engine "${options.engine}". Valid values: auto, gemini, agy.`);
   }
 
-  return { engine, model, effort, isJson, instructions: positional.join(' ') };
+  // `json` stays in booleanOptions so it never leaks into the instructions text.
+  return {
+    engine,
+    model: options.model ?? null,
+    effort: options.effort ?? null,
+    instructions: positionals.join(' '),
+  };
+}
+
+// Resolved before parsing so an argument error is still reported in the shape
+// the caller asked for.
+// Mirrors how parseArgs resolves a boolean option, including `--json=false`
+// and last-occurrence-wins, so both paths read the same flag the same way.
+function wantsJson(tokens) {
+  let value = false;
+  for (const token of tokens) {
+    if (token === '--json') value = true;
+    else if (token.startsWith('--json=')) value = token.slice('--json='.length) !== 'false';
+  }
+  return value;
 }
 
 export function main() {
-  const args = process.argv.slice(2);
-  const { engine, model, effort, isJson, instructions } = parseArgs(args);
+  const tokens = normalizeArgv(process.argv.slice(2));
+  const isJson = wantsJson(tokens);
 
   try {
+    const { engine, model, effort, instructions } = parseTransferArgs(tokens);
     const { snapshot, snapshotPath } = buildTransferSnapshot({ engine, model, effort, instructions });
 
     if (isJson) {
@@ -91,6 +108,6 @@ export function main() {
   }
 }
 
-if (process.argv[1] && process.argv[1].endsWith('transfer.mjs')) {
+if (process.argv[1] === SELF_PATH) {
   main();
 }

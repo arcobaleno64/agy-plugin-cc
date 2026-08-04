@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.10.1 — 2026-08-04 — `/gemini:transfer` command registration fix
+
+### Fixed
+- **`/gemini:transfer` is now actually registered as a slash command.** It shipped in 0.10.0 as `commands/transfer.json`, a format Claude Code's command loader ignores, so the command never appeared in `/plugin` and `scripts/transfer.mjs` had no entry point. Replaced it with `commands/transfer.md` following the same contract as every other command in this plugin: `disable-model-invocation: true`, `allowed-tools: Bash(node:*)`, a quoted `"$ARGUMENTS"` invocation, and explicit output-handling rules.
+- **`transfer` now parses the quoted `"$ARGUMENTS"` string the slash command passes it.** It previously assumed a pre-split `argv`, which would have left `--engine`, `--model`, and `--effort` unparsed inside the instructions text. It now shares `normalizeArgv` + `parseArgs` with `gemini-companion.mjs` and rejects an unknown `--engine` value with the same message as the engine detector.
+
+### Changed
+- `normalizeArgv` moved from `gemini-companion.mjs` into `scripts/lib/args.mjs` so both entry points use one definition.
+- `transfer.mjs` now guards its self-invocation with the `process.argv[1] === SELF_PATH` comparison already used by `gemini-companion.mjs` and `gemini-mcp.mjs`, instead of a loose filename suffix match.
+- Command-contract tests now fail on any non-Markdown file in `commands/`, which is the defect class that hid this bug, and `transfer` is a required command in `verify-contracts`.
+
 ## 0.10.0 — 2026-08-04 — Session transfer command & AGY 1.1.10 updates
 
 ### Added
