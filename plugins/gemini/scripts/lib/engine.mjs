@@ -84,22 +84,34 @@ export function normalizeAgyEffort(effort) {
   return normalized;
 }
 
-export function supportsAgyStdinPrompt(version) {
+// A prerelease build (1.1.10-rc.1) never counts as the released feature.
+function agyVersionAtLeast(version, minMinor, minPatch) {
   const match = String(version ?? "").trim().match(/(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?/);
   if (!match || match[4]) return false;
   const major = Number(match[1]);
   const minor = Number(match[2]);
   const patch = Number(match[3]);
-  return major > 1 || (major === 1 && (minor > 1 || (minor === 1 && patch >= 2)));
+  return major > 1 || (major === 1 && (minor > minMinor || (minor === minMinor && patch >= minPatch)));
 }
 
+export function supportsAgyStdinPrompt(version) {
+  return agyVersionAtLeast(version, 1, 2);
+}
+
+// AGY 1.1.5 accepts --model and --effort, but through 1.1.9 it applied them
+// after model configuration had already been initialized, so a headless `-p`
+// run silently fell back to the persisted or default model. AGY 1.1.10 fixed
+// that; anything older is treated as not supporting selection at all rather
+// than reporting a selection the run will not honor.
 export function supportsAgyModelSelection(version) {
-  const match = String(version ?? "").trim().match(/(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?/);
-  if (!match || match[4]) return false;
-  const major = Number(match[1]);
-  const minor = Number(match[2]);
-  const patch = Number(match[3]);
-  return major > 1 || (major === 1 && (minor > 1 || (minor === 1 && patch >= 5)));
+  return agyVersionAtLeast(version, 1, 10);
+}
+
+// AGY 1.1.9 expands slash commands and skills in print mode. Plugin prompts
+// carry raw user text at position 0, so a task beginning with "/" would be
+// executed as an AGY command instead of read as instructions.
+export function supportsAgySlashCommandOptOut(version) {
+  return agyVersionAtLeast(version, 1, 9);
 }
 
 export function detectEngine(requestedEngine = null, options = {}) {
@@ -177,7 +189,7 @@ function assertAgyPromptSafe(prompt) {
 }
 
 export function buildCliArgs(engine, options = {}) {
-  const { prompt = "", model, effort, write = false, resumeLast = false, outputJson = false, approvalModePlan = false, timeoutMs, useStdin = false } = options;
+  const { prompt = "", model, effort, write = false, resumeLast = false, outputJson = false, approvalModePlan = false, timeoutMs, useStdin = false, agyVersion = null } = options;
 
   if (engine === "agy") {
     // AGY >=1.1.2 auto-enters print mode when a prompt is piped on stdin; adding
@@ -188,13 +200,18 @@ export function buildCliArgs(engine, options = {}) {
       assertAgyPromptSafe(prompt);
       args.push("--print", prompt);
     }
+    // The prompt is raw user text at position 0, so opt out of AGY's print-mode
+    // slash-command and skill expansion wherever the flag exists (1.1.9+).
+    if (supportsAgySlashCommandOptOut(agyVersion)) {
+      args.push("--disable-slash-commands");
+    }
     const agyModel = normalizeAgyRequestedModel(model);
     const agyEffort = normalizeAgyEffort(effort);
-    // AGY 1.1.5 accepts each flag, but the locally reported model IDs reject
-    // the combination. Refuse it before spawn rather than replacing a useful
-    // AGY diagnostic with a transcript-missing failure.
+    // AGY accepts each flag, but the locally reported model IDs reject the
+    // combination (machine-verified on 1.1.5). Refuse it before spawn rather
+    // than replacing a useful AGY diagnostic with a transcript-missing failure.
     if (agyModel && agyEffort) {
-      throw new Error("AGY 1.1.5 cannot combine --model with --effort for its available model IDs. Select a model or an effort level, not both.");
+      throw new Error("AGY cannot combine --model with --effort for its available model IDs. Select a model or an effort level, not both.");
     }
     if (agyModel) args.push("--model", agyModel);
     if (agyEffort) args.push("--effort", agyEffort);

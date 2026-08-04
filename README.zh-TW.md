@@ -148,8 +148,8 @@
 | `--resume-last` | 繼續最近一次的 Gemini 工作階段 |
 | `--fresh` | 強制開啟全新 Gemini 工作階段，忽略可接續的執行緒 |
 | `--engine <gemini\|agy\|auto>` | 覆蓋引擎選擇 |
-| `--model <別名\|ID>` | 指定模型。Gemini 解析其別名；AGY 1.1.5+ 要求使用 `agy models` 列出的精確 model ID。AGY 的模型選擇不可與 `--effort` 或雙引擎（`--engines gemini,agy`）審查合併。 |
-| `--effort <low\|medium\|high\|xhigh>` | Gemini 將 effort 映射為模型；AGY 1.1.5+ 在未指定 AGY model 時，原生傳遞 `low`、`medium` 或 `high` 推理強度。 |
+| `--model <別名\|ID>` | 指定模型。Gemini 解析其別名；AGY 1.1.10+ 要求使用 `agy models` 列出的精確 model ID。AGY 的模型選擇不可與 `--effort` 或雙引擎（`--engines gemini,agy`）審查合併。 |
+| `--effort <low\|medium\|high\|xhigh>` | Gemini 將 effort 映射為模型；AGY 1.1.10+ 在未指定 AGY model 時，原生傳遞 `low`、`medium` 或 `high` 推理強度。 |
 
 ### `/gemini:transfer [instructions...]`
 
@@ -173,7 +173,7 @@
 | `--scope <auto\|working-tree\|branch>` | Diff 範圍 |
 | `--engine <gemini\|agy\|auto>` | 覆蓋引擎 |
 | `--model <別名\|ID>` | 指定模型 |
-| `--effort <level>` | Gemini 的模型選擇；未指定 AGY model 時的 AGY 1.1.5+ 原生推理強度（`low`、`medium`、`high`） |
+| `--effort <level>` | Gemini 的模型選擇；未指定 AGY model 時的 AGY 1.1.10+ 原生推理強度（`low`、`medium`、`high`） |
 
 ### `/gemini:adversarial-review [焦點]`
 
@@ -186,7 +186,7 @@
 | `--scope <auto\|working-tree\|branch>` | Diff 範圍 |
 | `--engine <gemini\|agy\|auto>` | 覆蓋引擎 |
 | `--model <別名\|ID>` | 指定模型 |
-| `--effort <level>` | Gemini 的模型選擇；未指定 AGY model 時的 AGY 1.1.5+ 原生推理強度（`low`、`medium`、`high`） |
+| `--effort <level>` | Gemini 的模型選擇；未指定 AGY model 時的 AGY 1.1.10+ 原生推理強度（`low`、`medium`、`high`） |
 
 ### `/gemini:setup`
 
@@ -260,7 +260,7 @@
 
 可透過 `--engine` 旗標或 `GEMINI_ENGINE` 環境變數覆蓋。
 
-> **AGY 1.1.5+ 選擇機制：** 使用 `agy models` 所列的 `--model <精確 ID>`，或使用 `--effort <low|medium|high>` 二者之一。Gemini alias 不是有效的 AGY model ID，model 與 effort 不可合併；雙引擎審查不可使用 `--model`，因為 model ID 具引擎特性。Gemini 仍維持其獨立的 alias 與 effort-to-model 映射。
+> **AGY 1.1.10+ 選擇機制：** 使用 `agy models` 所列的 `--model <精確 ID>`，或使用 `--effort <low|medium|high>` 二者之一。Gemini alias 不是有效的 AGY model ID，model 與 effort 不可合併；雙引擎審查不可使用 `--model`，因為 model ID 具引擎特性。Gemini 仍維持其獨立的 alias 與 effort-to-model 映射。
 
 > **AGY transcript recovery 仍是權威來源。** 舊版 positional `agy --print` 沒有 piped response（上游 [google-gemini/gemini-cli#27466](https://github.com/google-gemini/gemini-cli/issues/27466)，已於 macOS AGY 1.0.7 重現）。外掛 v0.7.1 對 AGY 1.1.2 以上改走自動 print 的 stdin 路徑，但完成回應、DONE 狀態、thinking 與 conversation ID 仍取自磁碟 transcript。已知 brain root 為 `~/.gemini/antigravity-cli/brain`（已於 Windows、macOS AGY 1.0.7 與 Linux AGY 1.1.2 驗證）及 `~/.antigravity-cli/brain`（較舊的 Linux 1.0.2，回報）。1.1.2 stdin 路徑已於 Windows 與 Ubuntu 24.04 WSL2 live 驗證，並有 POSIX integration fixture；真實 macOS 1.1.2 驗證刻意列為 optional，尚未執行。若找不到 brain root，請先執行一次 `agy` 或開 issue 回報實際位置。
 

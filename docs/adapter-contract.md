@@ -14,5 +14,5 @@ cancel(pid) → { signaled, confirmedTerminated?, reason? }
 
 - `binaryAvailable`／`resolveBinaryPath`（`process.mjs`）對應契約 `detect()` 的組成件。
 - `terminateProcessTree` 對應契約 `cancel(pid)`：語意等價為樹殺與結果物件。
-- Prompt 遞送：gemini 與 AGY >=1.1.2 使用 stdin；舊版、prerelease 或無法解析版本的 AGY 才使用 argv。AGY 的 positional fallback 會預先拒絕 NUL 與超過 24,000 字元的 prompt，並以絕對 `.exe` 路徑及 `shell:false` 啟動；model id 字元集白名單適用於兩個引擎。AGY >=1.1.5 的 `--model` 使用 `agy models` 列出的引擎別 ID，`--effort` 值域為 `low|medium|high`，兩者不可合併。
+- Prompt 遞送：gemini 與 AGY >=1.1.2 使用 stdin；舊版、prerelease 或無法解析版本的 AGY 才使用 argv。AGY 的 positional fallback 會預先拒絕 NUL 與超過 24,000 字元的 prompt，並以絕對 `.exe` 路徑及 `shell:false` 啟動；model id 字元集白名單適用於兩個引擎。AGY >=1.1.10 的 `--model` 使用 `agy models` 列出的引擎別 ID，`--effort` 值域為 `low|medium|high`，兩者不可合併；1.1.5–1.1.9 雖接受這兩個旗標，卻在 headless 執行時忽略它們而靜默落回預設模型，故一律拒絕並要求升級。AGY >=1.1.9 一律加上 `--disable-slash-commands`，避免 print mode 把位於 prompt 開頭的使用者文字當成 slash command 或 skill 展開。
 - 不改動 CC 既有函式命名（已發布 v0.6.6，Hyrum 面）；本檔為對照文件，宣告 CC 以語意等價符合契約。

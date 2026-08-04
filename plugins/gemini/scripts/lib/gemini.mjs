@@ -138,7 +138,7 @@ export async function runGeminiTurn(cwd, options = {}) {
   if (engineInfo.engine === "agy") {
     if (model || effort) {
       if (!supportsAgyModelSelection(engineInfo.version)) {
-        throw new Error(`AGY ${engineInfo.version} does not support --model/--effort. Upgrade to AGY 1.1.5 or newer, or select --engine gemini.`);
+        throw new Error(`AGY ${engineInfo.version} does not support --model/--effort. AGY 1.1.5 through 1.1.9 accept the flags but ignore them in headless runs. Upgrade to AGY 1.1.10 or newer, or select --engine gemini.`);
       }
       model = normalizeAgyRequestedModel(model);
       effort = normalizeAgyEffort(effort);
@@ -179,6 +179,7 @@ export async function runGeminiTurn(cwd, options = {}) {
     write,
     resumeLast,
     timeoutMs: engineInfo.engine === "agy" ? agyPrintTimeoutMs : spawnTimeoutMs,
+    agyVersion: engineInfo.version,
     useStdin,
     outputJson: useJson,
   });
@@ -318,7 +319,7 @@ export async function runGeminiReview(cwd, options = {}) {
   if (engineInfo.engine === "agy") {
     if (requestedModel || requestedEffort) {
       if (!supportsAgyModelSelection(engineInfo.version)) {
-        throw new Error(`AGY ${engineInfo.version} does not support --model/--effort. Upgrade to AGY 1.1.5 or newer, or select --engine gemini.`);
+        throw new Error(`AGY ${engineInfo.version} does not support --model/--effort. AGY 1.1.5 through 1.1.9 accept the flags but ignore them in headless runs. Upgrade to AGY 1.1.10 or newer, or select --engine gemini.`);
       }
       model = normalizeAgyRequestedModel(requestedModel);
       effort = normalizeAgyEffort(requestedEffort);
@@ -356,6 +357,7 @@ export async function runGeminiReview(cwd, options = {}) {
     // approvalModePlan requires TTY input and conflicts with stdin prompt delivery
     approvalModePlan: false,
     timeoutMs: engineInfo.engine === "agy" ? agyPrintTimeoutMs : spawnTimeoutMs,
+    agyVersion: engineInfo.version,
     useStdin,
   });
 

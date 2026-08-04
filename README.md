@@ -150,8 +150,8 @@ Delegates a task to Gemini. Reads from stdin if no prompt is given.
 | `--resume-last` | Continue the most recent Gemini session |
 | `--fresh` | Force a new Gemini session, ignoring any resumable thread |
 | `--engine <gemini\|agy\|auto>` | Override engine selection |
-| `--model <alias\|id>` | Model override. Gemini resolves its aliases; AGY 1.1.5+ requires an exact model ID from `agy models`. AGY model selection cannot be combined with `--effort` or a dual-engine (`--engines gemini,agy`) review. |
-| `--effort <low\|medium\|high\|xhigh>` | Gemini maps effort to a model; AGY 1.1.5+ forwards `low`, `medium`, or `high` as native reasoning effort when no AGY model is selected. |
+| `--model <alias\|id>` | Model override. Gemini resolves its aliases; AGY 1.1.10+ requires an exact model ID from `agy models`. AGY model selection cannot be combined with `--effort` or a dual-engine (`--engines gemini,agy`) review. |
+| `--effort <low\|medium\|high\|xhigh>` | Gemini maps effort to a model; AGY 1.1.10+ forwards `low`, `medium`, or `high` as native reasoning effort when no AGY model is selected. |
 
 ### `/gemini:transfer [instructions...]`
 
@@ -175,7 +175,7 @@ Runs a standard, pragmatic review over the current working tree or branch diff �
 | `--scope <auto\|working-tree\|branch>` | Diff scope |
 | `--engine <gemini\|agy\|auto>` | Override engine |
 | `--model <alias\|id>` | Model override |
-| `--effort <level>` | Model selection on Gemini; native reasoning effort on AGY 1.1.5+ (`low`, `medium`, `high`) when no AGY model is selected |
+| `--effort <level>` | Model selection on Gemini; native reasoning effort on AGY 1.1.10+ (`low`, `medium`, `high`) when no AGY model is selected |
 
 ### `/gemini:adversarial-review [focus]`
 
@@ -188,7 +188,7 @@ Runs an adversarial review over the current working tree or branch diff.
 | `--scope <auto\|working-tree\|branch>` | Diff scope |
 | `--engine <gemini\|agy\|auto>` | Override engine |
 | `--model <alias\|id>` | Model override |
-| `--effort <level>` | Model selection on Gemini; native reasoning effort on AGY 1.1.5+ (`low`, `medium`, `high`) when no AGY model is selected |
+| `--effort <level>` | Model selection on Gemini; native reasoning effort on AGY 1.1.10+ (`low`, `medium`, `high`) when no AGY model is selected |
 
 ### `/gemini:setup`
 
@@ -249,7 +249,7 @@ When enabled and the review returns `needs-attention`, Claude Code is blocked fr
 - **CLI probe snapshot.** The alias table reflects the model-map probe from 2026-06-02 against gemini CLI 0.44.1. Newer Gemini CLI releases may serve different model IDs. If an alias stops resolving, override it with `--model <exact-id>` — any value that is not a known alias is passed through to the CLI unchanged.
 - **Gemini 3.5 availability can drift.** The 2026-06-02 gemini CLI 0.44.1 probe returned `404 ModelNotFound` for `gemini-3.5-flash` and `gemini-3.5-pro`; newer CLI releases may differ. Unknown or unavailable model IDs degrade gracefully to the GA fallback.
 - **Graceful model fallback.** If a requested model id is not found on your gemini CLI (preview/retired id, or a CLI-version mismatch), the plugin retries the run **once on the GA fallback `gemini-2.5-flash`** and prints a clear note — so a stale id degrades gracefully instead of hard-failing.
-- **AGY 1.1.5+ model and reasoning selection.** Use either `--model <exact-id>` from `agy models` or native `--effort <low|medium|high>`; the options are mutually exclusive. AGY model IDs are not Gemini aliases, and `--model` is unavailable for a dual-engine review because model IDs are engine-specific.
+- **AGY 1.1.10+ model and reasoning selection.** Use either `--model <exact-id>` from `agy models` or native `--effort <low|medium|high>`; the options are mutually exclusive. AGY model IDs are not Gemini aliases, and `--model` is unavailable for a dual-engine review because model IDs are engine-specific.
 
 ---
 
@@ -262,7 +262,7 @@ In `auto` mode the plugin selects the first available engine in this order:
 
 Override via `--engine` flag or the `GEMINI_ENGINE` environment variable.
 
-> **AGY 1.1.5+ selection:** use either `--model <exact-id>` from `agy models` or `--effort <low|medium|high>`. Gemini aliases are not valid AGY model IDs, model and effort cannot be combined, and `--model` is unavailable for a dual-engine review because IDs are engine-specific. Gemini retains its separate alias and effort-to-model mapping.
+> **AGY 1.1.10+ selection:** use either `--model <exact-id>` from `agy models` or `--effort <low|medium|high>`. Gemini aliases are not valid AGY model IDs, model and effort cannot be combined, and `--model` is unavailable for a dual-engine review because IDs are engine-specific. Gemini retains its separate alias and effort-to-model mapping.
 
 > **AGY transcript recovery remains authoritative.** Positional `agy --print` produced no piped response on older releases (upstream [google-gemini/gemini-cli#27466](https://github.com/google-gemini/gemini-cli/issues/27466); reproduced on macOS AGY 1.0.7). Plugin v0.7.1 uses the auto-print stdin path on AGY 1.1.2 or newer, but still takes the completed response, DONE status, thinking, and conversation ID from the on-disk transcript. Known brain roots are `~/.gemini/antigravity-cli/brain` (verified on Windows, macOS AGY 1.0.7, and Linux AGY 1.1.2) and `~/.antigravity-cli/brain` (older Linux 1.0.2, reported). The 1.1.2 stdin path is live-verified on Windows and Ubuntu 24.04 WSL2, and covered by a POSIX integration fixture; real macOS 1.1.2 verification is intentionally optional and has not been run. If no brain root is found, run `agy` once or open an issue with its actual location.
 

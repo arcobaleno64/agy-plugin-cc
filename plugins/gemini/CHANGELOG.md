@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.10.2 — 2026-08-04 — AGY 1.1.9/1.1.10 behavior alignment
+
+### Fixed
+- **AGY `--model` / `--effort` are now gated at 1.1.10, not 1.1.5.** AGY's 1.1.10 release notes record that both flags were applied after model configuration had already been initialized, so headless `-p` runs through 1.1.9 silently fell back to the persisted or default model. The plugin previously advertised support from 1.1.5 and forwarded a selection those versions ignored. Requests on 1.1.5–1.1.9 are now refused with an upgrade message instead of reporting a selection the run will not honor.
+- **AGY invocations pass `--disable-slash-commands` on 1.1.9 and newer.** AGY 1.1.9 added slash-command and skill expansion to print mode. Task prompts are raw user text at position 0, so a request such as `/gemini:rescue /clear the cache logic` would have executed AGY's `/clear` instead of being read as instructions. The flag is omitted on older AGY, where it does not exist.
+
+### Changed
+- The three AGY version predicates share one `agyVersionAtLeast` comparison instead of repeating the parse; prerelease builds still fail closed.
+- Version-specific wording removed from two errors that are not version-specific: the `--model` + `--effort` combination refusal, and the same refusal in `transfer`.
+- `docs/adapter-contract.md` records both the 1.1.10 selection gate and the 1.1.9 slash opt-out.
+
 ## 0.10.1 — 2026-08-04 — `/gemini:transfer` command registration fix
 
 ### Fixed

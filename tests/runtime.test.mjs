@@ -920,7 +920,7 @@ test("dispatchAdversarialReview validates every engine before spawning a group w
   assert.throws(
     () => dispatchAdversarialReview({ cwd: repo, scope: "working-tree", engines: ["gemini", "agy"], effort: "xhigh" }, {
       spawnFn() { spawnCount += 1; return { pid: spawnCount, unref() {} }; },
-      detectEngineFn(engine) { return { engine, version: "1.1.5" }; }
+      detectEngineFn(engine) { return { engine, version: "1.1.10" }; }
     }),
     /AGY supports --effort values/
   );
@@ -935,9 +935,27 @@ test("background AGY task validates model and effort before spawning", () => {
   assert.throws(
     () => dispatchBackgroundTask({ cwd: repo, engine: "agy", model: "gemini-3.6-flash-low", effort: "high", prompt: "diagnose" }, {
       spawnFn() { spawned = true; return { pid: 1, unref() {} }; },
-      detectEngineFn() { return { engine: "agy", version: "1.1.5" }; }
+      detectEngineFn() { return { engine: "agy", version: "1.1.10" }; }
     }),
     /cannot combine --model with --effort/
+  );
+  assert.equal(spawned, false);
+  fs.rmSync(repo, { recursive: true, force: true });
+});
+
+// AGY 1.1.5 through 1.1.9 accept --model/--effort and then ignore them in
+// headless runs, silently falling back to the persisted or default model.
+// Refuse the request instead of reporting a selection the run will not honor.
+test("background AGY task refuses model selection on AGY older than 1.1.10", () => {
+  const { repo } = setupRepo("task");
+  let spawned = false;
+
+  assert.throws(
+    () => dispatchBackgroundTask({ cwd: repo, engine: "agy", effort: "high", prompt: "diagnose" }, {
+      spawnFn() { spawned = true; return { pid: 1, unref() {} }; },
+      detectEngineFn() { return { engine: "agy", version: "1.1.9" }; }
+    }),
+    /does not support --model\/--effort.*Upgrade to AGY 1\.1\.10 or newer/s
   );
   assert.equal(spawned, false);
   fs.rmSync(repo, { recursive: true, force: true });
