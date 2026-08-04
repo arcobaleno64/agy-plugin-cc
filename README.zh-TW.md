@@ -34,6 +34,7 @@
 ## 功能特色
 
 - **`/gemini:rescue`** — 將調查、除錯或實作任務委派給所選的 Gemini CLI 或 AGY 引擎。可在前景執行或以背景工作方式分離執行。
+- **`/gemini:transfer`** — 匯出當前工作區情境（git status、diff、接續指令）為結構化 JSON 快照，並產生 POSIX Bash 與 Windows PowerShell 之 AGY / Gemini CLI 接手命令。
 - **`/gemini:review`** — 對當前 diff 或分支執行標準（務實）程式碼審查，找出真實 bug、缺漏之錯誤處理與未竟之程式路徑。加 `--deep` 可進行 agentic 探查、看 diff 以外的 repo 脈絡。
 - **`/gemini:adversarial-review`** — 對當前 diff 或分支執行對抗性程式碼審查，挑戰設計決策，回傳含嚴重程度評級的結構化發現。
 - **`/gemini:setup`** — 檢查 Gemini CLI / AGY 的可用性與 OAuth 狀態。
@@ -305,6 +306,12 @@ Claude Code
 背景模式會產生一個分離的 `task-worker` 子程序並立即回傳工作 ID。狀態持久化於 `.omc/state/`，可透過 `/gemini:status` 查詢。
 
 ---
+            └─ renderTaskResult()   → Markdown 輸出至 Claude
+```
+
+背景模式會產生一個分離的 `task-worker` 子程序並立即回傳工作 ID。狀態持久化於 `.omc/state/`，可透過 `/gemini:status` 查詢。
+
+---
 
 ## 與 codex-plugin-cc 的對應
 
@@ -318,6 +325,7 @@ Claude Code
 | `/codex:review` | `/gemini:review` | **最佳等效** — prompt／CLI adapter 審查，非原生審查器 |
 | `/codex:adversarial-review` | `/gemini:adversarial-review` | **最佳等效** — 對同一 diff target 施以對抗性 prompt |
 | `/codex:rescue` | `/gemini:rescue` | **1:1 對等** — 相同的 forwarder／subagent 合約與旗標 |
+| `/codex:transfer` | `/gemini:transfer` | **1:1 對等** — 匯出會話快照並產生 AGY / Gemini CLI 移交接手啟動命令 |
 | `/codex:status` | `/gemini:status` | **1:1 對等** — 相同工作模型；`--all` 跨 Claude session |
 | `/codex:result` | `/gemini:result` | **Gemini 專屬差異** — 顯示 Gemini session id 與 `gemini --resume` |
 | `/codex:cancel` | `/gemini:cancel` | **1:1 對等** — 相同的 process-tree 終止（POSIX 與 Windows） |

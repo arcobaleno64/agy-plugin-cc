@@ -36,6 +36,7 @@ Compared with AGY-only, multi-host plugins, this project keeps the Gemini CLI pa
 ## Features
 
 - **`/gemini:rescue`** — Delegate investigation, debugging, or implementation tasks to the selected Gemini CLI or AGY engine. Runs in the foreground or detached in the background.
+- **`/gemini:transfer`** — Export current session context (git status, diff, instructions) into a structured JSON snapshot and generate single-quoted POSIX Bash and Windows PowerShell launch commands for AGY or Gemini CLI.
 - **`/gemini:review`** — Standard (pragmatic) code review over the current diff or branch. Finds real bugs, missing error handling, and incomplete code paths. Add `--deep` for an agentic pass that explores repo context beyond the diff.
 - **`/gemini:adversarial-review`** — Adversarial code review that challenges design decisions over the current diff or branch. Returns structured findings with severity ratings.
 - **`/gemini:setup`** — Check Gemini CLI / AGY availability and OAuth status.
@@ -320,6 +321,7 @@ This plugin is a high-fidelity port of [openai/codex-plugin-cc](https://github.c
 | `/codex:review` | `/gemini:review` | **best-effort equivalent** — prompt / CLI-adapter review, not a native reviewer |
 | `/codex:adversarial-review` | `/gemini:adversarial-review` | **best-effort equivalent** — adversarial prompt over the same diff target |
 | `/codex:rescue` | `/gemini:rescue` | **1:1 parity** — same forwarder/subagent contract and flags |
+| `/codex:transfer` | `/gemini:transfer` | **1:1 parity** — exports session snapshot and generates AGY / Gemini CLI handoff launch commands |
 | `/codex:status` | `/gemini:status` | **1:1 parity** — same job model; `--all` crosses Claude sessions |
 | `/codex:result` | `/gemini:result` | **Gemini-specific divergence** — surfaces the Gemini session id + `gemini --resume` |
 | `/codex:cancel` | `/gemini:cancel` | **1:1 parity** — same process-tree termination (POSIX + Windows) |
