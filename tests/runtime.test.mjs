@@ -38,6 +38,14 @@ import { classifyCliFailure } from "../plugins/gemini/scripts/lib/failures.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT = path.join(ROOT, "plugins", "gemini", "scripts", "gemini-companion.mjs");
+
+// installFailingAgyExecutable reports AGY 1.1.2 on POSIX, so the run takes the
+// pre-1.1.8 transcript path and fails with nothing to recover. On Windows the
+// stand-in is a copied node.exe whose --version looks like a very new AGY, so
+// the same run takes the >=1.1.8 structured path and fails on the garbage it
+// gets instead of an envelope. Both are correct; the fixture cannot express a
+// chosen version on Windows. See installFailingAgyExecutable.
+const EXPECTED_FAILING_AGY_CATEGORY = process.platform === "win32" ? "invalid-json" : "transcript-missing";
 const STOP_GATE_HOOK = path.join(ROOT, "plugins", "gemini", "scripts", "stop-review-gate-hook.mjs");
 
 function setupRepo(scenario = "task") {
@@ -711,6 +719,145 @@ test("AGY 1.1.2 task sends a long prompt only on stdin and keeps transcript auth
   assert.deepEqual(capture.args.slice(-2), ["--print-timeout", "2m"]);
 });
 
+// --- AGY >=1.1.8 structured output supersedes transcript recovery ---
+// The capturing fixture always writes a transcript, so a result carrying the
+// envelope's response and not the transcript marker proves the disk was not read.
+
+test("AGY 1.1.10 task takes the response and conversation id from the stdout envelope", { skip: process.platform === "win32" }, () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  const capturePath = path.join(binDir, "agy-capture.json");
+  installCapturingAgyExecutable(binDir, { version: "1.1.10" });
+  initGitRepo(repo);
+  commit(repo, "README.md", "hello\n");
+
+  const envelope = {
+    conversation_id: "11111111-2222-3333-4444-555555555555",
+    status: "SUCCESS",
+    response: "AGY_ENVELOPE_RESPONSE",
+    duration_seconds: 1.5,
+    num_turns: 1,
+    usage: { input_tokens: 10, output_tokens: 2, thinking_tokens: 1, cache_read_tokens: 0, total_tokens: 12 }
+  };
+
+  const result = run("node", [SCRIPT, "task", "--engine", "agy", "do something"], {
+    cwd: repo,
+    env: {
+      ...buildFailingAgyEnv(binDir),
+      FAKE_AGY_CAPTURE: capturePath,
+      FAKE_AGY_RESPONSE: "AGY_TRANSCRIPT_MUST_NOT_WIN",
+      FAKE_AGY_STDOUT: `${JSON.stringify(envelope)}\n`
+    }
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /AGY_ENVELOPE_RESPONSE/);
+  assert.doesNotMatch(result.stdout, /AGY_TRANSCRIPT_MUST_NOT_WIN/);
+
+  // The foreground command prints only the final message; the conversation id
+  // is persisted on the job and surfaced by /gemini:status.
+  const state = JSON.parse(fs.readFileSync(path.join(resolveStateDir(repo), "state.json"), "utf8"));
+  assert.equal(state.jobs[0].threadId, "11111111-2222-3333-4444-555555555555");
+
+  const capture = JSON.parse(fs.readFileSync(capturePath, "utf8"));
+  assert.ok(capture.args.includes("--output-format"), "1.1.10 must request the JSON envelope");
+  assert.equal(capture.args[capture.args.indexOf("--output-format") + 1], "json");
+});
+
+test("AGY 1.1.10 task classifies an ERROR envelope and surfaces its error text", { skip: process.platform === "win32" }, () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  const capturePath = path.join(binDir, "agy-capture.json");
+  installCapturingAgyExecutable(binDir, { version: "1.1.10" });
+  initGitRepo(repo);
+  commit(repo, "README.md", "hello\n");
+
+  const envelope = {
+    conversation_id: "",
+    status: "ERROR",
+    response: "",
+    error: "invalid model selection (--model \"nope\"): model nope is not recognized",
+    duration_seconds: 0,
+    num_turns: 0,
+    usage: { input_tokens: 0, output_tokens: 0, thinking_tokens: 0, cache_read_tokens: 0, total_tokens: 0 }
+  };
+
+  const result = run("node", [SCRIPT, "task", "--engine", "agy", "do something"], {
+    cwd: repo,
+    env: {
+      ...buildFailingAgyEnv(binDir),
+      FAKE_AGY_CAPTURE: capturePath,
+      FAKE_AGY_RESPONSE: "AGY_TRANSCRIPT_MUST_NOT_WIN",
+      FAKE_AGY_STDOUT: `${JSON.stringify(envelope)}\n`,
+      FAKE_AGY_EXIT: "1"
+    }
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(`${result.stdout}${result.stderr}`, /model nope is not recognized/);
+  assert.doesNotMatch(result.stdout, /AGY_TRANSCRIPT_MUST_NOT_WIN/);
+
+  const state = JSON.parse(fs.readFileSync(path.join(resolveStateDir(repo), "state.json"), "utf8"));
+  assert.equal(state.jobs[0].status, "failed");
+  // The envelope's `error` reaches the classifier, which recognizes the wording.
+  assert.equal(state.jobs[0].failure.category, "model-unavailable");
+});
+
+// Review finding on #30: conversation_id identifies the conversation, not the
+// envelope. An ERROR envelope without it must still classify on its `error`
+// rather than degrading to invalid-json.
+test("AGY 1.1.10 accepts an ERROR envelope that omits conversation_id", { skip: process.platform === "win32" }, () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installCapturingAgyExecutable(binDir, { version: "1.1.10" });
+  initGitRepo(repo);
+  commit(repo, "README.md", "hello\n");
+
+  const envelope = { status: "ERROR", error: "model bogus is not recognized as a known model" };
+
+  const result = run("node", [SCRIPT, "task", "--engine", "agy", "do something"], {
+    cwd: repo,
+    env: {
+      ...buildFailingAgyEnv(binDir),
+      FAKE_AGY_CAPTURE: path.join(binDir, "agy-capture.json"),
+      FAKE_AGY_RESPONSE: "AGY_TRANSCRIPT_MUST_NOT_WIN",
+      FAKE_AGY_STDOUT: `${JSON.stringify(envelope)}\n`,
+      FAKE_AGY_EXIT: "1"
+    }
+  });
+
+  assert.notEqual(result.status, 0);
+  const state = JSON.parse(fs.readFileSync(path.join(resolveStateDir(repo), "state.json"), "utf8"));
+  assert.equal(state.jobs[0].failure.category, "model-unavailable");
+  assert.equal(state.jobs[0].threadId ?? null, null);
+});
+
+test("AGY 1.1.7 keeps transcript recovery and never asks for the envelope", { skip: process.platform === "win32" }, () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  const capturePath = path.join(binDir, "agy-capture.json");
+  installCapturingAgyExecutable(binDir, { version: "1.1.7" });
+  initGitRepo(repo);
+  commit(repo, "README.md", "hello\n");
+
+  const result = run("node", [SCRIPT, "task", "--engine", "agy", "do something"], {
+    cwd: repo,
+    env: {
+      ...buildFailingAgyEnv(binDir),
+      FAKE_AGY_CAPTURE: capturePath,
+      FAKE_AGY_RESPONSE: "AGY117_TRANSCRIPT_OK",
+      FAKE_AGY_STDOUT: "AGY117_STDOUT_DECOY\n"
+    }
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /AGY117_TRANSCRIPT_OK/);
+  assert.doesNotMatch(result.stdout, /AGY117_STDOUT_DECOY/);
+
+  const capture = JSON.parse(fs.readFileSync(capturePath, "utf8"));
+  assert.ok(!capture.args.includes("--output-format"), "1.1.7 predates the JSON envelope");
+});
+
 test("AGY 1.1.1 task retains positional prompt compatibility", { skip: process.platform === "win32" }, () => {
   const repo = makeTempDir();
   const binDir = makeTempDir();
@@ -778,7 +925,7 @@ test("task preserves AGY stderr when no transcript response is recoverable", () 
 
   const state = JSON.parse(fs.readFileSync(path.join(resolveStateDir(repo), "state.json"), "utf8"));
   assert.equal(state.jobs[0].status, "failed");
-  assert.equal(state.jobs[0].failure.category, "transcript-missing");
+  assert.equal(state.jobs[0].failure.category, EXPECTED_FAILING_AGY_CATEGORY);
 });
 
 test("AGY failure classification prefers actionable stderr over transcript recovery failure", () => {
@@ -810,7 +957,7 @@ test("review preserves AGY stderr when no transcript response is recoverable", (
 
   const state = JSON.parse(fs.readFileSync(path.join(resolveStateDir(repo), "state.json"), "utf8"));
   assert.equal(state.jobs[0].status, "failed");
-  assert.equal(state.jobs[0].failure.category, "transcript-missing");
+  assert.equal(state.jobs[0].failure.category, EXPECTED_FAILING_AGY_CATEGORY);
 });
 
 test("dispatchAdversarialReview queues prompt-identical blind jobs with a shared groupId", () => {

@@ -114,6 +114,13 @@ export function supportsAgySlashCommandOptOut(version) {
   return agyVersionAtLeast(version, 1, 9);
 }
 
+// AGY 1.1.8 added --output-format json: a stdout envelope carrying the response,
+// the conversation id, and a terminal status. Before it, the on-disk transcript
+// was the only reliable source for all three.
+export function supportsAgyStructuredOutput(version) {
+  return agyVersionAtLeast(version, 1, 8);
+}
+
 export function detectEngine(requestedEngine = null, options = {}) {
   const envEngine = process.env[ENGINE_ENV];
   const target = requestedEngine ?? envEngine ?? "auto";
@@ -127,15 +134,16 @@ export function detectEngine(requestedEngine = null, options = {}) {
     const binary = resolveAgyExecutablePath(options);
     const status = binaryAvailable(binary, ["--version"]);
     if (!status.available) throw new Error("AGY engine requested but agy binary is not available.");
-    // AGY 1.1.2 can accept a piped prompt and return stdout, but transcript
-    // recovery remains authoritative for the response, DONE status, and
-    // conversation id. Fail loud when that required recovery source is absent.
-    if (!resolveAgyBrainRoot()) {
+    const version = status.detail ?? "unknown";
+    // Below 1.1.8 the on-disk transcript is the only source for the response,
+    // DONE status, and conversation id, so a missing brain dir must fail loud.
+    // From 1.1.8 the JSON envelope carries all three and the dir is optional.
+    if (!supportsAgyStructuredOutput(version) && !resolveAgyBrainRoot()) {
       throw new Error(
-        "AGY engine requested but no transcript brain dir was found. The plugin requires AGY's on-disk transcript for the completed response and conversation id, including on AGY 1.1.2's stdin prompt path. Run `agy` once interactively to initialize it, or use `--engine gemini`."
+        "AGY engine requested but no transcript brain dir was found. AGY below 1.1.8 has no structured stdout, so the plugin requires the on-disk transcript for the completed response and conversation id. Run `agy` once interactively to initialize it, upgrade to AGY 1.1.8 or newer, or use `--engine gemini`."
       );
     }
-    return { engine: "agy", binary, version: status.detail ?? "unknown" };
+    return { engine: "agy", binary, version };
   }
 
   if (normalized === "gemini") {
@@ -215,6 +223,9 @@ export function buildCliArgs(engine, options = {}) {
     }
     if (agyModel) args.push("--model", agyModel);
     if (agyEffort) args.push("--effort", agyEffort);
+    if (outputJson && supportsAgyStructuredOutput(agyVersion)) {
+      args.push("--output-format", "json");
+    }
     if (write) args.push("--dangerously-skip-permissions");
     if (resumeLast) {
       args.push("--continue");

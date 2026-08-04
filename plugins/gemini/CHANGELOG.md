@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.11.0 — 2026-08-04 — AGY native JSON envelope replaces transcript scraping
+
+### Changed
+- **AGY 1.1.8 and newer now take the response, conversation ID, and terminal status from `--output-format json`.** The on-disk transcript is not read at all on those versions, and no brain root is required — `/gemini:setup` and every AGY command work on a machine that has never run `agy` interactively. This removes the conversation-directory diffing that had to guess which directory belonged to the current run, along with the "transcript match is not certain" warning that guessing produced.
+- **AGY results no longer include a reasoning-summary section.** The envelope reports a `thinking_tokens` count but carries no thinking text, and `stream-json` does not either (verified on 1.1.10: its step types are `user_input`, `unknown`, `agent_response`, `checkpoint`). The Gemini engine is unaffected — it takes its reasoning summary from stderr.
+- **AGY failures classify better.** A `status: "ERROR"` envelope feeds its `error` string to the failure classifier, which already recognizes rate-limit and model-unavailable wording. Previously only stderr was visible, and AGY leaves stderr empty on this path.
+
+### Fixed
+- The `detectEngine` gate that refused to start AGY without a transcript brain dir now applies only below 1.1.8, where the transcript really is the only source for the response and conversation ID.
+
+### Compatibility
+- AGY below 1.1.8 keeps transcript recovery unchanged; `agy-transcript.mjs` and its 12 tests are untouched. A regression test pins AGY 1.1.7 to the transcript path and asserts it never receives `--output-format`.
+- `conversation_id` from the envelope is byte-identical to the brain-directory name previously used as the thread ID, so stored job thread IDs and `agy --conversation <id>` resume commands are unaffected.
+
 ## 0.10.2 — 2026-08-04 — AGY 1.1.9/1.1.10 behavior alignment
 
 ### Fixed

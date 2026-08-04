@@ -12,7 +12,8 @@ import {
   detectEngine,
   supportsAgyModelSelection,
   supportsAgySlashCommandOptOut,
-  supportsAgyStdinPrompt
+  supportsAgyStdinPrompt,
+  supportsAgyStructuredOutput
 } from "../plugins/gemini/scripts/lib/engine.mjs";
 
 // These two IDs return 404 ModelNotFound on the gemini CLI (verified 0.44.1).
@@ -177,6 +178,30 @@ test("agy omits the slash opt-out where the flag does not exist", () => {
       `AGY ${agyVersion} predates --disable-slash-commands and must not receive it`
     );
   }
+});
+
+test("AGY structured output begins at stable 1.1.8", () => {
+  assert.equal(supportsAgyStructuredOutput("1.1.7"), false);
+  assert.equal(supportsAgyStructuredOutput("1.1.8-rc.1"), false);
+  assert.equal(supportsAgyStructuredOutput("unknown"), false);
+  assert.equal(supportsAgyStructuredOutput(null), false);
+  assert.equal(supportsAgyStructuredOutput("agy 1.1.8"), true);
+  assert.equal(supportsAgyStructuredOutput("1.1.10"), true);
+  assert.equal(supportsAgyStructuredOutput("2.0.0"), true);
+});
+
+test("agy requests the JSON envelope only where the flag exists", () => {
+  const modern = buildCliArgs("agy", { prompt: "hello", useStdin: true, outputJson: true, agyVersion: "1.1.10" });
+  assert.deepEqual(modern.slice(modern.indexOf("--output-format"), modern.indexOf("--output-format") + 2), ["--output-format", "json"]);
+
+  for (const agyVersion of ["1.1.7", null, "unknown"]) {
+    const args = buildCliArgs("agy", { prompt: "hello", useStdin: true, outputJson: true, agyVersion });
+    assert.ok(!args.includes("--output-format"), `AGY ${agyVersion} predates --output-format and must not receive it`);
+  }
+
+  // Never requested when the caller did not ask for structured output.
+  const plain = buildCliArgs("agy", { prompt: "hello", useStdin: true, agyVersion: "1.1.10" });
+  assert.ok(!plain.includes("--output-format"));
 });
 
 test("agy write turn adds --new-project so files land in cwd, not agy's scratch dir", () => {

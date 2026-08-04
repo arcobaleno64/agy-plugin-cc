@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 
-import { buildCliArgs, detectEngine, mapEffortToModel, normalizeAgyEffort, normalizeAgyRequestedModel, normalizeRequestedModel, supportsAgyModelSelection, supportsAgyStdinPrompt } from "./engine.mjs";
+import { buildCliArgs, detectEngine, mapEffortToModel, normalizeAgyEffort, normalizeAgyRequestedModel, normalizeRequestedModel, supportsAgyModelSelection, supportsAgyStdinPrompt, supportsAgyStructuredOutput } from "./engine.mjs";
 import { classifyCliFailure } from "./failures.mjs";
 import { binaryAvailable, runCommand } from "./process.mjs";
 import { resolveAgyBrainRoot, listConvDirs, recoverAgyResponse } from "./agy-transcript.mjs";
@@ -126,6 +126,73 @@ export function tryParseJsonFromText(text) {
   return null;
 }
 
+// AGY >=1.1.8 emits one JSON envelope on stdout:
+//   {conversation_id, status: "SUCCESS"|"ERROR", response, error?, duration_seconds,
+//    num_turns, usage{...}}
+// Anything else on this path is a malformed run, not a reason to fall back to the
+// transcript — the version already promised an envelope.
+function readAgyEnvelope(rawStdout) {
+  const parsed = tryParseJsonFromText(rawStdout);
+  if (!parsed || typeof parsed !== "object") return null;
+  // A terminal status plus a payload slot is what identifies the envelope.
+  // Do not require a specific status value: only SUCCESS and ERROR have been
+  // observed, and whether that vocabulary is closed is an open question with
+  // upstream (antigravity-cli#546). Treat anything other than SUCCESS as failure.
+  if (typeof parsed.status !== "string" || !parsed.status) return null;
+  if (!("response" in parsed) && !("error" in parsed)) return null;
+  // conversation_id is "" on the observed ERROR envelope and may be absent
+  // altogether; it identifies the conversation, not the envelope.
+  if (parsed.conversation_id != null && typeof parsed.conversation_id !== "string") return null;
+  return parsed;
+}
+
+// Shared by the task and review paths: turns the envelope into the neutral pieces
+// both need. The caller decides what to do with `text`.
+function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, engineInfo }) {
+  const envelope = readAgyEnvelope(rawStdout);
+  const failedExit = exitCode === 0 ? 1 : exitCode;
+
+  if (!envelope) {
+    return {
+      text: null,
+      threadId: null,
+      exitCode: failedExit,
+      failure: classifyCliFailure({
+        engine: engineInfo.engine,
+        status: failedExit,
+        signal: result.signal,
+        error: result.error,
+        stdout: rawStdout,
+        stderr: rawStderr,
+        invalidJson: true,
+        noOutput: !String(rawStdout).trim()
+      })
+    };
+  }
+
+  const text = typeof envelope.response === "string" ? envelope.response.trim() : "";
+  const succeeded = envelope.status === "SUCCESS" && Boolean(text);
+
+  return {
+    text,
+    threadId: typeof envelope.conversation_id === "string" && envelope.conversation_id ? envelope.conversation_id : null,
+    exitCode: succeeded ? 0 : failedExit,
+    failure: succeeded
+      ? null
+      : classifyCliFailure({
+          engine: engineInfo.engine,
+          status: failedExit,
+          signal: result.signal,
+          error: result.error,
+          // AGY's structured `error` carries the rate-limit and model-unavailable
+          // wording the classifier already matches on, and stderr is empty here.
+          stdout: envelope.error ?? rawStdout,
+          stderr: envelope.error ?? rawStderr,
+          noOutput: !text
+        })
+  };
+}
+
 export async function runGeminiTurn(cwd, options = {}) {
   const { prompt, effort: requestedEffort, write = true, resumeLast = false, engine: requestedEngine, onProgress } = options;
   let { model } = options;
@@ -154,21 +221,23 @@ export async function runGeminiTurn(cwd, options = {}) {
   // 1.1.2; unknown/older versions keep the positional compatibility path.
   const useStdin = engineInfo.engine === "gemini"
     || (engineInfo.engine === "agy" && supportsAgyStdinPrompt(engineInfo.version));
-  const useJson = engineInfo.engine === "gemini";
+  const agyStructured = engineInfo.engine === "agy" && supportsAgyStructuredOutput(engineInfo.version);
+  const useJson = engineInfo.engine === "gemini" || agyStructured;
   const spawnTimeoutMs = engineInfo.engine === "agy" ? AGY_SPAWN_TIMEOUT_MS : DEFAULT_SPAWN_TIMEOUT_MS;
 
-  // AGY recovery remains transcript-authoritative across both transport paths.
-  // Snapshot conversation dirs BEFORE the spawn so we can identify the new one
-  // afterwards (agy does not surface the conversation id reliably on stdout).
-  // Give agy's own
-  // --print-timeout a shorter window than the hard spawn kill so agy self-terminates
-  // and flushes a final status="DONE" transcript row before spawnSync SIGKILLs it.
+  // AGY >=1.1.8 returns the response, conversation id, and terminal status in a
+  // stdout envelope. Older versions surface none of them reliably, so those runs
+  // snapshot the conversation dirs BEFORE the spawn to identify the new one
+  // afterwards. Give agy's own --print-timeout a shorter window than the hard
+  // spawn kill either way, so agy self-terminates and flushes before SIGKILL.
   let agyBrainRoot = null;
   let agyBefore = null;
   let agyPrintTimeoutMs = spawnTimeoutMs;
   if (engineInfo.engine === "agy") {
-    agyBrainRoot = resolveAgyBrainRoot();
-    agyBefore = listConvDirs(agyBrainRoot);
+    if (!agyStructured) {
+      agyBrainRoot = resolveAgyBrainRoot();
+      agyBefore = listConvDirs(agyBrainRoot);
+    }
     agyPrintTimeoutMs = Math.max(30_000, AGY_SPAWN_TIMEOUT_MS - 15_000);
   }
 
@@ -225,9 +294,15 @@ export async function runGeminiTurn(cwd, options = {}) {
   let reasoningSummary = extractReasoningSummary(rawStderr) ?? null;
   let recoveryFailure = null;
 
-  if (engineInfo.engine === "agy") {
-    // Recover the authoritative response and conversation id by diffing the
-    // transcript directories captured before/after the spawn.
+  if (agyStructured) {
+    const structured = resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, engineInfo });
+    exitCode = structured.exitCode;
+    recoveryFailure = structured.failure;
+    threadId = structured.threadId;
+    if (structured.text) finalMessage = structured.text;
+  } else if (engineInfo.engine === "agy") {
+    // Pre-1.1.8: recover the authoritative response and conversation id by
+    // diffing the transcript directories captured before/after the spawn.
     const rec = recoverAgyResponse(agyBrainRoot, agyBefore);
     if (!rec.response) {
       if (exitCode === 0) exitCode = 1;
@@ -305,14 +380,13 @@ export async function runGeminiReview(cwd, options = {}) {
 
   // prefer gemini for JSON output, unless forced to agy
   let engineInfo;
-  let useJson = false;
   try {
     engineInfo = detectEngine(requestedEngine ?? "gemini");
-    useJson = engineInfo.engine === "gemini";
   } catch {
     engineInfo = detectEngine(requestedEngine ?? null);
-    useJson = false;
   }
+  const agyStructured = engineInfo.engine === "agy" && supportsAgyStructuredOutput(engineInfo.version);
+  const useJson = engineInfo.engine === "gemini" || agyStructured;
 
   let model;
   let effort = null;
@@ -335,16 +409,18 @@ export async function runGeminiReview(cwd, options = {}) {
     || (engineInfo.engine === "agy" && supportsAgyStdinPrompt(engineInfo.version));
   const spawnTimeoutMs = engineInfo.engine === "agy" ? AGY_SPAWN_TIMEOUT_MS : DEFAULT_SPAWN_TIMEOUT_MS;
 
-  // Recover AGY review output from the authoritative transcript on both the old
-  // positional and 1.1.2+ stdin paths. Snapshot conversation dirs before the
-  // spawn, and give agy's --print-timeout a grace window shorter than the hard
-  // spawn kill so it flushes a final status="DONE" row before SIGKILL.
+  // AGY >=1.1.8 returns the review in a stdout envelope. Older versions need the
+  // transcript, so those runs snapshot the conversation dirs before the spawn.
+  // Either way, give agy's --print-timeout a grace window shorter than the hard
+  // spawn kill so it flushes before SIGKILL.
   let agyBrainRoot = null;
   let agyBefore = null;
   let agyPrintTimeoutMs = spawnTimeoutMs;
   if (engineInfo.engine === "agy") {
-    agyBrainRoot = resolveAgyBrainRoot();
-    agyBefore = listConvDirs(agyBrainRoot);
+    if (!agyStructured) {
+      agyBrainRoot = resolveAgyBrainRoot();
+      agyBefore = listConvDirs(agyBrainRoot);
+    }
     agyPrintTimeoutMs = Math.max(30_000, AGY_SPAWN_TIMEOUT_MS - 15_000);
   }
 
@@ -401,8 +477,16 @@ export async function runGeminiReview(cwd, options = {}) {
   let reviewText = rawStdout.trim();
   let recoveryFailure = null;
 
-  if (engineInfo.engine === "agy") {
-    // Recover the authoritative review and parse JSON findings from that text.
+  if (agyStructured) {
+    const structured = resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, engineInfo });
+    exitCode = structured.exitCode;
+    recoveryFailure = structured.failure;
+    if (structured.text) {
+      reviewText = structured.text;
+      reviewJson = tryParseJsonFromText(reviewText);
+    }
+  } else if (engineInfo.engine === "agy") {
+    // Pre-1.1.8: recover the authoritative review and parse JSON findings from it.
     const rec = recoverAgyResponse(agyBrainRoot, agyBefore);
     if (!rec.response) {
       if (exitCode === 0) exitCode = 1;

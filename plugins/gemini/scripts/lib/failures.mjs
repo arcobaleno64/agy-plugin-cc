@@ -191,7 +191,11 @@ export function classifyCliFailure(input = {}) {
   if (/\b429\b|too many requests|rate.?limit/i.test(structuredText)) {
     return normalizeFailure("rate-limit", data);
   }
-  if (/ModelNotFoundError|Requested entity was not found|model .*not found|model.*unavailable|not_found|\b404\b/i.test(structuredText)) {
+  // AGY words a bad model as `invalid model selection (--model "x"): model x is
+  // not recognized as a known model or custom model in settings` (live 1.1.10).
+  // Its ERROR envelope reaches this classifier from 1.1.8 on, where previously
+  // only an empty stderr did, so match that wording alongside gemini's.
+  if (/ModelNotFoundError|Requested entity was not found|model .*not found|model.*unavailable|invalid model selection|not recognized as a known model|not_found|\b404\b/i.test(structuredText)) {
     return normalizeFailure("model-unavailable", data);
   }
 

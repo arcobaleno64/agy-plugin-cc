@@ -37,6 +37,20 @@ test("classifyCliFailure identifies model-unavailable failures", () => {
   assert.match(failure.nextStep, /model/i);
 });
 
+// Verbatim wording from a live `agy --output-format json --model <bogus>` run on
+// AGY 1.1.10. From 1.1.8 the ERROR envelope's `error` reaches the classifier,
+// where previously AGY left stderr empty and this landed on "no-output".
+test("classifyCliFailure identifies AGY's invalid model selection wording", () => {
+  const failure = classifyCliFailure({
+    engine: "agy",
+    status: 1,
+    stderr: 'invalid model selection (--model "definitely-not-a-real-model" --effort ""): model definitely-not-a-real-model is not recognized as a known model or custom model in settings',
+    noOutput: true
+  });
+  assert.equal(failure.category, "model-unavailable");
+  assert.equal(failure.retryable, false);
+});
+
 test("classifyCliFailure identifies empty output", () => {
   const failure = classifyCliFailure({ noOutput: true, status: 0, stdout: "", stderr: "" });
   assert.equal(failure.category, "no-output");
