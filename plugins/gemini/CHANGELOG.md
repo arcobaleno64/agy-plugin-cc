@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.1 — 2026-08-04 — Testable engine-response path
+
+### Changed
+- `runGeminiTurn` and `runGeminiReview` accept an optional third argument, `{ runCommandFn, detectEngineFn }`, mirroring the `{ spawnFn, detectEngineFn }` seam `dispatchBackgroundTask` already uses. No behavior change: both default to the real implementations.
+- Envelope handling moved from spawn-driven fixtures to `tests/agy-envelope.test.mjs`, which injects those dependencies. Those cases previously could not run on Windows at all — the AGY stand-in there must be an absolute `.exe` (CVE-2024-27980), so a copied `node.exe` is used and cannot report a chosen AGY version. Two spawn tests remain to cover what unit tests cannot see: real argv reaching a process, and the transcript genuinely being read on AGY 1.1.7.
+
+### Added
+- Envelope coverage that did not exist before: an unrecognized `status` is treated as failure rather than rejected as malformed, stdout that is not an envelope reports `invalid-json`, and the review path's findings-JSON-inside-the-envelope-response nesting is asserted directly.
+
 ## 0.11.0 — 2026-08-04 — AGY native JSON envelope replaces transcript scraping
 
 ### Changed

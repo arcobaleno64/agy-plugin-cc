@@ -193,14 +193,19 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
   };
 }
 
-export async function runGeminiTurn(cwd, options = {}) {
+// The third parameter mirrors dispatchBackgroundTask's { spawnFn, detectEngineFn }
+// seam. It exists so the engine-response logic can be exercised without a real
+// binary: the Windows AGY stand-in must be an absolute .exe (CVE-2024-27980), so
+// a fixture there cannot report a chosen version, and spawn-driven tests cost
+// ~150s per suite against ~0.2s for direct calls.
+export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runCommand, detectEngineFn = detectEngine } = {}) {
   const { prompt, effort: requestedEffort, write = true, resumeLast = false, engine: requestedEngine, onProgress } = options;
   let { model } = options;
   let effort = requestedEffort;
 
   onProgress?.({ message: "Detecting engine...", phase: "starting" });
 
-  const engineInfo = detectEngine(requestedEngine ?? null);
+  const engineInfo = detectEngineFn(requestedEngine ?? null);
 
   if (engineInfo.engine === "agy") {
     if (model || effort) {
@@ -255,7 +260,7 @@ export async function runGeminiTurn(cwd, options = {}) {
 
   onProgress?.({ message: `Starting ${engineInfo.engine} turn...`, phase: "running" });
 
-  const result = runCommand(engineInfo.binary, args, {
+  const result = runCommandFn(engineInfo.binary, args, {
     cwd,
     input: useStdin ? prompt : undefined,
     maxBuffer: MAX_BUFFER,
@@ -282,7 +287,7 @@ export async function runGeminiTurn(cwd, options = {}) {
       useStdin,
       outputJson: useJson,
     });
-    const fbResult = runCommand(engineInfo.binary, fbArgs, { cwd, input: useStdin ? prompt : undefined, maxBuffer: MAX_BUFFER, timeout: spawnTimeoutMs });
+    const fbResult = runCommandFn(engineInfo.binary, fbArgs, { cwd, input: useStdin ? prompt : undefined, maxBuffer: MAX_BUFFER, timeout: spawnTimeoutMs });
     rawStdout = stripAnsi(fbResult.stdout ?? "");
     rawStderr = stripAnsi(fbResult.stderr ?? "");
     exitCode = fbResult.status ?? (fbResult.error ? 1 : 0);
@@ -371,7 +376,8 @@ export async function runGeminiTurn(cwd, options = {}) {
   };
 }
 
-export async function runGeminiReview(cwd, options = {}) {
+// Same injection seam as runGeminiTurn; see the note there.
+export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCommand, detectEngineFn = detectEngine } = {}) {
   const { prompt, model: requestedModel, effort: requestedEffort, engine: requestedEngine, isAdversarial = true, onProgress } = options;
 
   // Mode-aware label: the standard /review and adversarial /adversarial-review
@@ -381,9 +387,9 @@ export async function runGeminiReview(cwd, options = {}) {
   // prefer gemini for JSON output, unless forced to agy
   let engineInfo;
   try {
-    engineInfo = detectEngine(requestedEngine ?? "gemini");
+    engineInfo = detectEngineFn(requestedEngine ?? "gemini");
   } catch {
-    engineInfo = detectEngine(requestedEngine ?? null);
+    engineInfo = detectEngineFn(requestedEngine ?? null);
   }
   const agyStructured = engineInfo.engine === "agy" && supportsAgyStructuredOutput(engineInfo.version);
   const useJson = engineInfo.engine === "gemini" || agyStructured;
@@ -437,7 +443,7 @@ export async function runGeminiReview(cwd, options = {}) {
     useStdin,
   });
 
-  const result = runCommand(engineInfo.binary, args, {
+  const result = runCommandFn(engineInfo.binary, args, {
     cwd,
     input: useStdin ? prompt : undefined,
     maxBuffer: MAX_BUFFER,
@@ -464,7 +470,7 @@ export async function runGeminiReview(cwd, options = {}) {
       timeoutMs: spawnTimeoutMs,
       useStdin,
     });
-    const fbResult = runCommand(engineInfo.binary, fbArgs, { cwd, input: useStdin ? prompt : undefined, maxBuffer: MAX_BUFFER, timeout: spawnTimeoutMs });
+    const fbResult = runCommandFn(engineInfo.binary, fbArgs, { cwd, input: useStdin ? prompt : undefined, maxBuffer: MAX_BUFFER, timeout: spawnTimeoutMs });
     rawStdout = stripAnsi(fbResult.stdout ?? "");
     rawStderr = stripAnsi(fbResult.stderr ?? "");
     exitCode = fbResult.status ?? (fbResult.error ? 1 : 0);
