@@ -222,3 +222,68 @@ test("agy read-only turn adds neither --dangerously-skip-permissions nor --new-p
   assert.ok(!args.includes("--dangerously-skip-permissions"));
   assert.ok(!args.includes("--new-project"));
 });
+
+// --- auto routing ---
+// Previously untested. `auto` selected gemini on binary presence alone, so an
+// installed-but-unauthenticated gemini (the norm since consumer access ended
+// 2026-06-18) routed every command into a guaranteed auth failure while a
+// working AGY sat beside it.
+
+const AVAILABLE = { available: true, detail: "1.0.0" };
+const MISSING = { available: false };
+
+function stubBinaries({ gemini = MISSING, agy = MISSING } = {}) {
+  return (binary) => (String(binary).includes("gemini") ? gemini : agy);
+}
+
+test("auto prefers gemini when it is installed and has a credential", () => {
+  const info = detectEngine("auto", {
+    binaryAvailableImpl: stubBinaries({ gemini: { available: true, detail: "0.52.0" }, agy: AVAILABLE }),
+    hasGeminiCredentialsImpl: () => true,
+    resolveBinaryPathImpl: () => "/fake/agy.exe"
+  });
+  assert.equal(info.engine, "gemini");
+  assert.equal(info.version, "0.52.0");
+});
+
+test("auto falls through to AGY when gemini is installed but unauthenticated", () => {
+  const info = detectEngine("auto", {
+    binaryAvailableImpl: stubBinaries({ gemini: AVAILABLE, agy: { available: true, detail: "1.1.10" } }),
+    hasGeminiCredentialsImpl: () => false,
+    resolveBinaryPathImpl: () => "/fake/agy.exe"
+  });
+  assert.equal(info.engine, "agy");
+  assert.equal(info.version, "1.1.10");
+});
+
+test("auto reports the credential problem when gemini is the only engine present", () => {
+  assert.throws(
+    () => detectEngine("auto", {
+      binaryAvailableImpl: stubBinaries({ gemini: AVAILABLE, agy: MISSING }),
+      hasGeminiCredentialsImpl: () => false,
+      resolveBinaryPathImpl: () => "/fake/agy.exe"
+    }),
+    /installed but has no usable credential/
+  );
+});
+
+test("auto keeps the plain not-installed message when neither engine is present", () => {
+  assert.throws(
+    () => detectEngine("auto", {
+      binaryAvailableImpl: stubBinaries({}),
+      hasGeminiCredentialsImpl: () => false,
+      resolveBinaryPathImpl: () => "/fake/agy.exe"
+    }),
+    /No Gemini or AGY engine found/
+  );
+});
+
+// An explicit --engine gemini must still work: the user asked for it, and the
+// credential check is an auto-routing heuristic, not an authorization gate.
+test("explicit gemini selection ignores the credential check", () => {
+  const info = detectEngine("gemini", {
+    binaryAvailableImpl: stubBinaries({ gemini: AVAILABLE }),
+    hasGeminiCredentialsImpl: () => false
+  });
+  assert.equal(info.engine, "gemini");
+});
