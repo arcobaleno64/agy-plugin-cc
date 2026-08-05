@@ -434,10 +434,10 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
     prompt,
     model,
     effort,
+    // Read-only: no --yolo, and deliberately no --approval-mode plan either.
+    // buildCliArgs explains why plan mode is the weaker read-only shape.
     write: false,
     outputJson: useJson,
-    // approvalModePlan requires TTY input and conflicts with stdin prompt delivery
-    approvalModePlan: false,
     timeoutMs: engineInfo.engine === "agy" ? agyPrintTimeoutMs : spawnTimeoutMs,
     agyVersion: engineInfo.version,
     useStdin,
@@ -466,7 +466,6 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
       model: GA_FALLBACK_MODEL,
       write: false,
       outputJson: useJson,
-      approvalModePlan: false,
       timeoutMs: spawnTimeoutMs,
       useStdin,
     });

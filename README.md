@@ -148,7 +148,7 @@ Delegates a task to Gemini. Reads from stdin if no prompt is given.
 | Flag | Description |
 |---|---|
 | `--background` | Run detached; returns a job ID immediately |
-| `--write` | Allow Gemini to modify files (`--yolo` / `--dangerously-skip-permissions`) |
+| `--write` | Let the engine work on **your repository** instead of its own scratch directory. Off by default. On AGY this binds the session to `cwd` (`--new-project`); on gemini it adds `--yolo`. It is not a sandbox — see [Security](#security) |
 | `--resume-last` | Continue the most recent Gemini session |
 | `--fresh` | Force a new Gemini session, ignoring any resumable thread |
 | `--engine <gemini\|agy\|auto>` | Override engine selection |
@@ -348,7 +348,7 @@ This plugin is a high-fidelity port of [openai/codex-plugin-cc](https://github.c
 
 - **Runtime**: Codex uses a persistent app-server with native review and persistent threads. This plugin invokes the selected first-class Gemini CLI or AGY engine directly *per command* (no shared runtime); `auto` uses capability-based Gemini→AGY ordering.
 - **Standard review**: In the Codex plugin, `/codex:review` is a *native* reviewer. Here, `/gemini:review` is a **prompt-based / CLI-adapter equivalent** — it sends the diff to Gemini with a pragmatic-review prompt and parses structured JSON back. It is not a native Gemini reviewer.
-- **Sandbox**: Codex exposes `read-only` / `workspace-write` sandboxes. Gemini has no equivalent; write access is gated by `--write` (`--yolo`), and otherwise the prompt enforces read-only discipline. (`--approval-mode plan` is intentionally not used: it requires a TTY and conflicts with stdin prompt delivery.)
+- **Sandbox**: Codex exposes `read-only` / `workspace-write` sandboxes and confines a write-capable run to the workspace. **Neither Gemini CLI nor AGY offers an equivalent path boundary this plugin can impose**, so it has none. AGY's `--sandbox` is not one — measured on 1.1.10, a run with it enabled wrote outside the workspace through both the edit tool and a shell command; it restricts what a terminal command may reach, not where anything may write. Gemini CLI's same-named flag is a *container* sandbox that refuses to start without Docker or Podman, so it was not measured and is not required of users. What `--write` controls differs per engine: on AGY it selects *where the engine works* (without it AGY operates in its own scratch directory and your repository is untouched), while on gemini it adds `--yolo`, which genuinely gates whether write and shell tools are offered to the model at all. See [`docs/THREAT-MODEL.md` §7.2](docs/THREAT-MODEL.md). (`--approval-mode plan` is not used — it *does* work headless, but it re-declares the write tools to the model and injects a planning workflow, making it a weaker read-only shape than passing nothing.)
 - **Thread/session resume**: Codex persists threads on the app server. Here, resume relies on the Gemini CLI **session id** captured from the JSON envelope; `/gemini:result` prints `gemini --resume <session-id>`, and `--resume-last` continues the latest thread *for the current Claude session*.
 
 ---

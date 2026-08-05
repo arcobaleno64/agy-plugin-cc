@@ -38,7 +38,11 @@
 // the /agents subagent-definition dir, a different path from the brain root
 // below. Machine-verified 2026-07-09 (Windows): 1.1.0's new default
 // `request-review` mode does NOT stall a headless `--engine agy --write`
-// spawn — --dangerously-skip-permissions still bypasses it. Separately found
+// spawn — at the time, --dangerously-skip-permissions bypassed it. That flag
+// was removed in v0.16.0 because AGY 1.1.10 auto-approves headlessly without
+// it (docs/THREAT-MODEL.md 7.2). The 1.1.0 `request-review` interaction was
+// NOT re-measured without the flag; on that version a write turn could in
+// principle stall, which would surface as a --print-timeout. Separately found
 // (and fixed in buildCliArgs via --new-project, see engine.mjs and
 // CHANGELOG): without an active workspace, that same write turn used to
 // silently land its file under this brain root's sibling `scratch/` dir

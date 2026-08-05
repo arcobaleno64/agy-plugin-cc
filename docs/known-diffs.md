@@ -16,6 +16,22 @@ campaign matrix for the full three-way comparison.
   argument for a location the code never used. What is actually true: job state
   goes to Claude Code's per-plugin data directory, which is where upstream puts
   it too, so this is not a divergence at all.
+- **`--write` is opt-in here; upstream defaults to it.** `codex-plugin-cc`'s
+  rescue subagent adds `--write` unless asked not to, and can afford that because
+  `codex-companion.mjs:491` confines the run with `sandbox: "workspace-write"`.
+  Neither engine offers a comparable path boundary the plugin can impose — AGY's
+  `--sandbox` restricts what a terminal command may reach, not where anything may
+  write, and Gemini CLI's same-named flag is a container sandbox that refuses to
+  start without Docker or Podman (both measured, `docs/THREAT-MODEL.md` §7.2) —
+  so the same default here would be write-capable *and* unconfined. The default
+  is inverted rather than the feature removed. This also aligns the slash-command
+  path with the MCP path, where `gemini_rescue` already defaulted `write: false`.
+- **`--write` means something different on each engine.** On AGY it maps to
+  `--new-project`, binding the session to `cwd`; without it AGY works in its own
+  scratch directory, and headless print mode auto-approves edits either way — so
+  there it selects a workspace, not a permission. On Gemini CLI it maps to
+  `--yolo`, which *is* a permission: without it the model is offered no write or
+  shell tools at all. The same user-facing flag, two different mechanisms.
 - **Bench harness is retained.** The Codex-vs-Gemini benchmark suite (`bench/`,
   cassettes, scoring) lives only here; the siblings deliberately omit it (owner
   decision), so it is a one-way difference, not a gap.

@@ -47,6 +47,27 @@ test("adversarial-review command references adversarial-review", () => {
   assert.match(source, /AskUserQuestion/);
 });
 
+// The rescue subagent instructed itself to add --write unless the user asked
+// otherwise, for the whole life of the project, which is what made
+// /gemini:rescue write-capable by default (docs/THREAT-MODEL.md 7.2). The
+// instruction is prose in a Markdown file, so nothing but a test stops it
+// drifting back.
+test("the rescue subagent does not default to a write-capable run", () => {
+  const source = fs.readFileSync(path.join(ROOT, "plugins", "gemini", "agents", "gemini-rescue.md"), "utf8");
+
+  assert.match(source, /--write/, "the flag must still be documented for the subagent");
+  assert.match(
+    source,
+    /Read-only is the default/i,
+    "the subagent must be told read-only is the default"
+  );
+  assert.doesNotMatch(
+    source,
+    /Default to a write-capable/i,
+    "the write-by-default instruction must not return"
+  );
+});
+
 test("rescue command references gemini-rescue subagent", () => {
   const source = readCommand("rescue.md");
   assert.match(source, /gemini-rescue/);

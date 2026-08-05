@@ -54,10 +54,12 @@ and can read files on their own initiative while working on the prompt. For
 else, but the CLI may then read whatever it judges relevant — including files no
 redaction rule here ever saw. The limits and redaction above bound the plugin's
 contribution; they do not sandbox the engine, and neither AGY nor Gemini CLI
-offers a path-boundary mode the plugin could impose. This is documented as a
-known, unmitigated gap in
-[`docs/THREAT-MODEL.md` §7.2](docs/THREAT-MODEL.md). If a workspace contains
-material that must not reach Google, do not run a delegated task in it.
+offers a path-boundary mode the plugin could impose — AGY's `--sandbox` is not
+one, and Gemini CLI's is a container sandbox that will not start without Docker
+or Podman, both measured in
+[`docs/THREAT-MODEL.md` §7.2](docs/THREAT-MODEL.md), which also records this as a
+known, unmitigated gap. If a workspace contains material that must not reach
+Google, do not run a delegated task in it.
 
 ### Secret-file redaction
 

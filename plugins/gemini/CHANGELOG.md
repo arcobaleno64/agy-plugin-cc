@@ -2,12 +2,23 @@
 
 ## Unreleased
 
+### Breaking
+- **`/gemini:rescue` no longer edits files unless you pass `--write`.** The rescue subagent had instructed itself to add `--write` unless the user asked otherwise — inherited verbatim from upstream `codex-plugin-cc`, where it is safe because upstream confines a write run with `sandbox: "workspace-write"`. This port has no such boundary, so the same default was write-capable *and* unconfined. The default is inverted; the feature is untouched.
+  - **Failure mode is silent**: a task that used to edit now investigates and reports instead. Add `--write` when you want edits.
+  - The MCP path already defaulted `write: false`. The two entry points now agree.
+
 ### Added
 - **Every MCP tool now carries the annotations a client uses to decide whether a call needs confirmation** — `title`, `readOnlyHint`, `openWorldHint`, and `destructiveHint`/`idempotentHint` on the two tools that can write. All five previously shipped with none, so a client had nothing to gate on and had to treat a write-capable delegation exactly like a status read. Required by the Anthropic software directory policy, which names those three by name.
   - The hints describe the **worst** a call can do, because they are static per tool and cannot vary with arguments: `gemini_rescue` reports as destructive even though its `write` argument defaults to false, since `write: true` hands the delegated agent the filesystem with no path boundary ([`docs/THREAT-MODEL.md` §7.2](../../docs/THREAT-MODEL.md)).
   - `gemini_job_cancel` is destructive but idempotent — cancelling a `--write` task can leave half-applied edits behind, while cancelling a finished job is a no-op.
   - `readOnlyHint` here means "does not modify the workspace it was pointed at". Every tool writes plugin job state, which lives outside that workspace and is bookkeeping rather than user content; the reasoning is recorded beside the definitions rather than left for a reviewer to infer.
   - `openWorldHint` marks the two tools that reach Google through the Gemini/AGY CLI. `gemini_review` is read-only **and** open-world: it never touches the reviewed workspace, but it does send the diff.
+
+### Security
+- **`--dangerously-skip-permissions` is removed from the AGY path.** Measured on AGY 1.1.10: headless print mode auto-approves edit tools and shell commands with or without it, so the flag granted nothing while being the clearest "circumvents the permission model" signal in the codebase. Removing it is a no-op behaviorally and the honest description of what the plugin does. See [`docs/THREAT-MODEL.md` §7.2](../../docs/THREAT-MODEL.md) for the run table.
+- **`--sandbox` is deliberately not adopted, and a test pins that.** It exists on AGY 1.1.10, and it is not a path boundary: a run with it enabled wrote outside the workspace through both the edit tool and a shell command. It restricts what a terminal command may reach — network, `.git` — not where anything may write. Adopting it on the strength of its name would have been exactly the kind of unverified safety claim `SECURITY.md` exists to prevent.
+- **`--yolo` stays on the gemini engine, and now there is evidence for it.** Seven runs on gemini CLI 0.53.1 show the opposite of AGY: without `--yolo` the model is offered no `write_file`, `edit`, or `run_shell_command` at all — at both the main-agent and subagent level — and says so. The flag is a real gate, not a cosmetic one, and none of the AGY findings transfer to it.
+- **`--approval-mode plan` is deliberately not adopted, and a test pins that.** It does run headless over stdin — the in-tree comment claiming it "requires TTY input" was wrong and is gone — but reading gemini CLI 0.53.1's bundle, plan mode re-declares `write_file` and `edit` to the model with an amended description and injects a planning-workflow system prompt. Against a read-only turn that currently declares no write tools at all, that is a net loss of restriction. The dead `approvalModePlan` option is removed rather than left as a switch inviting the opposite conclusion.
 
 ### Fixed
 - **A gemini CLI authenticated through its own auth prompt was read as unauthenticated.** Gemini CLI 0.53.1 stores credentials in the OS keychain via `@github/keytar` — `gemini-cli-api-key/default-api-key` for a pasted API key, `gemini-cli-oauth/main-account` for OAuth, which it migrates out of `oauth_creds.json` and then deletes. `hasGeminiCredentials()` checked two environment variables and that one legacy file, so it saw neither. The consequence was silent: `auto` routed past a working gemini to AGY, and `/gemini:setup` told the user to authenticate an engine that already was. Reproduced on this machine, where `cmdkey` holds the API-key entry and the check returned `false`.
@@ -17,12 +28,25 @@
 - **`/gemini:setup` computed readiness from a narrower check than auto-routing used.** `geminiReady` read the OAuth *file* alone, so a user with `GEMINI_API_KEY` set was reported not ready while their next command worked. A comment in `lib/gemini-auth.mjs` had asserted the two were the same notion; now they are. `geminiAuth` in the JSON output still reports the OAuth file specifically, unchanged.
   - The matching next-step text changes from "Run `gemini` once to authenticate via OAuth." to "Run `gemini` once to authenticate, or set GEMINI_API_KEY." — OAuth is no longer the only way to satisfy the check.
 
+### Documentation
+- **`docs/THREAT-MODEL.md` §7.2 was wrong in two ways and is rewritten around fourteen measured runs — seven per engine.** It claimed "AGY has no path-boundary mode" — `--sandbox` exists, it just is not one — and that `--write` "removes the approval prompt", when in headless mode there is no prompt to remove. It also said the section was "deliberately not tested" and rested on reading flags; it is now tested, including a demonstrated write outside the workspace. The §5 mitigation-table correction and the §7.7 priority entry are updated to match.
+- What `--write` actually controls is documented plainly in both READMEs and `docs/known-diffs.md`: it selects **where the engine works** — with it, your repository; without it, AGY's own scratch directory — not whether the engine may write. The upstream divergence is recorded as a deliberate one.
+
 ### Tests
+- The rescue subagent's read-only default is pinned by a contract test. The instruction is prose in a Markdown file and carried this defect for the entire life of the project, so nothing but a test stops it drifting back.
+- `--dangerously-skip-permissions` is asserted absent across four AGY turn shapes, including the write and resumed-write turns where it would plausibly be re-added, and `--sandbox` is asserted absent so it is not adopted as a boundary later.
+- The gemini path is pinned in both directions — `--yolo` present on a write turn, absent on a read-only one — so neither half is dropped by analogy with the AGY path, and `--approval-mode` is asserted absent across four turn shapes.
 - One test requires the annotations to exist and be well-formed on every tool, including the policy's 64-character name limit, and refuses a meaningless `destructiveHint` on a read-only tool. A second pins each tool's hints individually — a wrong hint is worse than a missing one, because a client acts on it.
 
 ### Known limitations
+- **Nothing constrains where a `--write` run may reach.** Two of the measured runs wrote outside the workspace, and no flag on either engine prevents it. This release makes the exposure opt-in and accurately described; it does not remove it. The real fix is an engine-side path boundary that does not yet exist.
 - **The encrypted-file fallback is not detected.** Where no keychain is available — headless Linux, WSL, or `GEMINI_FORCE_FILE_STORAGE=true` — the CLI stores credentials in `~/.gemini/gemini-credentials.json`, one encrypted blob shared by every service. Its presence cannot distinguish a gemini credential from an unrelated MCP token, so it is deliberately not consulted: guessing there would reintroduce the false "authenticated" this check exists to prevent. Affected users select the engine explicitly with `--engine gemini`.
 - **Only Windows was exercised against a real keychain.** The macOS and Linux commands are pinned by tests with an injected spawn, which fixes the argv and the presence semantics but proves nothing about those tools' actual behavior on those platforms.
+
+### Not tested
+- **AGY below 1.1.10.** The measurements are from 1.1.10 only. A 2026-07-09 note in `lib/agy-transcript.mjs` recorded that `--dangerously-skip-permissions` bypassed AGY 1.1.0's `request-review` mode; that interaction was not re-measured without the flag, so on 1.1.0 a write turn could in principle stall, which would surface as a `--print-timeout`. The note now says so rather than continuing to describe a flag that is gone.
+- **Gemini CLI's `--sandbox`.** Unlike AGY's flag of the same name it is a container sandbox, and it refuses to start without Docker or Podman, neither of which is installed on the test machine. Whether it bounds writes to the workspace is unknown.
+- **The read-only default end to end.** The subagent instruction is pinned by a contract test, but no live `/gemini:rescue` run was performed to observe a model honoring it.
 
 ## 0.15.0 — 2026-08-05 — Job state lands where Claude Code puts plugin data
 
