@@ -102,6 +102,10 @@ Calibrate that result honestly: it shows one model refusing one obvious payload.
 
 **Still true**: detection is filename-based. A credential pasted into `config.js` is not redacted on either path, and nothing here should be relied on as a secret scanner.
 
+**Reopened and closed again for symlinks.** The 0.13.0 fix routed `formatUntrackedFile` through the same filename check, but the name it checks is the *link* name, which whoever plants the link chooses. An untracked symlink called `notes.txt` pointing at `~/.ssh/id_rsa` passed the check, and `readFileSync` followed it — the review then carried key material from outside the repository. The reachable route is 7.2's own output: a write-capable delegated task creates the link, a later review or the 7.5 gate reads through it. `formatUntrackedFile` now resolves any symlink with `fs.realpathSync.native` and skips it when the target falls outside the workspace, so a review only ever carries content from the tree being reviewed. In-repo aliases still inline normally, and broken links still report as broken.
+
+**Also filename-based, but only for reporting.** `redactSecretsFromDiff` used to read the redacted file's name off the `diff --git a/P b/P` header, which is ambiguous once `P` contains a space — for `a b/c.env` it reported `c.env b/a b/c.env`. Redaction was never affected (the check runs on the final path segment, which survives either misparse), but the list shown to the user was wrong. The b-side path now comes from the unambiguous `+++ b/<path>` line, with the header kept as a fallback for diffs that have none.
+
 ### 7.5 PI-4 — Automatic exposure via the stop-review gate (Low)
 
 `LLM01 Prompt Injection`

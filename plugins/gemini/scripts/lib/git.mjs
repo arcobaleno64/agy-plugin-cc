@@ -156,6 +156,23 @@ function capReviewContent(content) {
   return content.slice(0, MAX_REVIEW_CONTENT_CHARS) + REVIEW_TRUNCATION_NOTICE;
 }
 
+// Whether following `absolutePath` stays inside `cwd`. Both sides are resolved
+// first: `cwd` itself is routinely a symlinked path (macOS /tmp -> /private/tmp,
+// and every test that runs under one), so comparing an unresolved cwd against a
+// resolved target reports every file as an escape.
+function resolvesInsideWorkspace(cwd, absolutePath) {
+  let workspace;
+  let target;
+  try {
+    workspace = fs.realpathSync.native(cwd);
+    target = fs.realpathSync.native(absolutePath);
+  } catch {
+    return false;
+  }
+  const relative = path.relative(workspace, target);
+  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
 export function formatUntrackedFile(cwd, relativePath) {
   const absolutePath = path.join(cwd, relativePath);
 
@@ -168,8 +185,17 @@ export function formatUntrackedFile(cwd, relativePath) {
   let stat;
   try {
     const linkStat = fs.lstatSync(absolutePath);
-    if (linkStat.isSymbolicLink() && !fs.existsSync(absolutePath)) {
-      return `### ${relativePath}\n(skipped: broken symlink or unreadable file)`;
+    if (linkStat.isSymbolicLink()) {
+      if (!fs.existsSync(absolutePath)) {
+        return `### ${relativePath}\n(skipped: broken symlink or unreadable file)`;
+      }
+      // isSecretFile matched the link name, which the planter chooses. A symlink
+      // called `notes.txt` pointing at ~/.ssh/id_rsa passed that check and was
+      // then read through with readFileSync, sending the target's contents to
+      // the model. Content only ever leaves the workspace being reviewed.
+      if (!resolvesInsideWorkspace(cwd, absolutePath)) {
+        return `### ${relativePath}\n(skipped: symlink resolves outside the workspace)`;
+      }
     }
     stat = fs.statSync(absolutePath);
   } catch {

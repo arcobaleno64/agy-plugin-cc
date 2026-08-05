@@ -168,6 +168,61 @@ test("formatUntrackedFile inlines a small text file", () => {
   assert.match(out, /hello content/);
 });
 
+// Symlink creation needs SeCreateSymbolicLinkPrivilege on Windows (Developer
+// Mode or an elevated shell). Report the skip rather than passing silently on a
+// machine that never ran the assertion.
+function trySymlink(target, linkPath) {
+  try {
+    fs.symlinkSync(target, linkPath, "file");
+    return true;
+  } catch (error) {
+    if (process.platform === "win32" && (error.code === "EPERM" || error.code === "EACCES")) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+test("formatUntrackedFile does not read through a symlink that leaves the workspace", (t) => {
+  const outside = makeTempDir("gemini-plugin-outside-");
+  fs.writeFileSync(path.join(outside, "id_rsa"), "OUTSIDE_KEY_MATERIAL\n");
+
+  const cwd = makeTempDir();
+  // The link name is what isSecretFile sees, and an attacker picks it. An
+  // innocuous name pointing at key material passed every earlier check.
+  if (!trySymlink(path.join(outside, "id_rsa"), path.join(cwd, "notes.txt"))) {
+    t.skip("symlink creation not permitted on this Windows host");
+    return;
+  }
+
+  const out = formatUntrackedFile(cwd, "notes.txt");
+  assert.ok(!out.includes("OUTSIDE_KEY_MATERIAL"), "content outside the workspace must not be sent");
+  assert.match(out, /\(skipped: symlink resolves outside the workspace\)/);
+});
+
+test("formatUntrackedFile still inlines a symlink that stays inside the workspace", (t) => {
+  const cwd = makeTempDir();
+  fs.writeFileSync(path.join(cwd, "real.txt"), "in-repo content\n");
+  if (!trySymlink(path.join(cwd, "real.txt"), path.join(cwd, "alias.txt"))) {
+    t.skip("symlink creation not permitted on this Windows host");
+    return;
+  }
+
+  // The containment check must not turn every symlink into a skip: an in-repo
+  // alias is ordinary reviewable content.
+  const out = formatUntrackedFile(cwd, "alias.txt");
+  assert.match(out, /in-repo content/);
+});
+
+test("formatUntrackedFile still reports a broken symlink as broken", (t) => {
+  const cwd = makeTempDir();
+  if (!trySymlink(path.join(cwd, "missing-target.txt"), path.join(cwd, "dangling.txt"))) {
+    t.skip("symlink creation not permitted on this Windows host");
+    return;
+  }
+  assert.match(formatUntrackedFile(cwd, "dangling.txt"), /\(skipped: broken symlink or unreadable file\)/);
+});
+
 // docs/THREAT-MODEL.md 7.4 — the review path used to send secret files whole
 // while /gemini:transfer redacted them from the same diff.
 test("collectReviewContext withholds secret file content from a working-tree review", () => {
