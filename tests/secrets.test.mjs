@@ -62,6 +62,48 @@ test("redactSecretsFromDiff handles git's quoted paths", () => {
   assert.deepEqual(redactedFiles, ["we ird.env"]);
 });
 
+// Real headers produced by git for these names, captured from a repository
+// built with each file in it. A directory containing a space puts a second
+// ` b/` inside the header.
+test("redactSecretsFromDiff names the right file when the path contains ' b/'", () => {
+  const diff = [
+    "diff --git a/a b/c.env b/a b/c.env",
+    "--- a/a b/c.env",
+    "+++ b/a b/c.env",
+    "@@ -1 +1 @@",
+    "+SECRET=SPACED_DIR_LEAK",
+    ""
+  ].join("\n");
+
+  const { text, redactedFiles } = redactSecretsFromDiff(diff);
+  assert.ok(!text.includes("SPACED_DIR_LEAK"));
+  assert.deepEqual(redactedFiles, ["a b/c.env"]);
+});
+
+test("redactSecretsFromDiff reports the b-side path of a rename", () => {
+  const diff = ["diff --git a/settings.js b/config/prod.env", "+API_KEY=RENAMED_LEAK", ""].join("\n");
+
+  const { text, redactedFiles } = redactSecretsFromDiff(diff);
+  assert.ok(!text.includes("RENAMED_LEAK"), "the destination decides, and it is a secret store");
+  assert.deepEqual(redactedFiles, ["config/prod.env"]);
+});
+
+// git applies C-style quoting to non-ASCII paths under the default
+// core.quotepath. Redaction still fires because the escaped form keeps the
+// extension; the reported name stays in git's escaped form rather than being
+// unquoted, which is a display limit and not a leak.
+test("redactSecretsFromDiff still redacts a git-escaped non-ASCII path", () => {
+  const diff = [
+    'diff --git "a/uni\\303\\247ode.env" "b/uni\\303\\247ode.env"',
+    "+SECRET=UNICODE_LEAK",
+    ""
+  ].join("\n");
+
+  const { text, redactedFiles } = redactSecretsFromDiff(diff);
+  assert.ok(!text.includes("UNICODE_LEAK"));
+  assert.deepEqual(redactedFiles, ["uni\\303\\247ode.env"]);
+});
+
 test("redactSecretsFromDiff passes through a diff with nothing to redact", () => {
   const diff = "diff --git a/a.js b/a.js\n+const a = 1;\n";
   const { text, redactedFiles } = redactSecretsFromDiff(diff);

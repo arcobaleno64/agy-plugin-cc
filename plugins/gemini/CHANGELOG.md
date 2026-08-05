@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Security
+- **A review no longer reads through an untracked symlink that leaves the workspace.** `formatUntrackedFile` checked `isSecretFile` against the *link* name — which whoever plants the link chooses — and then followed it with `readFileSync`. An untracked symlink called `notes.txt` pointing at `~/.ssh/id_rsa` passed every check and its target's contents were sent to the model. The link is now resolved with `fs.realpathSync.native` and skipped when the target falls outside the workspace; both sides are canonicalized first, because a `cwd` that is itself a symlinked path (macOS `/tmp`) would otherwise mark every file as an escape. In-repo aliases still inline normally and broken links still report as broken. The reachable route is a write-capable delegated task creating the link and a later review reading through it — see [`docs/THREAT-MODEL.md` §7.4](../../docs/THREAT-MODEL.md).
+
+### Fixed
+- **The redacted-file list named the wrong path when a directory contained a space.** `redactSecretsFromDiff` read the b-side path off the `diff --git a/P b/P` header, which is ambiguous once `P` holds a space: for `a b/c.env` the first ` b/` gives `c.env b/a b/c.env` and the last gives `c.env`. It now takes the path from the unambiguous `+++ b/<path>` line, stopping at the first `@@` so an added line beginning `++ ` cannot be misread as the header, and falls back to the old header match for diffs with no `+++` line. Redaction itself was never wrong — the check runs on the final path segment, which survives either misparse — so this is the accuracy of what the user is told was withheld.
+
 ### Documentation
 - **`PRIVACY.md` states what the plugin sends, keeps, and reads**, with a source file cited beside each claim. It was the one directory-compliance document the repository did not have; nothing in `README.md`, `README.zh-TW.md`, `SECURITY.md`, or `docs/THREAT-MODEL.md` contained the word *privacy*. Both READMEs and `SECURITY.md` link to it.
   - The document says the uncomfortable parts out loud: secret detection is by filename only; the size caps and redaction bound what the *plugin* assembles, not what the agentic CLI may read on its own once running in your workspace ([`docs/THREAT-MODEL.md` §7.2](../../docs/THREAT-MODEL.md)); and the opt-in Stop review gate is the one path that transmits a diff without a fresh command.
@@ -9,6 +15,13 @@
 
 ### Tests
 - `tests/privacy-doc.test.mjs` pins `PRIVACY.md`'s presence, the four questions it must answer, and the link from every entry document — a policy doc rots when a README rewrite silently drops the link, not when the file is deleted. It also derives the expected supported-version line from `package.json`, so the table cannot go stale again without failing CI.
+
+Coverage for the paths that had none, per HANDOFF §14 P1. Verified against real git output, not only hand-written diffs:
+- Untracked symlinks: escaping (skipped), in-workspace (still inlined), broken (still reported). Skipped with a reported reason on Windows hosts without symlink privilege rather than passing silently.
+- `resolveStateDir` canonicalizes the workspace before hashing, so one checkout reached through a symlink shares a state dir, while two workspaces sharing a basename stay separate.
+- Concurrent writers never expose a partially written `state.json` and leave no `.tmp` files. Pinned as the guarantee `atomicWriteJson` actually makes — a load/mutate/save cycle cannot also promise that concurrent writers keep each other's jobs.
+- Hostile filenames through redaction: a directory containing a space, a rename whose destination is the secret store, and a git C-quoted non-ASCII path.
+- Envelope truncation: an envelope cut mid-value is rejected, and so is one whose cut leaves a balanced inner object behind — the case where the balanced-block scan could otherwise report a successful run with no response. A large well-formed envelope is pinned as delivered intact, so any future size limit lands as a deliberate diff.
 
 ## 0.14.1 — 2026-08-05 — Correct argument quoting on the Windows shell path
 

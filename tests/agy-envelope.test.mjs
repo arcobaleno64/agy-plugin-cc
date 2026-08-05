@@ -122,6 +122,57 @@ test("AGY 1.1.10 turn reports invalid-json when stdout is not an envelope", asyn
   assert.equal(result.failure.category, "invalid-json");
 });
 
+// The spawn caps stdout at MAX_BUFFER (50 MB); past that Node kills the child
+// and hands back whatever it had, so an oversized envelope arrives cut mid-token
+// rather than as a clean object. tryParseJsonFromText scans for balanced {...}
+// blocks, so the question is whether a truncated payload can still yield an
+// object the plugin would act on. It must not.
+test("AGY 1.1.10 turn rejects an envelope truncated mid-value", async () => {
+  const full = JSON.stringify({ ...SUCCESS_ENVELOPE, response: "x".repeat(4096) });
+  const runCommandFn = stubRun({ stdout: full.slice(0, full.length - 200), status: 0 });
+
+  const result = await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
+    runCommandFn,
+    detectEngineFn: agyEngine()
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.equal(result.failure.category, "invalid-json");
+});
+
+// A truncated envelope whose `usage` object closed before the cut leaves a
+// balanced {...} block behind. The scan must not mistake that fragment for the
+// envelope and report a successful run with no response.
+test("AGY 1.1.10 turn rejects a truncation that leaves a balanced inner object", async () => {
+  const stdout = '{"conversation_id":"abc","status":"SUCCESS","usage":{"total_tokens":42},"response":"partia';
+  const runCommandFn = stubRun({ stdout, status: 0 });
+
+  const result = await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
+    runCommandFn,
+    detectEngineFn: agyEngine()
+  });
+
+  assert.notEqual(result.status, 0, "an inner fragment must not read as a completed run");
+  assert.equal(result.failure.category, "invalid-json");
+});
+
+// A very large but well-formed envelope is a cost problem, not a correctness
+// one: it is under the spawn cap, so it parses and the response is delivered
+// whole. Pinned so a future size limit is a deliberate change with a visible
+// diff rather than a silent truncation of someone's result.
+test("AGY 1.1.10 turn delivers a large well-formed envelope intact", async () => {
+  const response = "y".repeat(2 * 1024 * 1024);
+  const runCommandFn = stubRun({ stdout: JSON.stringify({ ...SUCCESS_ENVELOPE, response }), status: 0 });
+
+  const result = await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
+    runCommandFn,
+    detectEngineFn: agyEngine()
+  });
+
+  assert.equal(result.status, 0);
+  assert.equal(result.finalMessage.length, response.length);
+});
+
 test("AGY 1.1.7 never requests the envelope", async () => {
   const runCommandFn = stubRun({ stdout: "ignored\n" });
 
