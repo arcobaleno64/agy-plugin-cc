@@ -5,7 +5,7 @@ sends it, and what it keeps. Every claim here is checkable against the source
 files cited beside it. If you find a statement that the code does not support,
 that is a bug — report it as described in [`SECURITY.md`](SECURITY.md).
 
-Applies to plugin version 0.14.x.
+Applies to plugin version 0.16.x.
 
 ---
 
