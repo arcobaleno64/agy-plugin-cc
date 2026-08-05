@@ -37,7 +37,7 @@ Scope note: sections 1–6 cover the conventional CLI-host surface (argv, subpro
 | Slash-command hijack of the prompt | `--disable-slash-commands` on AGY 1.1.9+, which otherwise expands a task beginning with `/` as its own command | `buildCliArgs`, `plugins/gemini/scripts/lib/engine.mjs` |
 | File Mutation | `--write` selects the write-capable run | `plugins/gemini/scripts/lib/job-control.mjs` |
 
-> **Correction (2026-08-04).** This table previously described file mutation as "gated behind explicit `--write`". That gate does not hold on the default path: `plugins/gemini/agents/gemini-rescue.md:34` instructs the subagent to *add* `--write` unless the user asks for read-only. `/gemini:rescue` is therefore write-capable by default. See 7.2.
+> **Correction (2026-08-04), resolved in v0.16.0.** This table previously described file mutation as "gated behind explicit `--write`", and that gate did not hold on the default path: the rescue subagent was instructed to *add* `--write` unless the user asked for read-only, so `/gemini:rescue` was write-capable by default. It no longer is. What `--write` gates is also narrower than the table implied — it selects the workspace the engine operates on, not whether the engine may write at all. See 7.2 for the measurements.
 
 ## 6. Residual Risks (conventional surface)
 - **Malicious Repository Content Boundary**: Audit edge cases where malformed git diffs or file paths might evade regex filters.
@@ -55,7 +55,7 @@ The plugin's function is to take content it did not author and hand it to an age
 |---|---|---|---|
 | A | repo diff → review prompt → model → rendered output → **Claude Code's context** | no (`write: false`, `lib/gemini.mjs`) | filename redaction + size cap on the input (7.4); parent-agent rule on the output (7.3) |
 | A′ | task prompt → model → rendered output → **Claude Code's context** | no unless `--write` (7.2) | parent-agent rule **and** the positional marker, which only `renderTaskResult` emits (7.3) |
-| B | repo content → rescue agent → **filesystem and shell** | **yes by default** (7.2) | none |
+| B | repo content → rescue agent → **filesystem and shell** | only with `--write` (7.2) | `--write` decides *where* the engine works, not *whether* it may write; no path boundary exists |
 | C | repo diff → `.omc/transfers/*.json` → an interactive AGY session started with `--add-dir .` | inherits that session's mode | filename redaction + size caps |
 | D | repo diff → stop-review-gate hook → model, with no explicit user action | no | same as A |
 
@@ -63,15 +63,29 @@ The plugin's function is to take content it did not author and hand it to an age
 
 `LLM06 Excessive Agency`, `LLM01 Prompt Injection`
 
-`agents/gemini-rescue.md:34` tells the subagent to default to `--write`. `buildCliArgs` maps `write` to `--dangerously-skip-permissions` (AGY) or `--yolo` (gemini) — `lib/engine.mjs:253,273`. Those flags remove the approval prompt; they do not constrain where the agent may act.
+**This is where the port diverges from upstream, and the parity audit did not catch it** because it compared command surfaces rather than capability semantics. `codex-companion.mjs:491` passes `sandbox: request.write ? "workspace-write" : "read-only"` — upstream's write mode is *confined to the workspace by a sandbox*, which is why upstream can also set `approvalPolicy: "never"` safely: the sandbox is the control, and the prompt is only an affordance. This plugin has no equivalent boundary.
 
-**This is where the port diverges from upstream, and the parity audit did not catch it** because it compared command surfaces rather than capability semantics. `codex-companion.mjs:491` passes `sandbox: request.write ? "workspace-write" : "read-only"` — upstream's write mode is *confined to the workspace by a sandbox*. This plugin has no equivalent, because AGY has no path-boundary mode. That gap is exactly what [antigravity-cli#749](https://github.com/google-antigravity/antigravity-cli/issues/749) requests.
+**Measured on AGY 1.1.10, 2026-08-05.** Seven headless runs against a disposable repository, prompt on stdin, matching how the plugin invokes the engine. Superseding the earlier "deliberately not tested" note — this is now tested, and two of the three claims that note rested on were wrong.
 
-Compounding evidence that the boundary is not implicit: `lib/engine.mjs:217-222` records that AGY without `--new-project` writes to its own scratch directory rather than `cwd`, and a live 1.1.10 run during this session resolved *read* paths against a different checkout than the one passed as `cwd`.
+| `--sandbox` | `--dangerously-skip-permissions` | `--new-project` | Action | Outcome |
+|---|---|---|---|---|
+| — | yes | yes | edit tool → outside workspace | wrote |
+| yes | yes | yes | edit tool → outside workspace | wrote |
+| yes | yes | yes | shell command → outside workspace | wrote, exit 0 |
+| yes | — | yes | edit tool → outside workspace | wrote, no prompt |
+| — | — | — | edit tool → in-repo path | wrote to AGY's scratch dir; repo untouched |
+| — | — | yes | edit tool → in-repo path | edited the repo file |
+| — | — | yes | shell command → in repo | ran, exit 0 |
 
-**Deliberately not tested.** Demonstrating this would mean letting an agent write to disk under attacker-supplied instructions. The architectural claim rests on reading the flags, not on a live exploit.
+1. **`--sandbox` is not a path boundary.** It exists on 1.1.10 — so the earlier claim that "AGY has no path-boundary mode" was wrong about the flag and right about the capability. Runs 2–4 wrote outside the workspace with it enabled, via both the edit tool and a shell command. Its help text, "terminal restrictions", describes what a terminal command may reach (network, `.git`), not where anything may write. [antigravity-cli#749](https://github.com/google-antigravity/antigravity-cli/issues/749) is therefore still the open request.
+2. **`--dangerously-skip-permissions` granted nothing here.** Runs 4, 6 and 7 wrote or executed without it and without any prompt: headless print mode auto-approves regardless. The claim that "those flags remove the approval prompt" was wrong — in this mode there is no prompt to remove. **The flag was removed in v0.16.0** at no behavioral cost.
+3. **`--new-project` is the real control.** Without it AGY works inside its own scratch directory and the repository is untouched (run 5); with it, the repository is edited (runs 6–7). `lib/engine.mjs` adds it only on write turns, which is why behavior has looked correct — the read-only guarantee comes from workspace binding, not from a permission mode.
 
-**Mitigations available now**: keep `--write` opt-in rather than default; adopt `--sandbox=workspace-only` when AGY ships it.
+**Changed in v0.16.0**: `--write` is no longer the subagent default (`agents/gemini-rescue.md`), and `--dangerously-skip-permissions` is gone. The MCP path already defaulted `write: false`; the two entry points now agree.
+
+**Residual, unchanged.** Nothing constrains where a `--write` run may reach — runs 1 and 3 wrote outside the workspace, and no flag on either engine prevents it. The exposure is now opt-in and accurately described rather than default and mis-described. The real fix remains an engine-side path boundary.
+
+**Not measured**: the gemini engine, which is installed but unauthenticated on the test machine since Google ended consumer CLI access on 2026-06-18. `--yolo` is therefore **kept** — nothing above transfers to it without its own test.
 
 ### 7.3 PI-2 — Model output reaches the parent agent unfiltered — **mitigated in v0.14.0**
 
@@ -129,7 +143,7 @@ Calibrate that result honestly: it shows one model refusing one obvious payload.
 
 ### 7.7 Priority
 
-1. **7.2** — the only item where a successful injection reaches the filesystem. Make `--write` opt-in, and adopt an AGY path boundary when one exists.
+1. **7.2** — the only item where a successful injection reaches the filesystem. `--write` is opt-in as of v0.16.0, which was half the mitigation; the other half, an engine-side path boundary, still does not exist to adopt. Re-test `--sandbox` on each AGY release — if it grows a filesystem scope, this becomes closable.
 2. ~~**7.4**~~ — **fixed in v0.13.0**; detection is shared between both paths and the review payload is bounded.
 3. ~~**7.3**~~ — **mitigated in v0.14.0**; marker plus a parent-agent rule. A nonce-delimited region remains available if the residual is ever judged worth the noise.
 4. **7.5** — accept, or make the gate opt-in per repository.

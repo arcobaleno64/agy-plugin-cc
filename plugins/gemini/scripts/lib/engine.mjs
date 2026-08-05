@@ -250,15 +250,27 @@ export function buildCliArgs(engine, options = {}) {
     if (outputJson && supportsAgyStructuredOutput(agyVersion)) {
       args.push("--output-format", "json");
     }
-    if (write) args.push("--dangerously-skip-permissions");
+    // No --dangerously-skip-permissions. AGY's headless print mode auto-approves
+    // file edits and shell commands with or without it — measured on 1.1.10,
+    // 2026-08-05: identical writes with the flag, without it, and with
+    // --sandbox added. The flag granted nothing here while being the single
+    // clearest "circumvents the permission model" signal in the codebase.
+    //
+    // --sandbox is deliberately not used either: it restricts what a terminal
+    // command may reach (network, .git), not where anything may write. A run
+    // with --sandbox wrote outside the workspace through both the edit tool and
+    // a shell command. See docs/THREAT-MODEL.md 7.2.
     if (resumeLast) {
       args.push("--continue");
     } else if (write) {
-      // Without an active workspace/project, agy 1.1.0 silently writes to its
-      // scratch dir (~/.gemini/antigravity-cli/scratch) instead of `cwd`
-      // (machine-verified 2026-07-09). --new-project binds the session's
-      // workspace to `cwd`. Only on a fresh (non-continuation) write turn —
-      // a resumed conversation already has its original project association.
+      // This is the real write control on the AGY path, not a permission flag.
+      // Without an active workspace/project, agy writes into its own scratch dir
+      // (~/.gemini/antigravity-cli/scratch) instead of `cwd` — machine-verified
+      // 2026-07-09 and again 2026-08-05, where a read-only-shaped run asked to
+      // edit a repo file edited the scratch copy and left the repo untouched.
+      // --new-project binds the session's workspace to `cwd`. Only on a fresh
+      // (non-continuation) turn — a resumed conversation already has its
+      // original project association.
       args.push("--new-project");
     }
     const timeout = formatAgyTimeout(timeoutMs);

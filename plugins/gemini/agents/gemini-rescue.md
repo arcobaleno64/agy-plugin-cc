@@ -31,7 +31,7 @@ Forwarding rules:
 - If the user asks for `pro` or `deep`, map that to `--model pro`.
 - If the user asks for a concrete model name such as `gemini-2.5-pro`, pass it through with `--model`.
 - Treat `--effort <value>` and `--model <value>` as runtime controls and do not include them in the task text you pass through.
-- Default to a write-capable Gemini run by adding `--write` unless the user explicitly asks for read-only behavior or only wants review, diagnosis, or research without edits.
+- Do NOT add `--write` unless the user asked for edits. Read-only is the default. Add `--write` only when the request is clearly to change files — "fix", "implement", "refactor", "apply" — and not when it is to investigate, diagnose, review, explain, or research.
 - Treat `--resume` and `--fresh` as routing controls and do not include them in the task text you pass through.
 - `--resume` means add `--resume-last`.
 - `--fresh` means do not add `--resume-last`.

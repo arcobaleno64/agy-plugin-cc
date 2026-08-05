@@ -146,7 +146,7 @@ test("AGY stdin mode omits --print and prompt while preserving execution flags",
 
   assert.ok(!args.includes("--print"));
   assert.ok(!args.includes(prompt));
-  assert.ok(args.includes("--dangerously-skip-permissions"));
+  assert.ok(!args.includes("--dangerously-skip-permissions"));
   assert.ok(args.includes("--new-project"));
   assert.deepEqual(args.slice(-2), ["--print-timeout", "2m"]);
 });
@@ -206,7 +206,6 @@ test("agy requests the JSON envelope only where the flag exists", () => {
 
 test("agy write turn adds --new-project so files land in cwd, not agy's scratch dir", () => {
   const args = buildCliArgs("agy", { prompt: "hello", write: true });
-  assert.ok(args.includes("--dangerously-skip-permissions"));
   assert.ok(args.includes("--new-project"));
   assert.ok(!args.includes("--continue"));
 });
@@ -217,10 +216,38 @@ test("agy resumed write turn uses --continue instead of --new-project", () => {
   assert.ok(!args.includes("--new-project"));
 });
 
-test("agy read-only turn adds neither --dangerously-skip-permissions nor --new-project", () => {
+test("agy read-only turn does not bind the session to cwd", () => {
   const args = buildCliArgs("agy", { prompt: "hello" });
-  assert.ok(!args.includes("--dangerously-skip-permissions"));
   assert.ok(!args.includes("--new-project"));
+});
+
+// Measured on AGY 1.1.10 (docs/THREAT-MODEL.md 7.2): headless print mode
+// auto-approves edits and shell commands with or without this flag, so it
+// granted nothing while reading as a permission bypass. Asserted on both turn
+// shapes because a write turn is where it would plausibly be re-added.
+test("no agy turn passes --dangerously-skip-permissions", () => {
+  for (const options of [
+    { prompt: "hello" },
+    { prompt: "hello", write: true },
+    { prompt: "hello", write: true, resumeLast: true },
+    { prompt: "hello", write: true, useStdin: true, agyVersion: "1.1.10" }
+  ]) {
+    const args = buildCliArgs("agy", options);
+    assert.ok(
+      !args.includes("--dangerously-skip-permissions"),
+      `flag reappeared for ${JSON.stringify(options)}`
+    );
+  }
+});
+
+// --sandbox restricts what a terminal command may reach, not where anything may
+// write — a run with it enabled still wrote outside the workspace through both
+// the edit tool and a shell command. Pinned so it is not adopted as a boundary
+// on the strength of its name.
+test("no agy turn passes --sandbox, which is not a path boundary", () => {
+  for (const options of [{ prompt: "hello" }, { prompt: "hello", write: true }]) {
+    assert.ok(!buildCliArgs("agy", options).includes("--sandbox"));
+  }
 });
 
 // --- auto routing ---

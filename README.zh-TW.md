@@ -146,7 +146,7 @@
 | 旗標 | 說明 |
 |---|---|
 | `--background` | 分離執行；立即回傳工作 ID |
-| `--write` | 允許 Gemini 修改檔案（`--yolo` / `--dangerously-skip-permissions`） |
+| `--write` | 讓引擎在**你的版本庫**上工作，而非其自身的 scratch 目錄。預設關閉。AGY 以 `--new-project` 將 session 綁定至 `cwd`；gemini 則加 `--yolo`。這不是沙箱——詳見 [安全性](#安全性) |
 | `--resume-last` | 繼續最近一次的 Gemini 工作階段 |
 | `--fresh` | 強制開啟全新 Gemini 工作階段，忽略可接續的執行緒 |
 | `--engine <gemini\|agy\|auto>` | 覆蓋引擎選擇 |
@@ -346,7 +346,7 @@ Claude Code
 
 - **執行時**：Codex 使用常駐 app-server，具原生審查與持久 thread。本外掛則於*每次命令*直接呼叫所選的第一級 Gemini CLI 或 AGY 引擎（無共享執行時）；`auto` 採 Gemini→AGY 的 capability-based 順序。
 - **標準審查**：Codex 外掛之 `/codex:review` 為*原生*審查器；本外掛之 `/gemini:review` 為 **prompt／CLI adapter 等效實作**——將 diff 連同務實審查 prompt 送交 Gemini 並解析回傳之結構化 JSON，並非原生 Gemini 審查器。
-- **沙箱**：Codex 提供 `read-only`／`workspace-write` 沙箱。Gemini 無對應沙箱；寫入權由 `--write`（`--yolo`）把關，否則以 prompt 強制唯讀紀律。（不採 `--approval-mode plan`：其需 TTY，與 stdin 提示傳遞衝突。）
+- **沙箱**：Codex 提供 `read-only`／`workspace-write` 沙箱，並將可寫入的執行限制在工作區內。**Gemini CLI 與 AGY 皆無對應的路徑邊界**，故本外掛亦無。AGY 的 `--sandbox` 不是——1.1.10 實測，啟用它的執行仍透過編輯工具與 shell 指令寫到工作區外；它限制的是終端機指令能碰到什麼（網路、`.git`），不是誰能寫到哪。`--write` 實際控制的是**引擎在哪裡工作**：不加它時 AGY 在自身 scratch 目錄作業，你的版本庫不受影響。詳見 [`docs/THREAT-MODEL.md` §7.2](docs/THREAT-MODEL.md)。（不採 `--approval-mode plan`：其需 TTY，與 stdin 提示傳遞衝突。）
 - **Thread／session 接續**：Codex 於 app-server 持久化 thread。本外掛之接續依賴自 JSON 信封擷取之 Gemini CLI **session id**；`/gemini:result` 會印出 `gemini --resume <session-id>`，而 `--resume-last` 接續*當前 Claude session* 之最新 thread。
 
 ---

@@ -75,8 +75,11 @@ const STOP_REVIEW_TASK_MARKER = "";
 // Deep (agentic) review guidance, appended to the review prompt when `--deep` is
 // set. It invites the model to use its read-only tools to inspect repo context
 // beyond the diff (dependency manifests, callers, untracked artifacts) — closing
-// the gap vs a native agentic reviewer. Read-only: the gemini engine runs without
-// --yolo so write tools require approval that never arrives non-interactively.
+// the gap vs a native agentic reviewer. The review path runs with write off, so
+// on AGY the session is never bound to `cwd` and edits land in AGY's own scratch
+// directory rather than the repository (docs/THREAT-MODEL.md 7.2). Note this is
+// workspace binding, not a permission gate: headless mode approves edit tools
+// either way, so the guarantee is about *where*, not *whether*.
 const DEEP_REVIEW_GUIDANCE = [
   "",
   "DEEP REVIEW MODE — look beyond the diff:",
