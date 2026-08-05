@@ -283,6 +283,8 @@ Override via `--engine` flag or the `GEMINI_ENGINE` environment variable.
 - **Credential handling**: OAuth credentials in `~/.gemini/oauth_creds.json` are read only to check token expiry via `getGeminiLoginStatus()`; they are never logged, copied elsewhere, or transmitted by this plugin.
 - **`.gitignore`**: The `.omc/` state directory (job logs, session state) is excluded from version control.
 
+**What is sent, kept, and read** — including the one path that transmits without an explicit command — is documented in [`PRIVACY.md`](PRIVACY.md).
+
 ---
 
 ## Setup & Auth Troubleshooting
