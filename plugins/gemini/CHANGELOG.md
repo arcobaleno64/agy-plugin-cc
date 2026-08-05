@@ -9,8 +9,20 @@
   - `readOnlyHint` here means "does not modify the workspace it was pointed at". Every tool writes plugin job state, which lives outside that workspace and is bookkeeping rather than user content; the reasoning is recorded beside the definitions rather than left for a reviewer to infer.
   - `openWorldHint` marks the two tools that reach Google through the Gemini/AGY CLI. `gemini_review` is read-only **and** open-world: it never touches the reviewed workspace, but it does send the diff.
 
+### Fixed
+- **A gemini CLI authenticated through its own auth prompt was read as unauthenticated.** Gemini CLI 0.53.1 stores credentials in the OS keychain via `@github/keytar` — `gemini-cli-api-key/default-api-key` for a pasted API key, `gemini-cli-oauth/main-account` for OAuth, which it migrates out of `oauth_creds.json` and then deletes. `hasGeminiCredentials()` checked two environment variables and that one legacy file, so it saw neither. The consequence was silent: `auto` routed past a working gemini to AGY, and `/gemini:setup` told the user to authenticate an engine that already was. Reproduced on this machine, where `cmdkey` holds the API-key entry and the check returned `false`.
+  - The keychain is probed for **existence only**, one entry at a time by exact name, using the platform's own tool: `security find-generic-password` on macOS (deliberately without `-w`, which prints the password), `secret-tool search` on Linux (not `lookup`, which prints the secret), `cmdkey /list:<target>` on Windows. macOS and Linux report presence in their exit status, so their output is discarded unread.
+  - Capped at two seconds, cached once per process, and **failing closed** on every error — missing tool, locked keychain, timeout, unsupported platform. A wrong "authenticated" would send `auto` into an engine that rejects every request, which is the failure this check exists to prevent.
+  - `GEMINI_COMPANION_DISABLE_KEYCHAIN=1` turns the probe off for anyone who would rather this plugin never spawn a credential tool. The only cost is `auto` accuracy; `--engine gemini` still selects it explicitly.
+- **`/gemini:setup` computed readiness from a narrower check than auto-routing used.** `geminiReady` read the OAuth *file* alone, so a user with `GEMINI_API_KEY` set was reported not ready while their next command worked. A comment in `lib/gemini-auth.mjs` had asserted the two were the same notion; now they are. `geminiAuth` in the JSON output still reports the OAuth file specifically, unchanged.
+  - The matching next-step text changes from "Run `gemini` once to authenticate via OAuth." to "Run `gemini` once to authenticate, or set GEMINI_API_KEY." — OAuth is no longer the only way to satisfy the check.
+
 ### Tests
 - One test requires the annotations to exist and be well-formed on every tool, including the policy's 64-character name limit, and refuses a meaningless `destructiveHint` on a read-only tool. A second pins each tool's hints individually — a wrong hint is worse than a missing one, because a client acts on it.
+
+### Known limitations
+- **The encrypted-file fallback is not detected.** Where no keychain is available — headless Linux, WSL, or `GEMINI_FORCE_FILE_STORAGE=true` — the CLI stores credentials in `~/.gemini/gemini-credentials.json`, one encrypted blob shared by every service. Its presence cannot distinguish a gemini credential from an unrelated MCP token, so it is deliberately not consulted: guessing there would reintroduce the false "authenticated" this check exists to prevent. Affected users select the engine explicitly with `--engine gemini`.
+- **Only Windows was exercised against a real keychain.** The macOS and Linux commands are pinned by tests with an injected spawn, which fixes the argv and the presence semantics but proves nothing about those tools' actual behavior on those platforms.
 
 ## 0.15.0 — 2026-08-05 — Job state lands where Claude Code puts plugin data
 

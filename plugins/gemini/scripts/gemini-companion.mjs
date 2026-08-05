@@ -60,6 +60,7 @@ import {
   getGeminiLoginStatus,
   getAgyLoginStatus,
   getGeminiPlanTier,
+  hasGeminiCredentials,
   getSessionRuntimeStatus
 } from "./lib/gemini.mjs";
 import { MODEL_MAP_METADATA, MODEL_ALIAS_ENTRIES } from "./lib/model-map.mjs";
@@ -162,6 +163,10 @@ function buildSetupReport(cwd, actionsTaken = [], options = {}) {
   const geminiStatus = getGeminiAvailability(cwd);
   const agyStatus = getAgyAvailability();
   const geminiAuth = getGeminiLoginStatus(cwd);
+  // `geminiAuth` reports the OAuth *file* only. Readiness must use the full
+  // credential check auto-routing uses — env keys and the OS keychain included —
+  // or setup reports "not authenticated" for a user whose next command works.
+  const geminiCredentialed = hasGeminiCredentials();
   const agyAuth = getAgyLoginStatus();
   const geminiPlanTier = getGeminiPlanTier();
   const config = getConfig(workspaceRoot) ?? {};
@@ -179,7 +184,7 @@ function buildSetupReport(cwd, actionsTaken = [], options = {}) {
   const engineKnown =
     requestedEngine === "" || requestedEngine === "auto" || requestedEngine === "gemini" || requestedEngine === "agy";
   const agySelected = requestedEngine === "agy";
-  const geminiReady = geminiStatus.available && geminiAuth.loggedIn;
+  const geminiReady = geminiStatus.available && geminiCredentialed;
   const agyAvailable = agyStatus.available;
   // Backward-compatible alias retained for existing JSON consumers. AGY is a
   // first-class supported engine; "fallback" describes only auto-routing order.
@@ -225,8 +230,8 @@ function buildSetupReport(cwd, actionsTaken = [], options = {}) {
       "Install at least one supported engine: Gemini CLI with `npm install -g @google/gemini-cli`, or AGY with `curl -fsSL https://antigravity.google/cli/install.sh | bash`."
     );
   }
-  if (!agySelected && geminiStatus.available && !geminiAuth.loggedIn) {
-    nextSteps.push("Run `gemini` once to authenticate via OAuth.");
+  if (!agySelected && geminiStatus.available && !geminiCredentialed) {
+    nextSteps.push("Run `gemini` once to authenticate, or set GEMINI_API_KEY.");
   }
   if (!agySelected && !geminiStatus.available && agyAvailable) {
     nextSteps.push(

@@ -635,7 +635,7 @@ export function getAgyAvailability() {
 
 // Moved to lib/gemini-auth.mjs so engine.mjs can consult credentials without an
 // import cycle. Re-exported here because these are the existing public names.
-export { getGeminiLoginStatus, getGeminiPlanTier } from "./gemini-auth.mjs";
+export { getGeminiLoginStatus, getGeminiPlanTier, hasGeminiCredentials } from "./gemini-auth.mjs";
 
 export function getAgyLoginStatus() {
   const status = binaryAvailable("agy", ["--version"]);

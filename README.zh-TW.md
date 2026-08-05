@@ -262,6 +262,8 @@
 
 可透過 `--engine` 旗標或 `GEMINI_ENGINE` 環境變數覆蓋。
 
+> **唯有 gemini 具備 CLI 實際會使用的憑證時，才算可用。** 認定來源為 `GEMINI_API_KEY`／`GOOGLE_API_KEY`、`~/.gemini/oauth_creds.json`，或 Gemini CLI 0.53.1 存放於作業系統 keychain 的兩個項目（`gemini-cli-api-key/default-api-key`、`gemini-cli-oauth/main-account`）。keychain **只檢查存在與否**，絕不讀取其值；可用 `GEMINI_COMPANION_DISABLE_KEYCHAIN=1` 關閉探測，代價是 `auto` 可能略過憑證已看不見的 gemini。詳見 [`PRIVACY.md`](PRIVACY.md)。有一種情況刻意不偵測：當 keychain 不可用時，CLI 會退回一個所有 service 共用的加密檔案，其存在與否無法區分是 gemini 憑證還是其他 token，因此不做臆測——該情境請直接使用 `--engine gemini`。
+
 > **AGY 1.1.10+ 選擇機制：** 使用 `agy models` 所列的 `--model <精確 ID>`，或使用 `--effort <low|medium|high>` 二者之一。Gemini alias 不是有效的 AGY model ID，model 與 effort 不可合併；雙引擎審查不可使用 `--model`，因為 model ID 具引擎特性。Gemini 仍維持其獨立的 alias 與 effort-to-model 映射。
 
 > **AGY 1.1.8+ 改用原生 JSON envelope；更舊版本才退回 transcript recovery。** AGY 1.1.8 加入 `--output-format json`，於 stdout 回傳回應、conversation ID 與終止狀態。自外掛 v0.11.0 起，AGY 1.1.8 以上以該 envelope 為權威來源，完全不讀磁碟 transcript，也不需要 brain root。一項後果：AGY 結果不再顯示推理摘要區塊——envelope 只有 `thinking_tokens` 計數、沒有 thinking 文字（`stream-json` 亦然）。Gemini 引擎不受影響，其推理摘要取自 stderr。
