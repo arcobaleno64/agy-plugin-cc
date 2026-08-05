@@ -1,0 +1,90 @@
+name: Bug report
+description: Something the plugin does is wrong, and you can show it.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not report a security vulnerability here.** Use
+        [private disclosure](https://github.com/arcobaleno64/gemini-plugin-cc/security/advisories/new)
+        instead — see `SECURITY.md`.
+
+        Paste no credentials, tokens, or `.env` contents. Redact repository paths
+        you would rather not publish.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, and what you got instead.
+      placeholder: |
+        Ran: /gemini:review --engine agy
+        Expected: findings for the working-tree diff
+        Got: "AGY engine requested but no transcript brain dir was found"
+    validations:
+      required: true
+
+  - type: input
+    id: command
+    attributes:
+      label: The exact command
+      description: Including every flag. This is usually where the answer is.
+      placeholder: "/gemini:review --engine agy --scope working-tree"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Engine
+      options:
+        - agy
+        - gemini
+        - auto (did not specify)
+        - not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: setup-output
+    attributes:
+      label: Output of /gemini:setup
+      description: >
+        This carries the plugin version, the engine versions, and the auth state
+        — the three things almost every diagnosis needs. Redact paths if you must,
+        but keep the version lines.
+      render: text
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS and Node version
+      placeholder: "Windows 11 26H1, Node 22.11.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce it
+      description: >
+        A repository state that shows the problem. If you cannot share yours,
+        `node scripts/make-sample-repo.mjs` builds a disposable one that may
+        reproduce it — say so either way.
+      placeholder: |
+        1. Clone any repo with an untracked file
+        2. Run ...
+        3. Observe ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: error-output
+    attributes:
+      label: Error output
+      description: The full message, not a summary of it.
+      render: text
+    validations:
+      required: false
