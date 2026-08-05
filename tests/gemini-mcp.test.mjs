@@ -30,6 +30,64 @@ test("gemini MCP advertises its identity and five tools", async () => {
   ]);
 });
 
+// The Anthropic software directory policy requires every applicable annotation,
+// naming readOnlyHint, destructiveHint and title. A client uses them to decide
+// whether a call needs confirmation, so a missing or flattering hint is a real
+// disclosure defect, not metadata tidiness.
+test("every MCP tool carries the annotations a client needs to gate it", async () => {
+  const { tools } = await handleRequest({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+
+  for (const tool of tools) {
+    const a = tool.annotations;
+    assert.ok(a, `${tool.name} has no annotations`);
+    assert.equal(typeof a.title, "string", `${tool.name} has no title`);
+    assert.ok(a.title.length > 0 && a.title !== tool.name, `${tool.name} title must be human-readable`);
+    assert.equal(typeof a.readOnlyHint, "boolean", `${tool.name} has no readOnlyHint`);
+    assert.equal(typeof a.openWorldHint, "boolean", `${tool.name} has no openWorldHint`);
+
+    // destructiveHint and idempotentHint only carry meaning when a tool can
+    // write, and asserting them on a read-only tool would invite a meaningless
+    // `destructiveHint: false` on everything.
+    if (a.readOnlyHint) {
+      assert.ok(!("destructiveHint" in a), `${tool.name} is read-only; destructiveHint is meaningless`);
+    } else {
+      assert.equal(typeof a.destructiveHint, "boolean", `${tool.name} can write but has no destructiveHint`);
+      assert.equal(typeof a.idempotentHint, "boolean", `${tool.name} can write but has no idempotentHint`);
+    }
+
+    // Policy caps tool names at 64 characters.
+    assert.ok(tool.name.length <= 64, `${tool.name} exceeds the 64-character limit`);
+  }
+});
+
+// Pinned individually, because these are the claims a reviewer checks against
+// behavior. Getting one wrong is worse than omitting it.
+test("MCP annotations match what each tool can actually do", async () => {
+  const { tools } = await handleRequest({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+  const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool.annotations]));
+
+  // `write: true` hands the delegated agent the filesystem with no path
+  // boundary, and annotations cannot vary per call, so the worst case governs.
+  assert.equal(byName.gemini_rescue.readOnlyHint, false);
+  assert.equal(byName.gemini_rescue.destructiveHint, true);
+  assert.equal(byName.gemini_rescue.openWorldHint, true);
+
+  // The review path runs with write disabled but still sends the diff out.
+  assert.equal(byName.gemini_review.readOnlyHint, true);
+  assert.equal(byName.gemini_review.openWorldHint, true);
+
+  // Reading job state touches neither the workspace nor the network.
+  for (const name of ["gemini_job_status", "gemini_job_result"]) {
+    assert.equal(byName[name].readOnlyHint, true, `${name} must be read-only`);
+    assert.equal(byName[name].openWorldHint, false, `${name} must not reach the network`);
+  }
+
+  // Cancelling a write-capable task can leave half-applied edits behind.
+  assert.equal(byName.gemini_job_cancel.readOnlyHint, false);
+  assert.equal(byName.gemini_job_cancel.destructiveHint, true);
+  assert.equal(byName.gemini_job_cancel.idempotentHint, true);
+});
+
 test("handleRequest delegates rescue and review to injected runtime dispatchers", async () => {
   const workspace = makeTempDir();
   const calls = [];

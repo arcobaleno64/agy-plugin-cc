@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Every MCP tool now carries the annotations a client uses to decide whether a call needs confirmation** — `title`, `readOnlyHint`, `openWorldHint`, and `destructiveHint`/`idempotentHint` on the two tools that can write. All five previously shipped with none, so a client had nothing to gate on and had to treat a write-capable delegation exactly like a status read. Required by the Anthropic software directory policy, which names those three by name.
+  - The hints describe the **worst** a call can do, because they are static per tool and cannot vary with arguments: `gemini_rescue` reports as destructive even though its `write` argument defaults to false, since `write: true` hands the delegated agent the filesystem with no path boundary ([`docs/THREAT-MODEL.md` §7.2](../../docs/THREAT-MODEL.md)).
+  - `gemini_job_cancel` is destructive but idempotent — cancelling a `--write` task can leave half-applied edits behind, while cancelling a finished job is a no-op.
+  - `readOnlyHint` here means "does not modify the workspace it was pointed at". Every tool writes plugin job state, which lives outside that workspace and is bookkeeping rather than user content; the reasoning is recorded beside the definitions rather than left for a reviewer to infer.
+  - `openWorldHint` marks the two tools that reach Google through the Gemini/AGY CLI. `gemini_review` is read-only **and** open-world: it never touches the reviewed workspace, but it does send the diff.
+
+### Tests
+- One test requires the annotations to exist and be well-formed on every tool, including the policy's 64-character name limit, and refuses a meaningless `destructiveHint` on a read-only tool. A second pins each tool's hints individually — a wrong hint is worse than a missing one, because a client acts on it.
+
 ## 0.15.0 — 2026-08-05 — Job state lands where Claude Code puts plugin data
 
 Maintenance release closing the post-approval handoff backlog. Two defects surfaced while writing the tests that backlog asked for, and both are fixed here rather than deferred.
