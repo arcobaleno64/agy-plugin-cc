@@ -380,7 +380,7 @@ Claude Code
 - **尚未驗證的引擎版本或平台**——開一則 [compatibility report](https://github.com/arcobaleno64/gemini-plugin-cc/issues/new?template=compatibility_report.yml)。「在 X 上可用」與「在 X 上壞掉」同樣有價值，因為文件只聲稱實際跑過的部分。
 - **安全性漏洞**——請勿開 issue，改用 [私密回報](https://github.com/arcobaleno64/gemini-plugin-cc/security/advisories/new)；詳見 [`SECURITY.md`](SECURITY.md)。
 
-若你是要審查本外掛而非使用它：[`docs/verifying-without-credentials.md`](docs/verifying-without-credentials.md)（英文）記載完整的離線驗證路徑，不需帳號、不需 API key。
+若你是要審查本外掛而非使用它：[`docs/verifying-without-credentials.md`](docs/verifying-without-credentials.md)（英文）記載完整的離線驗證路徑，不需帳號、不需 API key。若想直接看每個命令的端到端執行（以替身引擎驅動），從 `node scripts/reviewer-demo.mjs` 開始。
 
 ---
 

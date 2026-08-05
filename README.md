@@ -382,7 +382,7 @@ Documented, non-blocking constraints — see the linked sections for detail:
 - **An engine version or platform we have not verified** — open a [compatibility report](https://github.com/arcobaleno64/gemini-plugin-cc/issues/new?template=compatibility_report.yml). "It works on X" is as useful as "it breaks on X", because the docs only claim what has actually been run.
 - **A security vulnerability** — do not open an issue. Use [private disclosure](https://github.com/arcobaleno64/gemini-plugin-cc/security/advisories/new); see [`SECURITY.md`](SECURITY.md).
 
-Reviewing the plugin rather than using it? [`docs/verifying-without-credentials.md`](docs/verifying-without-credentials.md) is the complete offline path — no account, no API key.
+Reviewing the plugin rather than using it? [`docs/verifying-without-credentials.md`](docs/verifying-without-credentials.md) is the complete offline path — no account, no API key. For a run of every command end to end against a stand-in engine, start with `node scripts/reviewer-demo.mjs`.
 
 ---
 
