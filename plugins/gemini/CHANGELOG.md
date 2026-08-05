@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.16.4 — 2026-08-05 — A read-only AGY task can see the repository again
+
+### Fixed
+- **`/gemini:rescue` on AGY without `--write` was reading AGY's scratch directory, not your repository.** Asked for its working directory, the model answered `~/.gemini/antigravity-cli/scratch`; every relative path missed. The subagent is documented for exactly this shape — "investigate, diagnose, review, explain, research" — and on AGY it could do none of it.
+  - **Introduced in v0.16.0**, when read-only became the default. The flag that orients AGY on `cwd` (`--new-project`) was attached to write turns, so inverting the default silently took orientation away with it. Reviews were unaffected: their diff is assembled by the plugin and travels in the prompt.
+  - A read-only turn now passes `--add-dir <cwd>`, which orients the session without `--new-project`. Verified end to end: the model reports the repository as its working directory, reads a relative path correctly, and leaves the working tree clean.
+  - Gated at AGY 1.1.10, the only version the flag was exercised on. Older AGY keeps the previous behavior rather than being handed a flag it might reject.
+
+### Security
+- **A claim in `docs/THREAT-MODEL.md` §7.2 was wrong and is corrected rather than quietly dropped.** Conclusion 3 said "the read-only guarantee comes from workspace binding". **There was no guarantee.** The original run wrote to the scratch directory because its prompt named a *relative* path; re-measured with absolute paths, a turn with **no workspace flag at all** read and wrote outside that directory. What the unoriented shape withheld was the model's knowledge of where the repository is — not its access to it.
+- **This release therefore trades a protection that was not one for a capability that was documented.** Be precise about what changed: a read-only AGY turn can now resolve relative paths into your repository, so a prompt injection that says "edit ./src/x.js" reaches it where before it would have hit a scratch copy. An injection naming an absolute path always reached it. AGY has no read-only mode; `--add-dir` and `--new-project` orient identically and neither withholds write.
+- **What `--write` still means, stated honestly.** On gemini it is a real gate (`--yolo`; without it no write or shell tools are offered). On AGY it is a statement of intent that selects one orientation flag over another, and it remains what the subagent and MCP defaults key off. It is not a sandbox, and §7.2, both READMEs and `docs/known-diffs.md` now say so in those words.
+
+### Tests
+- Six cases pin the orientation matrix: read-only takes `--add-dir` with the workspace path, a write turn keeps `--new-project` and does not also get `--add-dir`, a resumed turn keeps its original workspace, the flag is withheld below 1.1.10 and when no workspace is given, and the gemini engine never sees it.
+
+### Not tested
+- **AGY below 1.1.10.** `--add-dir` may well predate it, but an unverified lower bound is a guess, and guessing spawns an unknown flag at an older engine. Those versions keep the v0.16.3 behavior.
+- **Whether `--add-dir` differs from `--new-project` in any way beyond orientation.** Both were measured to orient the session and to permit writes; no attempt was made to characterize what else creating a project does.
+
 ## 0.16.3 — 2026-08-05 — Review picks its engine the same way every other command does
 
 ### Fixed

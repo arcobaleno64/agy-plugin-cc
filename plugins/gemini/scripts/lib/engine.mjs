@@ -124,6 +124,19 @@ export function supportsAgyStructuredOutput(version) {
   return agyVersionAtLeast(version, 1, 8);
 }
 
+// --add-dir puts a directory in AGY's workspace, which is what makes the model
+// treat it as "here". Without it a read-only turn reports its cwd as
+// ~/.gemini/antigravity-cli/scratch and every relative path misses — measured on
+// 1.1.10, 2026-08-05, alongside --new-project (which orients the same way but is
+// reserved for write turns).
+//
+// Gated at 1.1.10 because that is the only version the flag was exercised on. It
+// may well predate that; an unverified lower bound would be a guess, and a guess
+// here spawns an unknown flag at an older AGY instead of degrading quietly.
+export function supportsAgyWorkspaceDir(version) {
+  return agyVersionAtLeast(version, 1, 10);
+}
+
 export function detectEngine(requestedEngine = null, options = {}) {
   const {
     hasGeminiCredentialsImpl: hasGeminiCredentialsFn = hasGeminiCredentials,
@@ -223,7 +236,7 @@ function assertAgyPromptSafe(prompt) {
 }
 
 export function buildCliArgs(engine, options = {}) {
-  const { prompt = "", model, effort, write = false, resumeLast = false, outputJson = false, timeoutMs, useStdin = false, agyVersion = null } = options;
+  const { prompt = "", model, effort, write = false, resumeLast = false, outputJson = false, timeoutMs, useStdin = false, agyVersion = null, workspaceDir = null } = options;
 
   if (engine === "agy") {
     // AGY >=1.1.2 auto-enters print mode when a prompt is piped on stdin; adding
@@ -262,18 +275,29 @@ export function buildCliArgs(engine, options = {}) {
     // command may reach (network, .git), not where anything may write. A run
     // with --sandbox wrote outside the workspace through both the edit tool and
     // a shell command. See docs/THREAT-MODEL.md 7.2.
+    // Both branches below do the same job: tell AGY where "here" is. Without
+    // either, a turn reports its cwd as ~/.gemini/antigravity-cli/scratch and
+    // every relative path — read or write — lands there instead of in the
+    // repository (measured 2026-07-09 and again 2026-08-05).
+    //
+    // Neither is a permission control, and the difference between them is not
+    // read-versus-write. AGY has no read-only mode: with the workspace oriented,
+    // the model can edit it, and with the workspace *un*oriented it can still
+    // read and write anything by absolute path — measured 2026-08-05, where a
+    // run with no workspace flag at all wrote to an absolute path outside its
+    // scratch dir. What the unoriented shape actually withheld was the model's
+    // knowledge of where the repository is, which stops nothing that a prompt
+    // injection carrying an absolute path would do. See docs/THREAT-MODEL.md 7.2.
     if (resumeLast) {
+      // A resumed conversation already carries its original workspace.
       args.push("--continue");
     } else if (write) {
-      // This is the real write control on the AGY path, not a permission flag.
-      // Without an active workspace/project, agy writes into its own scratch dir
-      // (~/.gemini/antigravity-cli/scratch) instead of `cwd` — machine-verified
-      // 2026-07-09 and again 2026-08-05, where a read-only-shaped run asked to
-      // edit a repo file edited the scratch copy and left the repo untouched.
-      // --new-project binds the session's workspace to `cwd`. Only on a fresh
-      // (non-continuation) turn — a resumed conversation already has its
-      // original project association.
       args.push("--new-project");
+    } else if (workspaceDir && supportsAgyWorkspaceDir(agyVersion)) {
+      // Read-only turns were left unoriented until v0.16.4, which cost them the
+      // ability to investigate anything: `/gemini:rescue` without --write is
+      // documented for exactly that, and on AGY it was reading a scratch dir.
+      args.push("--add-dir", workspaceDir);
     }
     const timeout = formatAgyTimeout(timeoutMs);
     if (timeout) args.push("--print-timeout", timeout);

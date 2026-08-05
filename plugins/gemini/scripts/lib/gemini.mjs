@@ -256,6 +256,9 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
     agyVersion: engineInfo.version,
     useStdin,
     outputJson: useJson,
+    // Orients a read-only AGY turn on this repository. A write turn is already
+    // oriented by --new-project; buildCliArgs picks between them.
+    workspaceDir: cwd,
   });
 
   onProgress?.({ message: `Starting ${engineInfo.engine} turn...`, phase: "running" });

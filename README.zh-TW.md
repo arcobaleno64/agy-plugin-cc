@@ -146,7 +146,7 @@
 | 旗標 | 說明 |
 |---|---|
 | `--background` | 分離執行；立即回傳工作 ID |
-| `--write` | 讓引擎在**你的版本庫**上工作，而非其自身的 scratch 目錄。預設關閉。AGY 以 `--new-project` 將 session 綁定至 `cwd`；gemini 則加 `--yolo`。這不是沙箱——詳見 [安全性](#安全性) |
+| `--write` | 宣告本次執行預期會修改檔案。預設關閉。gemini 上它加的是 `--yolo`，那確實決定寫入工具是否存在；AGY 上它只是在 `--add-dir` 與 `--new-project` 之間擇一，兩者都會將執行定位到你的版本庫，且**都不會限制寫入能力**，故在 AGY 上這是意圖宣告而非邊界——詳見 [安全性](#安全性) |
 | `--resume-last` | 繼續最近一次的 Gemini 工作階段 |
 | `--fresh` | 強制開啟全新 Gemini 工作階段，忽略可接續的執行緒 |
 | `--engine <gemini\|agy\|auto>` | 覆蓋引擎選擇 |
@@ -346,7 +346,7 @@ Claude Code
 
 - **執行時**：Codex 使用常駐 app-server，具原生審查與持久 thread。本外掛則於*每次命令*直接呼叫所選的第一級 Gemini CLI 或 AGY 引擎（無共享執行時）；`auto` 採 Gemini→AGY 的 capability-based 順序。
 - **標準審查**：Codex 外掛之 `/codex:review` 為*原生*審查器；本外掛之 `/gemini:review` 為 **prompt／CLI adapter 等效實作**——將 diff 連同務實審查 prompt 送交 Gemini 並解析回傳之結構化 JSON，並非原生 Gemini 審查器。
-- **沙箱**：Codex 提供 `read-only`／`workspace-write` 沙箱，並將可寫入的執行限制在工作區內。**Gemini CLI 與 AGY 皆未提供本外掛可施加的對應路徑邊界**，故本外掛亦無。AGY 的 `--sandbox` 不是——1.1.10 實測，啟用它的執行仍透過編輯工具與 shell 指令寫到工作區外；它限制的是終端機指令能碰到什麼（網路、`.git`），不是誰能寫到哪。Gemini CLI 同名旗標則是**容器**沙箱，未安裝 Docker 或 Podman 即拒絕啟動，故未實測，亦不強制使用者安裝。`--write` 在兩引擎的意義不同：AGY 上它決定**引擎在哪裡工作**（不加時 AGY 在自身 scratch 目錄作業，版本庫不受影響）；gemini 上它加的是 `--yolo`，那確實是權限閘門——不加時模型根本不會被提供寫入與 shell 工具。詳見 [`docs/THREAT-MODEL.md` §7.2](docs/THREAT-MODEL.md)。（不採 `--approval-mode plan`：它其實可在無 TTY 下運作，但會把寫入工具重新宣告給模型並注入規劃流程提示，比什麼都不加更弱。）
+- **沙箱**：Codex 提供 `read-only`／`workspace-write` 沙箱，並將可寫入的執行限制在工作區內。**Gemini CLI 與 AGY 皆未提供本外掛可施加的對應路徑邊界**，故本外掛亦無。AGY 的 `--sandbox` 不是——1.1.10 實測，啟用它的執行仍透過編輯工具與 shell 指令寫到工作區外；它限制的是終端機指令能碰到什麼（網路、`.git`），不是誰能寫到哪。Gemini CLI 同名旗標則是**容器**沙箱，未安裝 Docker 或 Podman 即拒絕啟動，故未實測，亦不強制使用者安裝。`--write` 在兩引擎的意義不同，且只有在 gemini 上它才是一道能力閘門：那裡它加的是 `--yolo`，不加時模型根本不會被提供寫入與 shell 工具。**在 AGY 上它不是邊界。** 每次執行都會定位到你的版本庫——唯讀用 `--add-dir`，寫入用 `--new-project`——而兩個旗標都不限制寫入，因為 AGY 沒有唯讀模式。未定位的執行仍可讀寫任何絕對路徑，它缺的只是「不知道你的版本庫在哪」，而那個保護不值得賠上所有正當用途。詳見 [`docs/THREAT-MODEL.md` §7.2](docs/THREAT-MODEL.md)。（不採 `--approval-mode plan`：它其實可在無 TTY 下運作，但會把寫入工具重新宣告給模型並注入規劃流程提示，比什麼都不加更弱。）
 - **Thread／session 接續**：Codex 於 app-server 持久化 thread。本外掛之接續依賴自 JSON 信封擷取之 Gemini CLI **session id**；`/gemini:result` 會印出 `gemini --resume <session-id>`，而 `--resume-last` 接續*當前 Claude session* 之最新 thread。
 
 ---

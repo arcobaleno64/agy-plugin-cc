@@ -221,6 +221,56 @@ test("agy read-only turn does not bind the session to cwd", () => {
   assert.ok(!args.includes("--new-project"));
 });
 
+// A read-only AGY turn used to be left unoriented, so the model reported its cwd
+// as ~/.gemini/antigravity-cli/scratch and every relative path missed the
+// repository — measured on 1.1.10, 2026-08-05. --add-dir orients it without
+// --new-project. Both flags do the same job; neither is a permission control.
+test("agy read-only turn is oriented on the workspace with --add-dir", () => {
+  const args = buildCliArgs("agy", { prompt: "hello", workspaceDir: "C:/repo", agyVersion: "1.1.10" });
+  const at = args.indexOf("--add-dir");
+  assert.ok(at !== -1, "read-only turn was left unoriented");
+  assert.equal(args[at + 1], "C:/repo", "--add-dir must be followed by the workspace path");
+  assert.ok(!args.includes("--new-project"), "read-only must not take the write path's flag");
+});
+
+test("agy write turn keeps --new-project and does not also add --add-dir", () => {
+  const args = buildCliArgs("agy", { prompt: "hello", write: true, workspaceDir: "C:/repo", agyVersion: "1.1.10" });
+  assert.ok(args.includes("--new-project"));
+  assert.ok(!args.includes("--add-dir"), "--new-project already orients the session");
+});
+
+test("agy resumed turn keeps its original workspace rather than being re-oriented", () => {
+  const args = buildCliArgs("agy", { prompt: "hello", resumeLast: true, workspaceDir: "C:/repo", agyVersion: "1.1.10" });
+  assert.ok(args.includes("--continue"));
+  assert.ok(!args.includes("--add-dir"));
+  assert.ok(!args.includes("--new-project"));
+});
+
+// Gated at the only version the flag was exercised on. An older AGY keeps the
+// previous (unoriented) behavior rather than being handed a flag it may reject.
+test("--add-dir is withheld from AGY versions it was not verified on", () => {
+  for (const agyVersion of ["1.1.9", "1.1.10-beta.1", "unknown", null]) {
+    const args = buildCliArgs("agy", { prompt: "hello", workspaceDir: "C:/repo", agyVersion });
+    assert.ok(!args.includes("--add-dir"), `--add-dir leaked to AGY ${agyVersion}`);
+  }
+});
+
+test("no workspace dir means no --add-dir, whatever the version", () => {
+  const args = buildCliArgs("agy", { prompt: "hello", agyVersion: "1.1.10" });
+  assert.ok(!args.includes("--add-dir"));
+});
+
+// The gemini engine takes its working directory from the spawn, so the flag has
+// no counterpart there and must not appear.
+test("the gemini engine never receives --add-dir", () => {
+  for (const options of [
+    { prompt: "hello", useStdin: true, workspaceDir: "C:/repo" },
+    { prompt: "hello", useStdin: true, workspaceDir: "C:/repo", write: true }
+  ]) {
+    assert.ok(!buildCliArgs("gemini", options).includes("--add-dir"));
+  }
+});
+
 // Measured on AGY 1.1.10 (docs/THREAT-MODEL.md 7.2): headless print mode
 // auto-approves edits and shell commands with or without this flag, so it
 // granted nothing while reading as a permission bypass. Asserted on both turn
