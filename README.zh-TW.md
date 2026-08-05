@@ -346,7 +346,7 @@ Claude Code
 
 - **執行時**：Codex 使用常駐 app-server，具原生審查與持久 thread。本外掛則於*每次命令*直接呼叫所選的第一級 Gemini CLI 或 AGY 引擎（無共享執行時）；`auto` 採 Gemini→AGY 的 capability-based 順序。
 - **標準審查**：Codex 外掛之 `/codex:review` 為*原生*審查器；本外掛之 `/gemini:review` 為 **prompt／CLI adapter 等效實作**——將 diff 連同務實審查 prompt 送交 Gemini 並解析回傳之結構化 JSON，並非原生 Gemini 審查器。
-- **沙箱**：Codex 提供 `read-only`／`workspace-write` 沙箱，並將可寫入的執行限制在工作區內。**Gemini CLI 與 AGY 皆無對應的路徑邊界**，故本外掛亦無。AGY 的 `--sandbox` 不是——1.1.10 實測，啟用它的執行仍透過編輯工具與 shell 指令寫到工作區外；它限制的是終端機指令能碰到什麼（網路、`.git`），不是誰能寫到哪。`--write` 實際控制的是**引擎在哪裡工作**：不加它時 AGY 在自身 scratch 目錄作業，你的版本庫不受影響。詳見 [`docs/THREAT-MODEL.md` §7.2](docs/THREAT-MODEL.md)。（不採 `--approval-mode plan`：其需 TTY，與 stdin 提示傳遞衝突。）
+- **沙箱**：Codex 提供 `read-only`／`workspace-write` 沙箱，並將可寫入的執行限制在工作區內。**Gemini CLI 與 AGY 皆未提供本外掛可施加的對應路徑邊界**，故本外掛亦無。AGY 的 `--sandbox` 不是——1.1.10 實測，啟用它的執行仍透過編輯工具與 shell 指令寫到工作區外；它限制的是終端機指令能碰到什麼（網路、`.git`），不是誰能寫到哪。Gemini CLI 同名旗標則是**容器**沙箱，未安裝 Docker 或 Podman 即拒絕啟動，故未實測，亦不強制使用者安裝。`--write` 在兩引擎的意義不同：AGY 上它決定**引擎在哪裡工作**（不加時 AGY 在自身 scratch 目錄作業，版本庫不受影響）；gemini 上它加的是 `--yolo`，那確實是權限閘門——不加時模型根本不會被提供寫入與 shell 工具。詳見 [`docs/THREAT-MODEL.md` §7.2](docs/THREAT-MODEL.md)。（不採 `--approval-mode plan`：它其實可在無 TTY 下運作，但會把寫入工具重新宣告給模型並注入規劃流程提示，比什麼都不加更弱。）
 - **Thread／session 接續**：Codex 於 app-server 持久化 thread。本外掛之接續依賴自 JSON 信封擷取之 Gemini CLI **session id**；`/gemini:result` 會印出 `gemini --resume <session-id>`，而 `--resume-last` 接續*當前 Claude session* 之最新 thread。
 
 ---

@@ -221,7 +221,7 @@ function assertAgyPromptSafe(prompt) {
 }
 
 export function buildCliArgs(engine, options = {}) {
-  const { prompt = "", model, effort, write = false, resumeLast = false, outputJson = false, approvalModePlan = false, timeoutMs, useStdin = false, agyVersion = null } = options;
+  const { prompt = "", model, effort, write = false, resumeLast = false, outputJson = false, timeoutMs, useStdin = false, agyVersion = null } = options;
 
   if (engine === "agy") {
     // AGY >=1.1.2 auto-enters print mode when a prompt is piped on stdin; adding
@@ -281,10 +281,22 @@ export function buildCliArgs(engine, options = {}) {
   // gemini — when useStdin is true the caller passes prompt via stdin; omit -p here
   const args = useStdin ? [] : ["-p", prompt];
   if (model) args.push("-m", model);
+  // --yolo IS a real gate here, unlike AGY's --dangerously-skip-permissions —
+  // measured on gemini CLI 0.53.1, 2026-08-05. Without it a headless run is not
+  // offered write_file, edit, or run_shell_command at all, and says so; with it,
+  // the same prompt edits files inside and outside the workspace and runs shell
+  // commands. See docs/THREAT-MODEL.md 7.2.
+  //
+  // No --approval-mode plan on the read-only path. It works headless over stdin
+  // (measured; the earlier "requires TTY" note was wrong), but it is a *weaker*
+  // read-only shape than passing nothing: plan mode re-declares write_file and
+  // edit to the model with an amended description and redirects their target
+  // into the plans directory, and it injects a planning-workflow system prompt
+  // that tells a non-interactive run to write a design document. Passing no
+  // approval flag leaves the write tools undeclared, which is the stronger
+  // guarantee and the one this plugin wants.
   if (write) {
     args.push("--yolo");
-  } else if (approvalModePlan) {
-    args.push("--approval-mode", "plan");
   }
   if (resumeLast) args.push("--resume", "latest");
   if (outputJson) args.push("--output-format", "json");

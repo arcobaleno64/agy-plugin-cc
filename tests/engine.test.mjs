@@ -250,6 +250,33 @@ test("no agy turn passes --sandbox, which is not a path boundary", () => {
   }
 });
 
+// The gemini engine is the mirror image of agy: --yolo IS the gate. Measured on
+// gemini CLI 0.53.1 (docs/THREAT-MODEL.md 7.2) — without it a headless run is
+// offered no write or shell tools at all. Pinned in both directions so neither
+// half is dropped by analogy with the agy path.
+test("gemini write turn passes --yolo and a read-only turn does not", () => {
+  assert.ok(buildCliArgs("gemini", { prompt: "hello", write: true, useStdin: true }).includes("--yolo"));
+  assert.ok(!buildCliArgs("gemini", { prompt: "hello", useStdin: true }).includes("--yolo"));
+});
+
+// --approval-mode plan does run headless over stdin, but it re-declares
+// write_file and edit to the model and injects a planning-workflow prompt.
+// Passing nothing leaves those tools undeclared, which is the stronger
+// read-only shape. Pinned so plan mode is not adopted for sounding safer.
+test("no gemini turn passes --approval-mode, which weakens the read-only shape", () => {
+  for (const options of [
+    { prompt: "hello", useStdin: true },
+    { prompt: "hello", useStdin: true, write: true },
+    { prompt: "hello", useStdin: true, outputJson: true },
+    { prompt: "hello", useStdin: true, resumeLast: true }
+  ]) {
+    assert.ok(
+      !buildCliArgs("gemini", options).includes("--approval-mode"),
+      `flag appeared for ${JSON.stringify(options)}`
+    );
+  }
+});
+
 // --- auto routing ---
 // Previously untested. `auto` selected gemini on binary presence alone, so an
 // installed-but-unauthenticated gemini (the norm since consumer access ended

@@ -55,7 +55,8 @@ else, but the CLI may then read whatever it judges relevant — including files 
 redaction rule here ever saw. The limits and redaction above bound the plugin's
 contribution; they do not sandbox the engine, and neither AGY nor Gemini CLI
 offers a path-boundary mode the plugin could impose — AGY's `--sandbox` is not
-one, as measured in
+one, and Gemini CLI's is a container sandbox that will not start without Docker
+or Podman, both measured in
 [`docs/THREAT-MODEL.md` §7.2](docs/THREAT-MODEL.md), which also records this as a
 known, unmitigated gap. If a workspace contains material that must not reach
 Google, do not run a delegated task in it.

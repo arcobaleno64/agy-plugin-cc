@@ -85,7 +85,21 @@ The plugin's function is to take content it did not author and hand it to an age
 
 **Residual, unchanged.** Nothing constrains where a `--write` run may reach — runs 1 and 3 wrote outside the workspace, and no flag on either engine prevents it. The exposure is now opt-in and accurately described rather than default and mis-described. The real fix remains an engine-side path boundary.
 
-**Not measured**: the gemini engine, which is installed but unauthenticated on the test machine since Google ended consumer CLI access on 2026-06-18. `--yolo` is therefore **kept** — nothing above transfers to it without its own test.
+**Measured on gemini CLI 0.53.1, 2026-08-05**, against the same disposable repository and the same stdin transport, on a temporary API key. The gemini engine behaves the *opposite* way to AGY, so nothing above transfers between them.
+
+| `--yolo` | other flags | Action | Outcome |
+|---|---|---|---|
+| yes | — | edit tool → outside workspace | wrote |
+| — | — | edit tool → outside workspace | refused: "I do not have the necessary file write or shell command tools available" |
+| yes | `--sandbox` | edit tool → outside workspace | never started: `GEMINI_SANDBOX is true but failed to determine command for sandbox; install docker or podman` |
+| yes | — | edit tool → in-repo path | edited the repo file |
+| yes | — | shell command → in repo | ran, exit 0 |
+| — | `--approval-mode plan` | edit tool → in-repo path | exit 0, refused: "I am currently in Plan Mode and cannot modify source code directly" |
+| — | — (the plugin's read-only shape) | edit tool → in-repo path | blocked: `Unauthorized tool call: 'write_file' is not available to this agent` |
+
+1. **`--yolo` is a genuine gate, and is kept.** Without it the model is not offered `write_file`, `edit`, or `run_shell_command` at all — at both the main-agent and subagent level — and says so rather than failing silently. This is the control AGY's `--dangerously-skip-permissions` was assumed to be and was not.
+2. **gemini's `--sandbox` is a container sandbox**, not AGY's terminal-restriction flag of the same name. It requires Docker or Podman and refuses to start without one. Whether it bounds writes to the workspace is therefore **still unmeasured**; imposing a container runtime on every user to find out is not a trade this plugin makes today.
+3. **`--approval-mode plan` works headless over stdin.** The in-tree comment claiming it "requires TTY input and conflicts with stdin prompt delivery" was wrong and is removed. It is still **not** used, for a different reason: reading gemini CLI 0.53.1's bundle, plan mode *re-declares* `write_file` and `edit` to the model with an amended description and redirects their target into the plans directory, and it prepends a planning-workflow system prompt instructing a non-interactive run to write a design document. Against a read-only turn that currently declares no write tools at all, plan mode is a net loss of restriction and a change of output shape. The dead `approvalModePlan` option was removed rather than left as a switch inviting the opposite conclusion.
 
 ### 7.3 PI-2 — Model output reaches the parent agent unfiltered — **mitigated in v0.14.0**
 
@@ -143,7 +157,7 @@ Calibrate that result honestly: it shows one model refusing one obvious payload.
 
 ### 7.7 Priority
 
-1. **7.2** — the only item where a successful injection reaches the filesystem. `--write` is opt-in as of v0.16.0, which was half the mitigation; the other half, an engine-side path boundary, still does not exist to adopt. Re-test `--sandbox` on each AGY release — if it grows a filesystem scope, this becomes closable.
+1. **7.2** — the only item where a successful injection reaches the filesystem. `--write` is opt-in as of v0.16.0, which was half the mitigation; the other half, an engine-side path boundary, still does not exist to adopt. Re-test `--sandbox` on each AGY release — if it grows a filesystem scope, this becomes closable. On the gemini side the open question is different: its `--sandbox` may already be a real boundary, but it needs a container runtime, so the question is whether to measure it and offer it as an opt-in for users who have one.
 2. ~~**7.4**~~ — **fixed in v0.13.0**; detection is shared between both paths and the review payload is bounded.
 3. ~~**7.3**~~ — **mitigated in v0.14.0**; marker plus a parent-agent rule. A nonce-delimited region remains available if the residual is ever judged worth the noise.
 4. **7.5** — accept, or make the gate opt-in per repository.
