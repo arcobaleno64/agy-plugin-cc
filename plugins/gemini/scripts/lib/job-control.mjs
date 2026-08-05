@@ -109,13 +109,31 @@ function formatElapsedDuration(startValue, endValue = null) {
   return `${seconds}s`;
 }
 
-function looksLikeVerificationCommand(line) {
-  return /\b(test|tests|lint|build|typecheck|type-check|check|verify|validate|pytest|jest|vitest|cargo test|npm test|pnpm test|yarn test|go test|mvn test|gradle test|tsc|eslint|ruff)\b/i.test(
-    line
-  );
-}
-
-function inferLegacyJobPhase(job, progressPreview = []) {
+// Phase for a job whose own `phase` field is absent — a record written before
+// the field existed, or one whose progress event never landed.
+//
+// It used to also scan the progress log for tool-level prefixes ("searching:",
+// "running command:", "applying ") and report `investigating`, `verifying` or
+// `editing`. Those tests could not have passed under any input: every line is
+// written as `[<iso timestamp>] <message>` (appendLogLine) and the preview keeps
+// only lines starting with "[", so `startsWith("searching:")` was false by
+// construction.
+//
+// Nothing wrote such lines either. The log receives only the six progress
+// messages `lib/gemini.mjs` emits — "Detecting engine...", "Starting <engine>
+// turn...", "Turn completed." and their review equivalents — because
+// `runCommand` is `spawnSync`: the engine's output arrives in one blocking
+// return, not as events, so there is nothing to narrate mid-run.
+//
+// Nor is that detail obtainable. AGY 1.1.8's `--output-format stream-json` was
+// measured on 1.1.10 (2026-08-05): it emits `step_type` values of `tool`,
+// `agent_response`, `user_input`, `checkpoint` and `unknown` — and **`tool`
+// carries no tool name or arguments**, so read-versus-run-tests-versus-edit
+// cannot be distinguished from it either. Reporting those phases would have
+// required inventing them.
+//
+// What remains is what is actually known: the job's own status, and its class.
+function fallbackJobPhase(job) {
   switch (job.status) {
     case "queued":
       return "queued";
@@ -126,45 +144,8 @@ function inferLegacyJobPhase(job, progressPreview = []) {
     case "completed":
       return "done";
     default:
-      break;
+      return job.jobClass === "review" ? "reviewing" : "running";
   }
-
-  for (let index = progressPreview.length - 1; index >= 0; index -= 1) {
-    const line = progressPreview[index].toLowerCase();
-    if (line.startsWith("starting gemini") || line.startsWith("thread ready") || line.startsWith("turn started")) {
-      return "starting";
-    }
-    if (line.startsWith("reviewer started") || line.includes("review mode")) {
-      return "reviewing";
-    }
-    if (line.startsWith("searching:") || line.startsWith("calling ") || line.startsWith("running tool:")) {
-      return "investigating";
-    }
-    if (line.startsWith("starting collaboration tool:")) {
-      return "investigating";
-    }
-    if (line.startsWith("running command:")) {
-      return looksLikeVerificationCommand(line)
-        ? "verifying"
-        : job.jobClass === "review"
-          ? "reviewing"
-          : "investigating";
-    }
-    if (line.startsWith("command completed:")) {
-      return looksLikeVerificationCommand(line) ? "verifying" : "running";
-    }
-    if (line.startsWith("applying ") || line.startsWith("file changes ")) {
-      return "editing";
-    }
-    if (line.startsWith("turn completed")) {
-      return "finalizing";
-    }
-    if (line.startsWith("gemini error:") || line.startsWith("failed:")) {
-      return "failed";
-    }
-  }
-
-  return job.jobClass === "review" ? "reviewing" : "running";
 }
 
 export function enrichJob(job, options = {}) {
@@ -185,7 +166,7 @@ export function enrichJob(job, options = {}) {
 
   return {
     ...enriched,
-    phase: enriched.phase ?? inferLegacyJobPhase(enriched, enriched.progressPreview)
+    phase: enriched.phase ?? fallbackJobPhase(enriched)
   };
 }
 
