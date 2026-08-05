@@ -1,11 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.15.0 — 2026-08-05 — Job state lands where Claude Code puts plugin data
+
+Maintenance release closing the post-approval handoff backlog. Two defects surfaced while writing the tests that backlog asked for, and both are fixed here rather than deferred.
 
 ### Breaking
 - **Job state moves from `<system temp>/gemini-companion/<workspace>-<hash>/` to `$CLAUDE_PLUGIN_DATA/state/<workspace>-<hash>/`.** Jobs recorded before the upgrade are not migrated: they stay in the temp directory, unreferenced. Nothing is deleted, but `/gemini:status`, `/gemini:result` and `/gemini:cancel` will not see them, and a background job still running across the upgrade is orphaned — its PID lives in the old state file, so the session-end hook cannot reap it.
   - **Before upgrading**, run `/gemini:status` and let anything in flight finish. Afterwards, the old directory can be deleted.
   - To keep the previous location instead, set `GEMINI_COMPANION_DATA` to a directory of your choosing before upgrading. Do not point it at the system temp path — that is what this release exists to stop.
+  - **Why MINOR and not MAJOR.** A changed job-state location would normally be a MAJOR bump. This ships as MINOR under the `0.x` allowance for a labeled breaking change carrying migration instructions, because the old location was a defect rather than a contract: it was never documented, and the documentation that did exist described a third location the code never used.
 
 ### Added
 - **`node scripts/make-sample-repo.mjs`** materializes a benchmark corpus case into a disposable git repository and prints the defects planted in it. It is the safe target for a `--write` run, which is write-capable with no path sandbox ([`docs/THREAT-MODEL.md` §7.2](../../docs/THREAT-MODEL.md)). No new fixture content: `bench/lib/corpus.mjs` already built exactly this repo for the benchmark, so the script is that call minus the cleanup.
@@ -43,8 +46,21 @@ Coverage for the paths that had none, per HANDOFF §14 P1. Verified against real
 - Five cases pin the resolution order: neither variable set (temp fallback), `CLAUDE_PLUGIN_DATA` alone, `GEMINI_COMPANION_DATA` alone, both set (the deprecated name wins), and a blank value falling through. They set **both** variables explicitly on every case — the suite usually runs inside a Claude Code session, which sets `CLAUDE_PLUGIN_DATA`, so a test that only sets one silently depends on who is running it. Two existing cases had that flaw and are fixed.
 - The concurrent-writer case failed reliably on Windows and passed in Linux CI, so it shipped green and was only caught when the suite was next run locally. Cause: Windows refuses `rename` onto a path another process has open, and the test's reader reopens `state.json` every millisecond, so the writers' renames raised `EPERM`. The writer now retries on a sharing error and still fails on a persistent one; the torn-read assertion is unchanged. Verified by three consecutive Windows runs.
 
+### Compatibility
+- **CI now schema-validates the manifests.** `verify-contracts` checks version lockstep, marketplace identity, the README install command and the command surface, but never schema-checked the manifests themselves — a `plugin.json` with a name containing spaces or a malformed `author` passed every gate and would only fail at user install time. Both workflows now run `claude plugin validate` against the plugin directory and the marketplace root, against a pinned Claude Code so a release cannot silently change what the gate accepts. A test asserts the two workflows keep the same pin; otherwise the PR gate and the release gate could drift into validating against different schemas with nothing reporting it. Verified credential-free on a CI runner.
+- No engine, platform, command-surface, model-selection or write-permission semantics changed. The only user-visible behavior changes are the job-state relocation above, and untracked symlinks resolving outside the workspace now rendering as `(skipped: symlink resolves outside the workspace)` instead of being inlined into a review.
+
 ### Known limitations
 - **On Windows, a `saveState` write can fail while another process holds `state.json` open** — the platform does not allow `rename` onto an open path, and `atomicWriteJson` lets the error propagate. In practice this needs a reader polling far harder than `/gemini:status` does, which is why it surfaced only under a test written to provoke it. No retry was added to the product in this release: that is a behavior change to the write path and belongs in its own change, not in a release already carrying a state relocation.
+- Secret detection remains filename-based on every path. A credential pasted into an ordinary source file is not redacted, and this is not a secret scanner.
+- The symlink containment check applies to untracked files, which is the path that reads through a link. Tracked symlinks are stored by git as their target string and appear in a diff as that string, so they were never followed.
+- A git C-quoted non-ASCII path is reported in the redacted-file list in git's escaped form (`uni\303\247ode.env`). Unquoting it means implementing C-string unescaping; the current form is pinned by a test rather than left unstated.
+- No automatic migration of pre-upgrade job state. The affected jobs live in a directory the OS was already free to delete.
+
+### Not tested
+- macOS and Linux beyond CI. Everything here was exercised on Windows and in `ubuntu-latest` CI; the macOS `/tmp` symlink case that motivated canonicalizing both sides of the containment check is reasoned from the platform's layout, not executed there.
+- No engine was contacted. The envelope cases use the existing `runCommandFn` injection seam.
+- Issue templates are parsed by GitHub on push and could not be validated locally.
 
 ## 0.14.1 — 2026-08-05 — Correct argument quoting on the Windows shell path
 
