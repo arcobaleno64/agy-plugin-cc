@@ -28,6 +28,12 @@ jobs:
       - run: npm test
       - run: npm run check-version
       - run: npm run verify-contracts
+      # Same structural gate as pull-request-ci.yml, placed before the release is
+      # cut so a malformed manifest cannot reach a published tag. Keep the pinned
+      # version in both workflows in step.
+      - run: npm install -g @anthropic-ai/claude-code@2.1.222
+      - run: claude plugin validate ./plugins/gemini --strict
+      - run: claude plugin validate . --strict
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

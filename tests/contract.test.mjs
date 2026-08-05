@@ -84,6 +84,30 @@ test("verify-contracts fails when the README install command is missing", () => 
   assert.match(result.stderr, /install command/);
 });
 
+// --- CI workflow gates ---
+
+// Both workflows run `claude plugin validate` against a pinned Claude Code. If
+// the pins drift apart the PR gate and the release gate stop validating against
+// the same schema, and nothing else would report it.
+test("both workflows pin the same claude-code version for plugin validation", () => {
+  const workflows = ["pull-request-ci.yml", "release.yml"].map((name) => ({
+    name,
+    text: fs.readFileSync(path.join(ROOT, ".github", "workflows", name), "utf8")
+  }));
+
+  const pins = workflows.map(({ name, text }) => {
+    const match = text.match(/@anthropic-ai\/claude-code@(\S+)/);
+    assert.ok(match, `${name} does not install a pinned @anthropic-ai/claude-code`);
+    return match[1];
+  });
+  assert.equal(pins[0], pins[1], "workflow pins disagree");
+
+  for (const { name, text } of workflows) {
+    assert.match(text, /claude plugin validate \.\/plugins\/gemini --strict/, `${name} misses the plugin validate step`);
+    assert.match(text, /claude plugin validate \. --strict/, `${name} misses the marketplace validate step`);
+  }
+});
+
 // --- bump-version (ported from upstream, adapted for the gemini layout) ---
 
 test("bump-version updates every manifest and --check detects drift", () => {
