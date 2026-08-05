@@ -279,7 +279,7 @@
 - **AGY transport 回退**：只有可穩定解析為 1.1.2 以上的版本才啟用 stdin；未知版與 prerelease 字串一律 fail closed 至既有 positional 路徑，不假設上游能力。
 - **AGY 1.1.10+ `.git` 沙箱規則**：AGY 1.1.10 在沙箱模式下實作 `.git` 目錄唯讀防護規則，保護版本庫 metadata 與 commit 歷史在審查及子代理人任務期間不被意外修改。
 - **憑證處理**：`~/.gemini/oauth_creds.json` 之 OAuth 憑證僅用於 `getGeminiLoginStatus()` 檢查 token 是否過期；本外掛從不記錄、複製或傳輸之。
-- **`.gitignore`**：`.omc/` 狀態目錄（工作日誌、會話狀態）已排除於版本控制之外。
+- **`.gitignore`**：工作區內的 `.omc/` 目錄（存放 `/gemini:transfer` 快照）已排除於版本控制之外。工作狀態與日誌則完全不在版本庫內——詳見 [運作原理](#運作原理)。
 
 **送出哪些資料、保留在何處、讀取了什麼**——包含唯一一條不需明確命令即會傳輸的路徑——記載於 [`PRIVACY.md`](PRIVACY.md)（英文）。
 
@@ -315,13 +315,11 @@ Claude Code
             └─ renderTaskResult()   → Markdown 輸出至 Claude
 ```
 
-背景模式會產生一個分離的 `task-worker` 子程序並立即回傳工作 ID。狀態持久化於 `.omc/state/`，可透過 `/gemini:status` 查詢。
+背景模式會產生一個分離的 `task-worker` 子程序並立即回傳工作 ID，可透過 `/gemini:status` 查詢；即使 Claude 會話中斷，背景結果仍然存在。
 
----
-            └─ renderTaskResult()   → Markdown 輸出至 Claude
-```
+工作狀態寫入 Claude Code 的每外掛資料目錄——`$CLAUDE_PLUGIN_DATA/state/<workspace>-<hash>/`，內含 `state.json` 以及每個工作各一份 `.json` 與 `.log`，最多保留最近 50 筆。在 Claude Code 之外、該變數未設定時，改用 `<系統暫存目錄>/gemini-companion/<workspace>-<hash>/`；該處會被作業系統定期清理，故跨越清理週期仍在執行的工作可能消失。可設定 `GEMINI_COMPANION_DATA` 自行指定位置。
 
-背景模式會產生一個分離的 `task-worker` 子程序並立即回傳工作 ID。狀態持久化於 `.omc/state/`，可透過 `/gemini:status` 查詢。
+工作區內的 `.omc/` 是另一回事：它只存放 `/gemini:transfer` 快照，不存工作狀態。
 
 ---
 

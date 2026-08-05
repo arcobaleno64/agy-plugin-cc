@@ -7,8 +7,28 @@ import { classifyCliFailure } from "./failures.mjs";
 import { resolveWorkspaceRoot } from "./workspace.mjs";
 
 const STATE_VERSION = 1;
-const PLUGIN_DATA_ENV = "GEMINI_COMPANION_DATA";
+
+// CLAUDE_PLUGIN_DATA is what Claude Code actually sets, and what
+// session-lifecycle-hook.mjs forwards into the session env file so later
+// commands see it. This module read GEMINI_COMPANION_DATA instead — a name
+// nothing sets — so the forwarding was dead and every install fell through to
+// the temp directory, where the OS eventually deletes background job state.
+// Upstream codex-plugin-cc reads CLAUDE_PLUGIN_DATA in both files; the port
+// renamed it here and not there.
+//
+// GEMINI_COMPANION_DATA is kept, and kept first, as a deliberate override: it
+// was readable in shipped source and someone may have set it. Deprecated —
+// drop it at 1.0.
+const PLUGIN_DATA_ENVS = ["GEMINI_COMPANION_DATA", "CLAUDE_PLUGIN_DATA"];
 const FALLBACK_STATE_ROOT_DIR = path.join(os.tmpdir(), "gemini-companion");
+
+function resolvePluginDataDir() {
+  for (const name of PLUGIN_DATA_ENVS) {
+    const value = String(process.env[name] ?? "").trim();
+    if (value) return value;
+  }
+  return null;
+}
 const STATE_FILE_NAME = "state.json";
 const JOBS_DIR_NAME = "jobs";
 const MAX_JOBS = 50;
@@ -37,7 +57,7 @@ export function resolveStateDir(cwd) {
   const slugSource = path.basename(workspaceRoot) || "workspace";
   const slug = slugSource.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "workspace";
   const hash = createHash("sha256").update(canonicalWorkspaceRoot).digest("hex").slice(0, 16);
-  const pluginDataDir = process.env[PLUGIN_DATA_ENV];
+  const pluginDataDir = resolvePluginDataDir();
   const stateRoot = pluginDataDir ? path.join(pluginDataDir, "state") : FALLBACK_STATE_ROOT_DIR;
   return path.join(stateRoot, `${slug}-${hash}`);
 }

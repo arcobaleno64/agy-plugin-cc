@@ -8,10 +8,14 @@ campaign matrix for the full three-way comparison.
 
 ## Deliberate design differences
 
-- **Job state lives in the project-local `.omc/state/` dir**, not a user-home
-  dir like the siblings' `~/.companion-*/jobs`. This survives session
-  interruption in-tree. Converging the two would be a breaking change to where
-  existing jobs are found; kept as-is.
+- ~~**Job state lives in the project-local `.omc/state/` dir**~~ — **this was
+  never true and is withdrawn.** `resolveStateDir` has resolved to
+  `$CLAUDE_PLUGIN_DATA/state/<workspace>-<hash>/`, or a system-temp fallback,
+  since the first commit in this repository; only `/gemini:transfer` snapshots
+  are project-local. The entry also justified itself with a compatibility
+  argument for a location the code never used. What is actually true: job state
+  goes to Claude Code's per-plugin data directory, which is where upstream puts
+  it too, so this is not a divergence at all.
 - **Bench harness is retained.** The Codex-vs-Gemini benchmark suite (`bench/`,
   cassettes, scoring) lives only here; the siblings deliberately omit it (owner
   decision), so it is a one-way difference, not a gap.

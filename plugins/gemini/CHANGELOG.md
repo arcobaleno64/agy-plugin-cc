@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Breaking
+- **Job state moves from `<system temp>/gemini-companion/<workspace>-<hash>/` to `$CLAUDE_PLUGIN_DATA/state/<workspace>-<hash>/`.** Jobs recorded before the upgrade are not migrated: they stay in the temp directory, unreferenced. Nothing is deleted, but `/gemini:status`, `/gemini:result` and `/gemini:cancel` will not see them, and a background job still running across the upgrade is orphaned — its PID lives in the old state file, so the session-end hook cannot reap it.
+  - **Before upgrading**, run `/gemini:status` and let anything in flight finish. Afterwards, the old directory can be deleted.
+  - To keep the previous location instead, set `GEMINI_COMPANION_DATA` to a directory of your choosing before upgrading. Do not point it at the system temp path — that is what this release exists to stop.
+
 ### Added
 - **`node scripts/make-sample-repo.mjs`** materializes a benchmark corpus case into a disposable git repository and prints the defects planted in it. It is the safe target for a `--write` run, which is write-capable with no path sandbox ([`docs/THREAT-MODEL.md` §7.2](../../docs/THREAT-MODEL.md)). No new fixture content: `bench/lib/corpus.mjs` already built exactly this repo for the benchmark, so the script is that call minus the cleanup.
 
@@ -10,6 +15,9 @@
 
 ### Fixed
 - **The redacted-file list named the wrong path when a directory contained a space.** `redactSecretsFromDiff` read the b-side path off the `diff --git a/P b/P` header, which is ambiguous once `P` holds a space: for `a b/c.env` the first ` b/` gives `c.env b/a b/c.env` and the last gives `c.env`. It now takes the path from the unambiguous `+++ b/<path>` line, stopping at the first `@@` so an added line beginning `++ ` cannot be misread as the header, and falls back to the old header match for diffs with no `+++` line. Redaction itself was never wrong — the check runs on the final path segment, which survives either misparse — so this is the accuracy of what the user is told was withheld.
+- **Background job state was landing in the system temp directory on every install, where the OS eventually deletes it.** `lib/state.mjs` read `GEMINI_COMPANION_DATA` to find Claude Code's per-plugin data directory. Nothing sets that name. `session-lifecycle-hook.mjs` forwards `CLAUDE_PLUGIN_DATA` — the variable Claude Code actually sets — so the forwarding was dead code and `resolveStateDir` always took its `<system temp>/gemini-companion/` fallback. Upstream `codex-plugin-cc` reads `CLAUDE_PLUGIN_DATA` in both files; the port renamed it in one. Present since the first commit in this repository, and invisible to the tests because they set `GEMINI_COMPANION_DATA` directly.
+  - `GEMINI_COMPANION_DATA` still works and still wins when both are set. It was readable in shipped source, so anyone who set it keeps their location instead of being moved by an upgrade. Deprecated; drop it at 1.0.
+  - A blank or whitespace-only value now falls through rather than rooting state at `""`.
 
 ### Documentation
 - **`PRIVACY.md` states what the plugin sends, keeps, and reads**, with a source file cited beside each claim. It was the one directory-compliance document the repository did not have; nothing in `README.md`, `README.zh-TW.md`, `SECURITY.md`, or `docs/THREAT-MODEL.md` contained the word *privacy*. Both READMEs and `SECURITY.md` link to it.
@@ -19,6 +27,8 @@
 - **`docs/version-sources.md`** — the HANDOFF §14 P1 study, answered rather than left open. Recommendation: **keep all six version sources.** The duplication Anthropic's guidance warns about is mechanically enforced here by one bump script and a `check-version` gate that runs in both workflows, and the only redundant field interacts with a directory pipeline this repository cannot test against without experimenting on live users. Two named conditions would change the answer.
 - **Support sections** in both READMEs, routing setup trouble, deliberate divergences, bugs, compatibility reports, and vulnerabilities to different places — a vulnerability in a public issue is the failure worth preventing.
 - Issue templates for bug reports and compatibility reports. The bug template requires the exact command and `/gemini:setup` output, because those two answer most questions unaided. The compatibility template accepts "works on X" as readily as "breaks on X", since the docs only claim what has actually been run.
+- **Both READMEs and `docs/known-diffs.md` described job state as living in the project-local `.omc/state/` directory. It never has** — `resolveStateDir` has resolved outside the workspace since the first commit, and `.omc/` holds `/gemini:transfer` snapshots only. `known-diffs.md` additionally listed this as a *deliberate* divergence kept for compatibility, defending a location the code never used; the entry is withdrawn rather than reworded, and what is actually true is stated in its place. The real state location, its 50-job cap, the temp fallback and its cleanup risk are now documented in both READMEs.
+- Repaired a duplicated block in `README.zh-TW.md`, where the tail of a code fence and the paragraph after it were repeated between two horizontal rules.
 
 ### Tests
 - `tests/privacy-doc.test.mjs` pins `PRIVACY.md`'s presence, the four questions it must answer, and the link from every entry document — a policy doc rots when a README rewrite silently drops the link, not when the file is deleted. It also derives the expected supported-version line from `package.json`, so the table cannot go stale again without failing CI.
@@ -30,6 +40,11 @@ Coverage for the paths that had none, per HANDOFF §14 P1. Verified against real
 - Concurrent writers never expose a partially written `state.json` and leave no `.tmp` files. Pinned as the guarantee `atomicWriteJson` actually makes — a load/mutate/save cycle cannot also promise that concurrent writers keep each other's jobs.
 - Hostile filenames through redaction: a directory containing a space, a rename whose destination is the secret store, and a git C-quoted non-ASCII path.
 - Envelope truncation: an envelope cut mid-value is rejected, and so is one whose cut leaves a balanced inner object behind — the case where the balanced-block scan could otherwise report a successful run with no response. A large well-formed envelope is pinned as delivered intact, so any future size limit lands as a deliberate diff.
+- Five cases pin the resolution order: neither variable set (temp fallback), `CLAUDE_PLUGIN_DATA` alone, `GEMINI_COMPANION_DATA` alone, both set (the deprecated name wins), and a blank value falling through. They set **both** variables explicitly on every case — the suite usually runs inside a Claude Code session, which sets `CLAUDE_PLUGIN_DATA`, so a test that only sets one silently depends on who is running it. Two existing cases had that flaw and are fixed.
+- The concurrent-writer case failed reliably on Windows and passed in Linux CI, so it shipped green and was only caught when the suite was next run locally. Cause: Windows refuses `rename` onto a path another process has open, and the test's reader reopens `state.json` every millisecond, so the writers' renames raised `EPERM`. The writer now retries on a sharing error and still fails on a persistent one; the torn-read assertion is unchanged. Verified by three consecutive Windows runs.
+
+### Known limitations
+- **On Windows, a `saveState` write can fail while another process holds `state.json` open** — the platform does not allow `rename` onto an open path, and `atomicWriteJson` lets the error propagate. In practice this needs a reader polling far harder than `/gemini:status` does, which is why it surfaced only under a test written to provoke it. No retry was added to the product in this release: that is a behavior change to the write path and belongs in its own change, not in a release already carrying a state relocation.
 
 ## 0.14.1 — 2026-08-05 — Correct argument quoting on the Windows shell path
 
