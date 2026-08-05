@@ -105,7 +105,7 @@ Review those terms for your plan before sending proprietary code.
 
 ## 3. What is read from your machine
 
-Beyond the workspace you invoke a command in, the plugin reads three things
+Beyond the workspace you invoke a command in, the plugin reads four things
 outside it — all locally, none transmitted:
 
 | Path | What is read | Why |
@@ -113,10 +113,31 @@ outside it — all locally, none transmitted:
 | `~/.gemini/oauth_creds.json` (or `$GEMINI_HOME`) | The token **expiry timestamp** only | To report Gemini auth status and to keep `auto` routing from selecting an unauthenticated CLI (`scripts/lib/gemini-auth.mjs`) |
 | `~/.gemini/settings.json` | The `security.auth.selectedType` string only | To tell a personal plan from a Code Assist plan, which differ in CLI access (`scripts/lib/gemini-auth.mjs`) |
 | `~/.gemini/antigravity-cli/brain/` or `~/.antigravity-cli/brain/` | AGY's own conversation transcript for the run it just started | Only on AGY older than 1.1.8, which has no structured stdout; newer AGY returns a JSON envelope and the transcript is not read (`scripts/lib/agy-transcript.mjs`, `scripts/lib/engine.mjs`) |
+| Your OS keychain, two fixed entries only | **Whether** `gemini-cli-api-key/default-api-key` or `gemini-cli-oauth/main-account` exists — never the stored value | Gemini CLI 0.53.1 keeps credentials there, so without this check a user who authenticated through the CLI is read as unauthenticated and `auto` routes past a working gemini (`scripts/lib/gemini-auth.mjs`) |
 
 The token value itself is never logged, copied, or transmitted. `GEMINI_API_KEY`
 and `GOOGLE_API_KEY` are checked for presence only; their values are never read
 into a prompt.
+
+### The keychain check, in detail
+
+It runs your platform's own credential tool as a child process, asks about the
+two Gemini CLI entries by exact name, and reads only whether they exist:
+
+- **macOS** — `security find-generic-password -s <service> -a <account>`.
+  Deliberately without `-w`, the flag that would print the password. The
+  command's output is discarded unread; only its exit status is used.
+- **Linux** — `secret-tool search …`, not `secret-tool lookup`, which prints the
+  secret. Output likewise discarded unread.
+- **Windows** — `cmdkey /list:<service>/<account>`. `cmdkey` never prints
+  credential values, and the query names one target rather than enumerating
+  every credential on the machine.
+
+Each probe is capped at two seconds, runs at most once per command, and treats
+every failure as "no credential". To switch it off entirely, set
+`GEMINI_COMPANION_DISABLE_KEYCHAIN=1`; the only consequence is that `auto`
+routing may skip a gemini CLI whose credential it can no longer see, which you
+can override with `--engine gemini`.
 
 ### What the plugin does not touch
 
@@ -124,8 +145,9 @@ into a prompt.
 - Claude Code conversation history, transcripts, or summaries — never read.
 - Files you uploaded to Claude — never read.
 - Your credentials as values — see above.
-- Any other home-directory content. The three paths in the table are the whole
-  list.
+- Any other keychain entry. The probe asks about two entries by exact name and
+  never enumerates.
+- Any other home-directory content. The paths in the table are the whole list.
 
 ---
 

@@ -190,7 +190,12 @@ export function buildEnv(binDir) {
     ...process.env,
     PATH: `${binDir}${sep}${process.env.PATH}`,
     GEMINI_ENGINE: "gemini",
-    GEMINI_HOME: path.join(binDir, "gemini-home")
+    GEMINI_HOME: path.join(binDir, "gemini-home"),
+    // These fixtures control credentials through GEMINI_HOME. Without this the
+    // credential check would also probe the OS keychain of whatever machine is
+    // running the suite, so a developer with a real gemini API key stored would
+    // see "unauthenticated" fixtures report as ready.
+    GEMINI_COMPANION_DISABLE_KEYCHAIN: "1"
   };
 }
 
@@ -206,7 +211,8 @@ export function buildEnvUnavailable(binDir) {
   return {
     ...env,
     PATH: `${binDir}${sep}${process.env.PATH}`,
-    GEMINI_HOME: path.join(binDir, "gemini-home")
+    GEMINI_HOME: path.join(binDir, "gemini-home"),
+    GEMINI_COMPANION_DISABLE_KEYCHAIN: "1"
   };
 }
 
