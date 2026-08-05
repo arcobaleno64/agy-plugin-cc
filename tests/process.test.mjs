@@ -7,7 +7,8 @@ import {
   binaryAvailable,
   formatCommandFailure,
   resolveBinaryPath,
-  runCommand
+  runCommand,
+  quoteForWindowsShell
 } from "../plugins/gemini/scripts/lib/process.mjs";
 
 test("terminateProcessTree uses taskkill on Windows", () => {
@@ -105,6 +106,41 @@ test("runCommand leaves argv unchanged when shell is disabled", () => {
 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim(), '["argument with spaces"]');
+});
+
+// Values with no shell-unsafe character are passed through untouched, which is
+// why the trailing-backslash cases below all carry a space: a bare `a\` never
+// reaches the quoting branch at all.
+test("quoteForWindowsShell leaves values without shell-unsafe characters alone", () => {
+  assert.equal(quoteForWindowsShell("plain"), "plain");
+  assert.equal(quoteForWindowsShell("a\\b"), "a\\b");
+  assert.equal(quoteForWindowsShell("trailing\\"), "trailing\\");
+  assert.equal(quoteForWindowsShell(42), 42);
+});
+
+// MSVCRT rules: backslashes are literal except before a quote (double them) and
+// at the end of the value (double them so they do not escape the closing quote).
+// Escaping only `"` shipped `a b\` as `"a b\"`, which the child read as `a b"`.
+test("quoteForWindowsShell doubles backslashes before a quote and at the end", () => {
+  assert.equal(quoteForWindowsShell("a b\\"), '"a b\\\\"');
+  assert.equal(quoteForWindowsShell("a b\\\\"), '"a b\\\\\\\\"');
+  assert.equal(quoteForWindowsShell('b"c'), '"b\\"c"');
+  assert.equal(quoteForWindowsShell('a\\"b'), '"a\\\\\\"b"');
+  assert.equal(quoteForWindowsShell("x y"), '"x y"');
+  // Interior backslashes not adjacent to a quote stay literal and single.
+  assert.equal(quoteForWindowsShell("a\\b c"), '"a\\b c"');
+});
+
+// The string rules above only matter if they match what MSVCRT actually parses,
+// and that can only be observed on Windows — POSIX sh reads these escapes
+// differently, so this leg is skipped rather than asserted cross-platform.
+test("runCommand round-trips awkward argv through the Windows shell path", { skip: process.platform !== "win32" }, () => {
+  for (const value of ["a b\\", "a b\\\\", 'a\\"b', 'b"c', "x y", "p&q", "(x) y", "a|b"]) {
+    // Bare command name, so runCommand takes the shell:true branch on Windows.
+    const result = runCommand("node", ["-p", "JSON.stringify(process.argv.slice(1))", value]);
+    assert.equal(result.status, 0, `${JSON.stringify(value)}: ${result.stderr}`);
+    assert.deepEqual(JSON.parse(result.stdout.trim()), [value]);
+  }
 });
 
 test("formatCommandFailure formats exit-code and signal failures", () => {

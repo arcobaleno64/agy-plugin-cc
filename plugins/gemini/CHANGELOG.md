@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.14.1 — 2026-08-05 — Correct argument quoting on the Windows shell path
+
+### Fixed
+- **Arguments ending in a backslash were corrupted when `runCommand` used the Windows shell.** The escaper handled `"` but left backslashes alone, so MSVCRT read the doubled-up run as an escape: a value like `a b\` reached the child as `a b"`, `a b\\` as `a b\`, and `a\"b` as `a\b`. Backslashes are now doubled before a quote and at the end of the value, per the MSVCRT argv rules. Measured on Windows: all eight awkward values now round-trip through `node -p process.argv` unchanged, where three of them were mangled before. This path carries fixed or validated argv only (`where`/`gemini`/`taskkill`), so it was a latent defect rather than an exploitable one — the module comment explaining why this is not a general cmd.exe escaper still stands.
+- **Table cells containing a backslash could break the Markdown table.** `escapeMarkdownCell` escaped `|` without escaping `\` first, so an input containing `\|` rendered as a literal backslash followed by a live column separator. Backslashes are escaped first. Display correctness only; no security claim attaches to it.
+
+### Added
+- `quoteForWindowsShell` is exported for tests. Its rules are Windows-specific and are **not** equivalent under POSIX `sh`, so they are asserted on the returned string — which runs everywhere — with the argv round-trip kept as a Windows-only leg.
+
 ## 0.14.0 — 2026-08-04 — Delegated output is framed as data
 
 ### Security

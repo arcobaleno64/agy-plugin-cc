@@ -9,10 +9,23 @@ import process from "node:process";
 // as protection for free text. Gemini and AGY >=1.1.2 prompts use stdin; older
 // AGY positional prompts are protected by absolute-path resolution and
 // therefore shell:false instead.
+// Exported for tests only: the escaping rules below are Windows/MSVCRT specific
+// and are NOT equivalent under POSIX sh (`"a\\ "` loses a backslash there), so
+// they can only be asserted on the returned string, not by round-tripping argv
+// through a shell on Linux CI. Do not call this from other modules.
 const WINDOWS_SHELL_UNSAFE = /[\s|<>&()^"]/;
-function quoteForWindowsShell(arg) {
+export function quoteForWindowsShell(arg) {
   if (typeof arg !== "string" || !WINDOWS_SHELL_UNSAFE.test(arg)) return arg;
-  return `"${arg.replace(/"/g, '\\"')}"`;
+  // MSVCRT argv rules: a backslash is literal EXCEPT before a quote, where each
+  // one must be doubled, and a run at the end must be doubled so it does not
+  // escape the closing quote. Replacing only `"` left `a\` + `"` as `a\\"`,
+  // which the child reads as a literal backslash and a closing quote — the
+  // caller's value escapes its own quoting. This does not make the function a
+  // cmd.exe escaper; see the note above for why that is not attempted.
+  const escaped = arg
+    .replace(/(\\*)"/g, '$1$1\\"')
+    .replace(/(\\+)$/, "$1$1");
+  return `"${escaped}"`;
 }
 
 export function runCommand(command, args = [], options = {}) {

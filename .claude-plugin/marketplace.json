@@ -6,13 +6,13 @@
   },
   "metadata": {
     "description": "Use Gemini CLI or Antigravity CLI (agy) inside Claude Code for task delegation, code review, and adversarial review.",
-    "version": "0.14.0"
+    "version": "0.14.1"
   },
   "plugins": [
     {
       "name": "gemini",
       "description": "Gemini CLI and Antigravity CLI bridge for Claude Code task delegation and adversarial review",
-      "version": "0.14.0",
+      "version": "0.14.1",
       "author": {
         "name": "arcobaleno64"
       },

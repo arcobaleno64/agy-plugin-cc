@@ -108,6 +108,10 @@ function pushFailureDetails(lines, failure, indent = "") {
 
 function escapeMarkdownCell(value) {
   return String(value ?? "")
+    // Backslash first: escaping `|` without it means an input containing `\|`
+    // becomes `\\|`, which renders as a literal backslash followed by a live
+    // column separator and breaks the table. Display correctness, not security.
+    .replace(/\\/g, "\\\\")
     .replace(/\|/g, "\\|")
     .replace(/\r?\n/g, " ")
     .trim();
