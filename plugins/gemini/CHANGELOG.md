@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **`node scripts/reviewer-demo.mjs` runs every command end to end with no Google account, no OAuth, and no API key.** It answers the Anthropic Software Directory Policy's request (3.D) for "a standard testing account with sample data to verify full Software functionality" — which this plugin cannot satisfy literally, because it issues no accounts. It bridges to a CLI the user installs and authenticates with credentials Google issues, and consumer access ended on 2026-06-18. What is offered instead is a run: setup, foreground task, the background job lifecycle, review, adversarial review, cancelling a live process tree, and a transfer export with a planted `.env` withheld.
+  - The stand-in engine is `tests/fixtures/fake-gemini.cjs`, the fixture the suite already uses, reused rather than reimplemented so it cannot drift into describing behavior no test checks. The plugin's own code paths are real throughout — argv construction, engine detection, stdin transport, envelope parsing, job state, rendering, redaction.
+  - **The canned replies are labelled as canned**, at the top and at each step, and the closing summary names what only a credentialed run can answer. A walkthrough that let fixture text pass for model output would be worse than no walkthrough.
+  - It is a repository tool: nothing under `plugins/gemini/` changed, nothing imports it, and it ships with the repository rather than the plugin.
+
+### Tests
+- The walkthrough is pinned by `tests/reviewer-demo.test.mjs`, which asserts each step reached real plugin output rather than only printing its heading, and independently verifies the redaction claim against the files left on disk — the transfer snapshots *and* the job logs — instead of trusting the demo's own summary line.
+
 ## 0.16.0 — 2026-08-05 — Write is opt-in, and every claim about the engines is measured
 
 Three changes that all came from the same question: does the plugin's description of what it does survive contact with the engines? Two did not.
