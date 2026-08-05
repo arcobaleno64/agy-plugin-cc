@@ -30,6 +30,7 @@ Scope note: sections 1–6 cover the conventional CLI-host surface (argv, subpro
 | Threat | Existing Mitigation | Implementation |
 |---|---|---|
 | Command Injection (CWE-78) | Forced `shell: false` on Git operations | `plugins/gemini/scripts/lib/git.mjs`, `plugins/gemini/scripts/lib/transfer-context.mjs` |
+| Argv re-parsing by cmd.exe (Windows) | A bare command name is resolved to an absolute executable — or, for an npm shim, to the entry script its package's `bin` field names — and spawned with `shell: false`. The shell remains only as a fallback for commands resolution cannot identify | `resolveSpawnTarget`, `plugins/gemini/scripts/lib/process.mjs` |
 | Argument Injection | Strict regex validation of flags (`--model`) | `plugins/gemini/scripts/lib/engine.mjs` |
 | Argv smuggling on Windows | AGY must resolve to an absolute `.exe`; `.cmd` shims are refused (CVE-2024-27980) | `resolveAgyExecutablePath`, `plugins/gemini/scripts/lib/engine.mjs` |
 | Credential Leakage (transfer only) | Secret **filename** redaction (`.env*`, `.pem`, `.npmrc`, `id_rsa`) plus per-file and total size caps | `isSecretFile`, `plugins/gemini/scripts/lib/transfer-context.mjs` |

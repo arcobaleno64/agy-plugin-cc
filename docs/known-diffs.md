@@ -49,6 +49,13 @@ campaign matrix for the full three-way comparison.
   be guaranteed, `detectEngine` fails closed rather than falling back to a bare
   name. The `quoteForWindowsShell` helper is a no-op safety net for
   fixed-constant argv only and is explicitly not relied on for free text.
+- **The gemini engine now avoids the shell too, by a different route.** AGY must
+  be an absolute `.exe` or the run fails closed. Gemini cannot hold to that — on
+  Windows a global npm install is a `.cmd` shim, and refusing `.cmd` would refuse
+  the normal installation — so instead the shim's package is read and its `bin`
+  entry is spawned through this process's own Node with `shell:false`. Where that
+  cannot be established the shell fallback remains, so this is a narrowing of the
+  shell path, not its removal.
 
 ## Follow-ups (adversarial-review groups, low priority)
 

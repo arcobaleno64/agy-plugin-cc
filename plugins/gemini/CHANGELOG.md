@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.16.2 — 2026-08-05 — The engine no longer starts through cmd.exe on Windows
+
+### Fixed
+- **Every successful `/gemini:setup` printed a Node deprecation warning on Windows** ([#49](https://github.com/arcobaleno64/gemini-plugin-cc/issues/49)). `runCommand` spawned any bare command name with `shell: true`, because a global npm install of `gemini` is a `.cmd` shim that will not resolve otherwise. Node 24 warns about that combination (`DEP0190`) precisely because argv is concatenated into a command line rather than passed literally. A warning printed during a command that worked reads as a fault.
+  - A bare name is now resolved before spawning: `where.exe` and `taskkill.exe` come from `System32`, a real executable is spawned directly, and an npm shim is resolved to the entry script **its package's `bin` field names** — then run through this process's own Node with `shell: false`.
+  - **The shell is now a fallback, not the default.** Anything resolution cannot identify with confidence keeps the previous behavior. This narrows the shell path rather than removing it, and the argv-quoting helper it depends on is still exercised by tests.
+  - Side effect worth knowing: on the resolved path, arguments are passed literally. `%PATH%` in an argument is no longer expanded by `cmd.exe`, and no argument can be re-parsed as shell syntax. A test pins that difference.
+
+### Security
+- **Not a vulnerability fix, and the changelog should not imply one.** The only non-constant value that ever reached a Windows command line was the model id, and `SAFE_MODEL_ID` has always confined it to `[A-Za-z0-9._-]` — no shell metacharacter could pass. Prompts travel on stdin and never enter argv. What changes is that the class of mistake is now structurally unavailable on the normal path instead of being held off by one regex.
+- `where.exe` and `taskkill.exe` are taken from `%SystemRoot%\System32` rather than PATH, so a same-named binary planted earlier in PATH cannot answer for them.
+- A shim is only followed when its entry resolves **inside the shim's own directory**, checked with `fs.realpathSync.native`. A shim naming a script elsewhere is left to the shell path instead.
+
+### Tests
+- Shim resolution is pinned by six cases, including the two misresolutions found while building this — both real, both silent:
+  - **A shim naming several scripts.** npm's own shim names `bin/npm-cli.js` *and* `bin/npm-prefix.js`; taking the first `.js` in the file ran `npm-prefix.js`, which exits 0 and prints a path. `npm --version` reported the global prefix as its version, and nothing failed.
+  - **Searching past the first PATH directory.** When the nearest match could not be resolved, the search continued and found a *different installation* further along PATH. The test fixtures shadow the real gemini CLI exactly that way, so 31 tests began exercising the real CLI instead of their stand-in. Resolution is now confined to the first PATH directory, which is what a shell would have run.
+- Argv round-tripping is asserted on both paths now: through the shell (explicitly requested) and through the resolved path, where the assertion is that values arrive *unmodified*.
+
 ## 0.16.1 — 2026-08-05 — A reviewer can now verify the plugin, and reach a person
 
 Both changes close the last two open items in the Anthropic Software Directory Policy. Neither alters how the plugin behaves.

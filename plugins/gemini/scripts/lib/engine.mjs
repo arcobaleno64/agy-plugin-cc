@@ -24,13 +24,15 @@ export function mapEffortToModel(effort) {
   return EFFORT_MODEL_MAP.get(e) ?? null;
 }
 
-// Model ids ride in argv, and on Windows the gemini `.cmd` shim is spawned with
-// shell:true (see process.mjs), so a metacharacter-laden value could be
+// Model ids ride in argv. Since v0.16.2 the gemini command is normally resolved
+// past its `.cmd` shim and spawned with shell:false, so argv is passed literally
+// — but resolution can fail (an unrecognized shim, a non-npm install), and the
+// fallback is still the shell, where a metacharacter-laden value would be
 // reinterpreted by cmd.exe. The prompt is already hardened via stdin; constrain
 // the model id to a safe charset so it can never smuggle a shell payload into
-// argv. The id must also START with an alphanumeric so a value like `--yolo`
-// can never be mistaken for a CLI flag by the gemini binary's own arg parser.
-// Every real Gemini model id / alias fits this pattern.
+// argv on that path. The id must also START with an alphanumeric so a value like
+// `--yolo` can never be mistaken for a CLI flag by the gemini binary's own arg
+// parser. Every real Gemini model id / alias fits this pattern.
 const SAFE_MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 export function normalizeRequestedModel(model) {
