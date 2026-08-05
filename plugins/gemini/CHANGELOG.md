@@ -1,8 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.16.1 — 2026-08-05 — A reviewer can now verify the plugin, and reach a person
+
+Both changes close the last two open items in the Anthropic Software Directory Policy. Neither alters how the plugin behaves.
 
 ### Added
+- **A contact address that receives mail: <arcobaleno830623@gmail.com>.** Policy 3.B asks for "verified contact information and support channels for users with product or security concerns". Until now the repository carried none: both manifests listed a name and a GitHub URL, and every route to the maintainer went through GitHub. The address is now in `plugin.json`, `marketplace.json`, `SECURITY.md`, and the Support section of both READMEs.
+  - GitHub Security Advisories remains the **preferred** route for vulnerabilities — it keeps the report, the discussion, and the advisory together. Email exists for people who cannot or would rather not use GitHub.
+  - A `@users.noreply.github.com` address was considered and rejected: it cannot receive mail, so it would satisfy the letter of a contact field while failing the thing the field is for.
+  - Both README Support sections now say plainly that this is a single-maintainer project rather than a staffed support desk, so response expectations are set by the docs and not by assumption.
 - **`node scripts/reviewer-demo.mjs` runs every command end to end with no Google account, no OAuth, and no API key.** It answers the Anthropic Software Directory Policy's request (3.D) for "a standard testing account with sample data to verify full Software functionality" — which this plugin cannot satisfy literally, because it issues no accounts. It bridges to a CLI the user installs and authenticates with credentials Google issues, and consumer access ended on 2026-06-18. What is offered instead is a run: setup, foreground task, the background job lifecycle, review, adversarial review, cancelling a live process tree, and a transfer export with a planted `.env` withheld.
   - The stand-in engine is `tests/fixtures/fake-gemini.cjs`, the fixture the suite already uses, reused rather than reimplemented so it cannot drift into describing behavior no test checks. The plugin's own code paths are real throughout — argv construction, engine detection, stdin transport, envelope parsing, job state, rendering, redaction.
   - **The canned replies are labelled as canned**, at the top and at each step, and the closing summary names what only a credentialed run can answer. A walkthrough that let fixture text pass for model output would be worse than no walkthrough.
@@ -10,6 +16,12 @@
 
 ### Tests
 - The walkthrough is pinned by `tests/reviewer-demo.test.mjs`, which asserts each step reached real plugin output rather than only printing its heading, and independently verifies the redaction claim against the files left on disk — the transfer snapshots *and* the job logs — instead of trusting the demo's own summary line.
+
+### Compatibility
+- **No behavior change of any kind.** No command, flag, engine selection, transport, model, or job-state format is touched. The two manifests gain an `email` field, which both schemas already accept (verified against `claude plugin validate --strict`).
+
+### Not tested
+- **That the published address is monitored.** That is a commitment by the maintainer, not something a test can assert. It is stated here so a reader knows which claims in this repository are mechanically checked and which are not.
 
 ## 0.16.0 — 2026-08-05 — Write is opt-in, and every claim about the engines is measured
 
