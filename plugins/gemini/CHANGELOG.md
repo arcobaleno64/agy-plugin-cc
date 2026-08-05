@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.16.3 — 2026-08-05 — Review picks its engine the same way every other command does
+
+### Fixed
+- **`/gemini:review` and `/gemini:adversarial-review` sent every review to an unauthenticated gemini CLI rather than to a working AGY.** With no `--engine` given, the review path passed `"gemini"` as its default, which `detectEngine` reads as an **explicit** request — and an explicit request deliberately skips the credential check, because a user who names an engine should get that engine or a clear error. So an installed-but-unauthenticated gemini was selected and failed every review, with AGY sitting available beside it. Only a *missing gemini binary* ever reached the fallback.
+  - The review path now passes `null`, exactly as the task path always has, so both reach the same `auto` routing and the same credential check that v0.16.0 fixed.
+  - **What changes for you:** if you have a working gemini credential, nothing. If you do not, reviews now run on AGY and succeed instead of failing on authentication. An explicit `--engine gemini` still selects gemini and still reports the credential problem, which is the point of asking by name.
+  - The stated reason for the preference — "prefer gemini for JSON output" — had been obsolete since v0.11.0, when AGY 1.1.8's JSON envelope gave both engines the same structured contract.
+
+### Documentation
+- `REVIEW_SCHEMA` in `gemini-companion.mjs` looked like dead code and is not. It names a real file that two prompts and the bench scorer depend on; it is unread at runtime only because the contract travels to the model inside the prompt, since the gemini engine has no flag that accepts a schema file. AGY 1.1.8's `--json-schema` does, and that remains an open follow-up. The comment now says all of this, so the next reader does not delete it.
+
+### Tests
+- Engine selection is pinned three ways: that a review with no engine specified asks for the same thing a task does, that an explicit `--engine` is passed through untouched, and that the review path never names gemini by itself. Verified against the previous code — the first and third fail there, which is what makes them worth keeping.
+
 ## 0.16.2 — 2026-08-05 — The engine no longer starts through cmd.exe on Windows
 
 ### Fixed

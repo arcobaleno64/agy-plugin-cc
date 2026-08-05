@@ -67,6 +67,13 @@ import { MODEL_MAP_METADATA, MODEL_ALIAS_ENTRIES } from "./lib/model-map.mjs";
 
 const ROOT_DIR = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const SELF_PATH = fileURLToPath(import.meta.url);
+// The review output contract. Not read at runtime: the shape is carried to the
+// model inside the prompt (`prompts/review.md`, and the reference in
+// `skills/gemini-prompting/`) rather than handed to the CLI as a schema file,
+// because the gemini engine has no flag that accepts one. AGY 1.1.8 does
+// (`--json-schema`); adopting it is an open follow-up, and this is the path it
+// would use. Kept deliberately — the file it names exists and is the written
+// form of a contract two prompts and the bench scorer all depend on.
 const REVIEW_SCHEMA = path.join(ROOT_DIR, "schemas", "review-output.schema.json");
 const DEFAULT_STATUS_WAIT_TIMEOUT_MS = 240000;
 const DEFAULT_STATUS_POLL_INTERVAL_MS = 2000;

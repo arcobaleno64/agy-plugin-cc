@@ -384,13 +384,19 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
   // share this runner, so the progress line must reflect the actual mode.
   onProgress?.({ message: `Starting ${isAdversarial ? "adversarial review" : "review"}...`, phase: "reviewing" });
 
-  // prefer gemini for JSON output, unless forced to agy
-  let engineInfo;
-  try {
-    engineInfo = detectEngineFn(requestedEngine ?? "gemini");
-  } catch {
-    engineInfo = detectEngineFn(requestedEngine ?? null);
-  }
+  // Same engine selection as a task: whatever the user asked for, else `auto`.
+  //
+  // This used to pass "gemini" as the default, which made an unspecified engine
+  // look like an explicit request — and an explicit request deliberately skips
+  // the credential check, because a user naming an engine should get that engine
+  // or a clear error. So a gemini CLI that was installed but unauthenticated was
+  // selected here and failed every review, while a working AGY sat beside it.
+  // Only a *missing* gemini binary reached the fallback.
+  //
+  // The reason for the preference is also gone: it was "prefer gemini for JSON
+  // output", true when only gemini could emit structured output. AGY has carried
+  // the same JSON envelope since 1.1.8 (plugin v0.11.0).
+  const engineInfo = detectEngineFn(requestedEngine ?? null);
   const agyStructured = engineInfo.engine === "agy" && supportsAgyStructuredOutput(engineInfo.version);
   const useJson = engineInfo.engine === "gemini" || agyStructured;
 
