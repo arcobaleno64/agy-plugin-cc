@@ -17,3 +17,10 @@ jobs:
       - run: npm test
       - run: npm run check-version
       - run: npm run verify-contracts
+      # verify-contracts checks version lockstep and the command surface; it does
+      # not schema-check the manifests themselves. `claude plugin validate` does,
+      # and it needs no credentials — verified against an empty CLAUDE_CONFIG_DIR.
+      # Pinned so a Claude Code release cannot change this gate without a commit.
+      - run: npm install -g @anthropic-ai/claude-code@2.1.222
+      - run: claude plugin validate ./plugins/gemini --strict
+      - run: claude plugin validate . --strict
