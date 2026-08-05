@@ -219,3 +219,61 @@ test("AGY 1.1.10 review reports invalid-json when the response is not findings J
   // The envelope parsed; its payload did not. Those are different failures.
   assert.equal(result.failure.category, "invalid-json");
 });
+
+// --- engine selection ---
+// The review path used to pass "gemini" as its default, which reads to
+// detectEngine as an *explicit* request — and an explicit request deliberately
+// skips the credential check, because a user naming an engine should get it or a
+// clear error. The result was that a gemini CLI installed but unauthenticated
+// captured every review and failed it, with a working AGY sitting beside it.
+// Only a missing gemini *binary* reached the fallback.
+
+function recordingEngine() {
+  const calls = [];
+  const fn = (requested) => {
+    calls.push(requested);
+    return { engine: "agy", binary: "/fake/agy.exe", version: "1.1.10" };
+  };
+  fn.calls = calls;
+  return fn;
+}
+
+test("a review with no engine asked for routes through auto, exactly like a task", async () => {
+  const reviewEngine = recordingEngine();
+  await runGeminiReview("/repo", { prompt: "review this" }, {
+    runCommandFn: stubRun({ stdout: JSON.stringify({ ...SUCCESS_ENVELOPE, response: '{"verdict":"approve","summary":"ok","findings":[],"next_steps":[]}' }) }),
+    detectEngineFn: reviewEngine
+  });
+
+  const taskEngine = recordingEngine();
+  await runGeminiTurn("/repo", { prompt: "do this", write: false }, {
+    runCommandFn: stubRun({ stdout: JSON.stringify(SUCCESS_ENVELOPE) }),
+    detectEngineFn: taskEngine
+  });
+
+  assert.deepEqual(reviewEngine.calls, [null], "review still names an engine of its own");
+  assert.deepEqual(reviewEngine.calls, taskEngine.calls, "review and task disagree on engine selection");
+});
+
+test("an explicitly requested engine is still passed through untouched", async () => {
+  for (const requested of ["gemini", "agy", "auto"]) {
+    const engine = recordingEngine();
+    await runGeminiReview("/repo", { prompt: "review this", engine: requested }, {
+      runCommandFn: stubRun({ stdout: JSON.stringify({ ...SUCCESS_ENVELOPE, response: '{"verdict":"approve","summary":"ok","findings":[],"next_steps":[]}' }) }),
+      detectEngineFn: engine
+    });
+    assert.deepEqual(engine.calls, [requested]);
+  }
+});
+
+// detectEngine is the single place that decides, and it already refuses an
+// unauthenticated gemini under `auto` (engine.test.mjs). This asserts the review
+// path actually reaches that decision rather than pre-empting it.
+test("an unauthenticated gemini no longer captures the review path", async () => {
+  const engine = recordingEngine();
+  await runGeminiReview("/repo", { prompt: "review this" }, {
+    runCommandFn: stubRun({ stdout: JSON.stringify({ ...SUCCESS_ENVELOPE, response: '{"verdict":"approve","summary":"ok","findings":[],"next_steps":[]}' }) }),
+    detectEngineFn: engine
+  });
+  assert.ok(!engine.calls.includes("gemini"), "review asked for gemini by name and skipped the credential check");
+});
