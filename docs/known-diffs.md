@@ -26,12 +26,18 @@ campaign matrix for the full three-way comparison.
   so the same default here would be write-capable *and* unconfined. The default
   is inverted rather than the feature removed. This also aligns the slash-command
   path with the MCP path, where `gemini_rescue` already defaulted `write: false`.
-- **`--write` means something different on each engine.** On AGY it maps to
-  `--new-project`, binding the session to `cwd`; without it AGY works in its own
-  scratch directory, and headless print mode auto-approves edits either way — so
-  there it selects a workspace, not a permission. On Gemini CLI it maps to
-  `--yolo`, which *is* a permission: without it the model is offered no write or
-  shell tools at all. The same user-facing flag, two different mechanisms.
+- **`--write` means something different on each engine.** On Gemini CLI it maps
+  to `--yolo`, which *is* a permission: without it the model is offered no write
+  or shell tools at all. On AGY it maps to `--new-project` rather than
+  `--add-dir` — two ways of pointing the session at `cwd`, neither of which
+  withholds write, because headless print mode auto-approves edits regardless.
+  So on AGY it is a statement of intent, and on gemini a capability gate. The
+  same user-facing flag, two different mechanisms.
+  - Until v0.16.4 a read-only AGY turn was given no orientation flag at all,
+    which read as a boundary and was not one: the model simply did not know
+    where the repository was, while remaining able to reach any absolute path.
+    It also could not do the investigation `/gemini:rescue` is documented for.
+    See `docs/THREAT-MODEL.md` §7.2 for the measurements and the correction.
 - **Bench harness is retained.** The Codex-vs-Gemini benchmark suite (`bench/`,
   cassettes, scoring) lives only here; the siblings deliberately omit it (owner
   decision), so it is a one-way difference, not a gap.

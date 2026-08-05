@@ -80,11 +80,23 @@ The plugin's function is to take content it did not author and hand it to an age
 
 1. **`--sandbox` is not a path boundary.** It exists on 1.1.10 — so the earlier claim that "AGY has no path-boundary mode" was wrong about the flag and right about the capability. Runs 2–4 wrote outside the workspace with it enabled, via both the edit tool and a shell command. Its help text, "terminal restrictions", describes what a terminal command may reach (network, `.git`), not where anything may write. [antigravity-cli#749](https://github.com/google-antigravity/antigravity-cli/issues/749) is therefore still the open request.
 2. **`--dangerously-skip-permissions` granted nothing here.** Runs 4, 6 and 7 wrote or executed without it and without any prompt: headless print mode auto-approves regardless. The claim that "those flags remove the approval prompt" was wrong — in this mode there is no prompt to remove. **The flag was removed in v0.16.0** at no behavioral cost.
-3. **`--new-project` is the real control.** Without it AGY works inside its own scratch directory and the repository is untouched (run 5); with it, the repository is edited (runs 6–7). `lib/engine.mjs` adds it only on write turns, which is why behavior has looked correct — the read-only guarantee comes from workspace binding, not from a permission mode.
+3. **`--new-project` orients the session; it does not confine it.** Without it AGY works inside its own scratch directory and the repository is untouched (run 5); with it, the repository is edited (runs 6–7). `lib/engine.mjs` adds it only on write turns.
+
+> **Correction (2026-08-05), applied in v0.16.4.** Conclusion 3 originally ended "the read-only guarantee comes from workspace binding, not from a permission mode." **There was no guarantee.** Run 5 wrote to the scratch dir because the prompt named a *relative* path, and an unoriented AGY resolves those against its own directory. Re-measured with absolute paths: a turn with **no workspace flag at all** read and wrote an absolute path outside its scratch dir. What the unoriented shape withheld was the model's knowledge of where the repository is — not its access to it. That stops nothing an injected instruction carrying an absolute path would do, and repository content is exactly where such an instruction would arrive.
+>
+> It did stop the intended use. A read-only turn reported its cwd as `~/.gemini/antigravity-cli/scratch`, so every relative path missed — leaving `/gemini:rescue` without `--write`, which `agents/gemini-rescue.md` documents for investigation, reading a scratch directory instead of the user's code. That regressed in v0.16.0, when read-only became the default and took the orientation flag with it.
+
+| Orientation flag | Model's reported cwd | Relative read | Absolute read/write |
+|---|---|---|---|
+| none | `~/.gemini/antigravity-cli/scratch` | fails | **works** |
+| `--add-dir <repo>` | the repository | works | works |
+| `--new-project` | the repository | works | works |
+
+4. **AGY has no read-only mode, and the plugin no longer implies one.** `--add-dir` and `--new-project` orient identically; neither withholds write. Since v0.16.4 a read-only turn takes `--add-dir` so it can do the job it is documented for, and the honest description of the difference between a read-only and a `--write` run on AGY is: **what the prompt asks for**, plus the workspace the run is bound to for relative paths. Not a capability boundary.
 
 **Changed in v0.16.0**: `--write` is no longer the subagent default (`agents/gemini-rescue.md`), and `--dangerously-skip-permissions` is gone. The MCP path already defaulted `write: false`; the two entry points now agree.
 
-**Residual, unchanged.** Nothing constrains where a `--write` run may reach — runs 1 and 3 wrote outside the workspace, and no flag on either engine prevents it. The exposure is now opt-in and accurately described rather than default and mis-described. The real fix remains an engine-side path boundary.
+**Residual, unchanged.** Nothing constrains where any AGY run may reach — runs 1 and 3 wrote outside the workspace, the correction above shows an unoriented run doing the same, and no flag on either engine prevents it. `--write` remains meaningful as the opt-in that says "edits are expected", and it is what the subagent and MCP defaults key off. It is not a sandbox. The real fix remains an engine-side path boundary.
 
 **Measured on gemini CLI 0.53.1, 2026-08-05**, against the same disposable repository and the same stdin transport, on a temporary API key. The gemini engine behaves the *opposite* way to AGY, so nothing above transfers between them.
 
