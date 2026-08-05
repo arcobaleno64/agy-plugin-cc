@@ -281,6 +281,8 @@
 - **憑證處理**：`~/.gemini/oauth_creds.json` 之 OAuth 憑證僅用於 `getGeminiLoginStatus()` 檢查 token 是否過期；本外掛從不記錄、複製或傳輸之。
 - **`.gitignore`**：`.omc/` 狀態目錄（工作日誌、會話狀態）已排除於版本控制之外。
 
+**送出哪些資料、保留在何處、讀取了什麼**——包含唯一一條不需明確命令即會傳輸的路徑——記載於 [`PRIVACY.md`](PRIVACY.md)（英文）。
+
 ---
 
 ## 安裝與認證疑難排解

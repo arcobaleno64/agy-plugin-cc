@@ -2,10 +2,12 @@
 
 ## Supported Versions
 
+Only the current MINOR line is supported. Update this table with every MINOR bump.
+
 | Version | Supported |
 |---|---|
-| 0.12.x | :white_check_mark: |
-| < 0.12.0 | :x: |
+| 0.14.x | :white_check_mark: |
+| < 0.14.0 | :x: |
 
 ## Security Model & Trust Boundaries
 
@@ -15,7 +17,7 @@
 - Stdin transport and prompt escaping logic (`plugins/gemini/scripts/lib/gemini.mjs`, `plugins/gemini/scripts/transfer.mjs`).
 - Argument validation and flag parsing (preventing flag injection into CLI subprocesses).
 - Process boundary security (forcing `shell: false` on Git operations in `plugins/gemini/scripts/lib/git.mjs`).
-- Secret file redaction filters (`isSecretFile()` in `plugins/gemini/scripts/lib/transfer-context.mjs`).
+- Secret file redaction filters (`isSecretFile()` and `redactSecretsFromDiff()` in `plugins/gemini/scripts/lib/secrets.mjs`, shared by the review and transfer paths; `transfer-context.mjs` re-exports `isSecretFile` under its original name).
 - Background job state directory isolation (`.omc/`).
 - **Prompt injection and delegated agency** — the plugin hands repository content it did not author to an agent that can be write-capable. Modelled in [`docs/THREAT-MODEL.md` §7](docs/THREAT-MODEL.md), mapped against the OWASP Top 10 for LLM Applications. Read that section before reporting: the highest-rated item (`/gemini:rescue` defaulting to a write-capable run with no path sandbox) is **known and documented**, not an undisclosed flaw.
 
@@ -23,6 +25,10 @@
 - Third-party CLI binary vulnerabilities within Google's `gemini` or `agy` executables.
 - Claude Code runtime environment process sandbox boundaries.
 - User-managed OAuth token storage inside `~/.gemini/oauth_creds.json` or AGY system keyrings.
+
+### Data Handling
+
+What the plugin sends, keeps, and reads — and the single path that transmits without an explicit user command — is documented in [`PRIVACY.md`](PRIVACY.md). Report any statement there that the code does not support as a documentation defect.
 
 ## Reporting a Vulnerability
 

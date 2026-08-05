@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Documentation
+- **`PRIVACY.md` states what the plugin sends, keeps, and reads**, with a source file cited beside each claim. It was the one directory-compliance document the repository did not have; nothing in `README.md`, `README.zh-TW.md`, `SECURITY.md`, or `docs/THREAT-MODEL.md` contained the word *privacy*. Both READMEs and `SECURITY.md` link to it.
+  - The document says the uncomfortable parts out loud: secret detection is by filename only; the size caps and redaction bound what the *plugin* assembles, not what the agentic CLI may read on its own once running in your workspace ([`docs/THREAT-MODEL.md` §7.2](../../docs/THREAT-MODEL.md)); and the opt-in Stop review gate is the one path that transmits a diff without a fresh command.
+- **`SECURITY.md` supported-versions table said `0.12.x`** while 0.14.1 shipped — a security policy claiming the current release is unsupported. Corrected, with the rule ("only the current MINOR line") written down so the next bump does not re-stale it. The in-scope-components list also still pointed `isSecretFile()` at `transfer-context.mjs`; the definition moved to `lib/secrets.mjs` in 0.13.0.
+
+### Tests
+- `tests/privacy-doc.test.mjs` pins `PRIVACY.md`'s presence, the four questions it must answer, and the link from every entry document — a policy doc rots when a README rewrite silently drops the link, not when the file is deleted. It also derives the expected supported-version line from `package.json`, so the table cannot go stale again without failing CI.
+
 ## 0.14.1 — 2026-08-05 — Correct argument quoting on the Windows shell path
 
 ### Fixed
