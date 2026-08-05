@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.16.0 — 2026-08-05 — Write is opt-in, and every claim about the engines is measured
+
+Three changes that all came from the same question: does the plugin's description of what it does survive contact with the engines? Two did not.
+
+`/gemini:rescue` was write-capable by default, inherited from an upstream that can afford it because it confines the run with a sandbox this port has none of. And `--dangerously-skip-permissions`, the most alarming flag in the codebase, turned out to grant nothing at all — headless AGY auto-approves either way. Both were found by running fourteen measured turns against a disposable repository rather than by reading flags, which is how the threat model had described this surface until now.
+
+Separately, the credential check could not see the credentials Gemini CLI actually stores, so `auto` routed past working installations in silence.
 
 ### Breaking
 - **`/gemini:rescue` no longer edits files unless you pass `--write`.** The rescue subagent had instructed itself to add `--write` unless the user asked otherwise — inherited verbatim from upstream `codex-plugin-cc`, where it is safe because upstream confines a write run with `sandbox: "workspace-write"`. This port has no such boundary, so the same default was write-capable *and* unconfined. The default is inverted; the feature is untouched.
@@ -37,6 +43,12 @@
 - `--dangerously-skip-permissions` is asserted absent across four AGY turn shapes, including the write and resumed-write turns where it would plausibly be re-added, and `--sandbox` is asserted absent so it is not adopted as a boundary later.
 - The gemini path is pinned in both directions — `--yolo` present on a write turn, absent on a read-only one — so neither half is dropped by analogy with the AGY path, and `--approval-mode` is asserted absent across four turn shapes.
 - One test requires the annotations to exist and be well-formed on every tool, including the policy's 64-character name limit, and refuses a meaningless `destructiveHint` on a read-only tool. A second pins each tool's hints individually — a wrong hint is worse than a missing one, because a client acts on it.
+
+### Compatibility
+- **No change to any command, flag, engine selection, transport, model, or job-state format.** Node ≥ 18, Gemini CLI ≥ 0.40, AGY ≥ 1.0.3 as before.
+- **What changes for you:** `/gemini:rescue` without `--write` now investigates instead of editing, and `auto` may now select gemini where it previously fell through to AGY, because the credential it could not see is now visible. Both are described above.
+- Three observable values move toward the truth rather than changing contract: `geminiReady` and `readyState` in `/gemini:setup --json` for users whose credential was previously invisible, and the "authenticate" next-step text, which no longer names OAuth as the only option.
+- **Why MINOR and not MAJOR.** An inverted permission default is a MAJOR trigger under the release policy. It ships as MINOR under the `0.x` allowance for a labeled breaking change carrying migration instructions — the same call taken for the job-state move in 0.15.0. The migration is one flag.
 
 ### Known limitations
 - **Nothing constrains where a `--write` run may reach.** Two of the measured runs wrote outside the workspace, and no flag on either engine prevents it. This release makes the exposure opt-in and accurately described; it does not remove it. The real fix is an engine-side path boundary that does not yet exist.
