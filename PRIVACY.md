@@ -143,14 +143,16 @@ are not committed by accident.
 
 ### Job state and logs
 
-`$GEMINI_COMPANION_DATA/state/<workspace-slug>-<hash>/`, or
-`<system temp>/gemini-companion/<workspace-slug>-<hash>/` when that variable is
-unset — containing `state.json`, `jobs/<id>.json`, and `jobs/<id>.log` for
-background jobs. The 50 most recent jobs are kept; older records and their log
-files are deleted together (`scripts/lib/state.mjs`). The directory name derives
-from your workspace path so separate projects do not share state; ending a
-Claude Code session removes that session's jobs
-(`scripts/session-lifecycle-hook.mjs`).
+`$CLAUDE_PLUGIN_DATA/state/<workspace-slug>-<hash>/` — Claude Code's per-plugin
+data directory — containing `state.json`, `jobs/<id>.json`, and `jobs/<id>.log`
+for background jobs. Outside Claude Code, where that variable is unset, it falls
+back to `<system temp>/gemini-companion/<workspace-slug>-<hash>/`. Setting
+`GEMINI_COMPANION_DATA` overrides both.
+
+The 50 most recent jobs are kept; older records and their log files are deleted
+together (`scripts/lib/state.mjs`). The directory name derives from your
+workspace path so separate projects do not share state; ending a Claude Code
+session removes that session's jobs (`scripts/session-lifecycle-hook.mjs`).
 
 Delete either directory at any time. The plugin recreates what it needs.
 
