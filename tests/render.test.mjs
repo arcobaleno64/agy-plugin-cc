@@ -84,6 +84,39 @@ test("renderStatusReport announces the stop-time review gate when enabled", () =
   assert.match(out, /stop-time review gate is enabled/);
 });
 
+// A summary containing `|` must not open a new column, and a summary containing
+// `\|` must not degrade into a literal backslash plus a live separator — which
+// is what escaping `|` without escaping `\` first produced. Display correctness.
+test("renderStatusReport keeps the active-jobs table intact when cells contain pipes and backslashes", () => {
+  const out = renderStatusReport({
+    sessionRuntime: { label: "agy 1.1.10" },
+    running: [
+      {
+        id: "task-1",
+        kindLabel: "Task",
+        status: "running",
+        phase: "",
+        elapsed: "3s",
+        threadId: "conv-1",
+        summary: "grep 'a|b' then C:\\tmp\\out and a literal \\| pair\nsecond line"
+      }
+    ],
+    latestFinished: null,
+    recent: [],
+    needsReview: false
+  });
+
+  const row = out.split("\n").find((line) => line.startsWith("| task-1 "));
+  assert.ok(row, "expected the active-jobs row to be rendered");
+  // 8 columns, plus the leading and trailing separators => 9 splits, 10 fragments.
+  assert.equal(row.split(/(?<!\\)\|/).length, 10);
+  assert.ok(row.includes("grep 'a\\|b'"));
+  assert.ok(row.includes("C:\\\\tmp\\\\out"));
+  assert.ok(row.includes("a literal \\\\\\| pair"));
+  // Newlines are folded into the cell rather than breaking the table.
+  assert.ok(row.includes("pair second line"));
+});
+
 test("renderJobStatusReport renders a single job's id and status", () => {
   const out = renderJobStatusReport({ id: "task-1", status: "completed", title: "Investigate flake" });
   assert.match(out, /# Gemini Job Status/);
