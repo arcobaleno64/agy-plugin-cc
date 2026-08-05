@@ -281,7 +281,7 @@ Override via `--engine` flag or the `GEMINI_ENGINE` environment variable.
 - **AGY transport fallback**: Only a stable parsed version of 1.1.2 or newer enables stdin. Unknown and prerelease version strings fail closed to the existing positional path, preserving compatibility rather than assuming an upstream capability.
 - **AGY 1.1.10+ `.git` sandbox rule**: AGY 1.1.10 implements read-only `.git` sandbox rules during sandboxed execution, protecting git repository metadata and commit history against accidental modification during review and subagent tasks.
 - **Credential handling**: OAuth credentials in `~/.gemini/oauth_creds.json` are read only to check token expiry via `getGeminiLoginStatus()`; they are never logged, copied elsewhere, or transmitted by this plugin.
-- **`.gitignore`**: The `.omc/` state directory (job logs, session state) is excluded from version control.
+- **`.gitignore`**: The workspace-local `.omc/` directory, which holds `/gemini:transfer` snapshots, is excluded from version control. Job state and logs live outside the repository entirely — see [How It Works](#how-it-works).
 
 **What is sent, kept, and read** — including the one path that transmits without an explicit command — is documented in [`PRIVACY.md`](PRIVACY.md).
 
@@ -317,7 +317,11 @@ Claude Code
             └─ renderTaskResult()   → Markdown output to Claude
 ```
 
-Background mode spawns a detached worker child process (`task-worker` for `/gemini:rescue`, `review-worker` for `/gemini:review` and `/gemini:adversarial-review`) and returns a job ID immediately. State is persisted in `.omc/state/` and polled via `/gemini:status`, so a background result survives even if the Claude session is interrupted.
+Background mode spawns a detached worker child process (`task-worker` for `/gemini:rescue`, `review-worker` for `/gemini:review` and `/gemini:adversarial-review`) and returns a job ID immediately. State is polled via `/gemini:status`, so a background result survives even if the Claude session is interrupted.
+
+Job state is written to Claude Code's per-plugin data directory — `$CLAUDE_PLUGIN_DATA/state/<workspace>-<hash>/`, holding `state.json` and one `.json` plus `.log` per job, most recent 50 kept. Outside Claude Code, where that variable is unset, it falls back to `<system temp>/gemini-companion/<workspace>-<hash>/`; the OS eventually cleans that, so a job left running across a temp sweep can disappear. Set `GEMINI_COMPANION_DATA` to pin the location yourself.
+
+The workspace-local `.omc/` directory is a separate thing: it holds `/gemini:transfer` snapshots only, not job state.
 
 ---
 

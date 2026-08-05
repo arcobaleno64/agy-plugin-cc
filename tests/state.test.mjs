@@ -17,31 +17,86 @@ import {
   readJobFile
 } from "../plugins/gemini/scripts/lib/state.mjs";
 
-test("resolveStateDir uses a temp-backed per-workspace directory", () => {
-  const workspace = makeTempDir();
-  const stateDir = resolveStateDir(workspace);
+// These run inside a Claude Code session more often than not, and that session
+// sets CLAUDE_PLUGIN_DATA. Set both variables explicitly on every case, or the
+// result depends on who is running the suite.
+function withPluginDataEnv(values, body) {
+  const names = ["GEMINI_COMPANION_DATA", "CLAUDE_PLUGIN_DATA"];
+  const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  try {
+    for (const name of names) {
+      const next = values[name];
+      if (next == null) delete process.env[name];
+      else process.env[name] = next;
+    }
+    body();
+  } finally {
+    for (const name of names) {
+      if (previous[name] == null) delete process.env[name];
+      else process.env[name] = previous[name];
+    }
+  }
+}
 
-  assert.equal(stateDir.startsWith(os.tmpdir()), true);
-  assert.match(path.basename(stateDir), /.+-[a-f0-9]{16}$/);
+test("resolveStateDir falls back to a temp-backed directory when neither variable is set", () => {
+  const workspace = makeTempDir();
+  withPluginDataEnv({}, () => {
+    const stateDir = resolveStateDir(workspace);
+    assert.equal(stateDir.startsWith(os.tmpdir()), true);
+    assert.match(path.basename(stateDir), /.+-[a-f0-9]{16}$/);
+  });
+});
+
+// The defect this pins: CLAUDE_PLUGIN_DATA is the variable Claude Code sets and
+// session-lifecycle-hook.mjs forwards, but this module used to read only
+// GEMINI_COMPANION_DATA — which nothing sets — so every real install landed in
+// the temp directory and lost background job state to OS cleanup.
+test("resolveStateDir honors CLAUDE_PLUGIN_DATA, which is the variable Claude Code sets", () => {
+  const workspace = makeTempDir();
+  const pluginDataDir = makeTempDir();
+
+  withPluginDataEnv({ CLAUDE_PLUGIN_DATA: pluginDataDir }, () => {
+    const stateDir = resolveStateDir(workspace);
+    assert.equal(stateDir.startsWith(path.join(pluginDataDir, "state")), true);
+    // The fallback root, not os.tmpdir() itself — makeTempDir builds the plugin
+    // data dir under the temp directory too.
+    assert.ok(
+      !stateDir.startsWith(path.join(os.tmpdir(), "gemini-companion")),
+      "state must not land in the OS-cleaned fallback root"
+    );
+  });
 });
 
 test("resolveStateDir honors GEMINI_COMPANION_DATA when provided", () => {
   const workspace = makeTempDir();
   const pluginDataDir = makeTempDir();
-  const previous = process.env.GEMINI_COMPANION_DATA;
-  process.env.GEMINI_COMPANION_DATA = pluginDataDir;
 
-  try {
+  withPluginDataEnv({ GEMINI_COMPANION_DATA: pluginDataDir }, () => {
     const stateDir = resolveStateDir(workspace);
     assert.equal(stateDir.startsWith(path.join(pluginDataDir, "state")), true);
     assert.match(path.basename(stateDir), /.+-[a-f0-9]{16}$/);
-  } finally {
-    if (previous == null) {
-      delete process.env.GEMINI_COMPANION_DATA;
-    } else {
-      process.env.GEMINI_COMPANION_DATA = previous;
-    }
-  }
+  });
+});
+
+// Deprecated, but it was readable in shipped source, so anyone who set it keeps
+// their location rather than being silently moved by an upgrade.
+test("GEMINI_COMPANION_DATA overrides CLAUDE_PLUGIN_DATA when both are set", () => {
+  const workspace = makeTempDir();
+  const explicit = makeTempDir();
+  const host = makeTempDir();
+
+  withPluginDataEnv({ GEMINI_COMPANION_DATA: explicit, CLAUDE_PLUGIN_DATA: host }, () => {
+    assert.equal(resolveStateDir(workspace).startsWith(path.join(explicit, "state")), true);
+  });
+});
+
+test("a blank plugin-data variable falls through instead of rooting state at ''", () => {
+  const workspace = makeTempDir();
+  const host = makeTempDir();
+
+  withPluginDataEnv({ GEMINI_COMPANION_DATA: "   ", CLAUDE_PLUGIN_DATA: host }, () => {
+    assert.equal(resolveStateDir(workspace).startsWith(path.join(host, "state")), true);
+  });
 });
 
 // resolveStateDir hashes the *canonicalized* workspace path (fs.realpathSync.native)
@@ -141,6 +196,10 @@ test("state and job writes leave parseable JSON", () => {
 // guarantee that buys is that a concurrent reader never sees a half-written
 // state.json — not that concurrent writers keep each other's jobs, which a
 // load/mutate/save cycle cannot promise. Assert the guarantee that exists.
+//
+// The rename is atomic on both platforms, but only POSIX lets it succeed while a
+// reader holds the file open; on Windows it raises EPERM instead, so the writer
+// retries. See the note in the worker.
 test("concurrent writers never expose a partially written state.json", async () => {
   const workspace = makeTempDir();
   const stateFile = resolveStateFile(workspace);
@@ -154,8 +213,28 @@ test("concurrent writers never expose a partially written state.json", async () 
     [
       `const { upsertJob } = await import(${JSON.stringify(stateModule)});`,
       "const [workspace, tag] = process.argv.slice(2);",
+      "",
+      "// Windows refuses to rename onto a path another process currently has",
+      "// open, so the reader loop below — which reopens state.json every",
+      "// millisecond, far harder than any real caller — makes saveState's",
+      "// rename throw EPERM. That is a property of the platform, not a torn",
+      "// write, and asserting it away would test the wrong thing. Retry, and",
+      "// let a persistent failure still fail the test.",
+      "function writeWithRetry(job) {",
+      "  for (let attempt = 0; ; attempt += 1) {",
+      "    try {",
+      "      upsertJob(workspace, job);",
+      "      return;",
+      "    } catch (error) {",
+      "      const sharing = error && (error.code === 'EPERM' || error.code === 'EBUSY' || error.code === 'EACCES');",
+      "      if (!sharing || attempt >= 50) throw error;",
+      "      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);",
+      "    }",
+      "  }",
+      "}",
+      "",
       "for (let i = 0; i < 12; i += 1) {",
-      "  upsertJob(workspace, { id: `${tag}-${i}`, status: 'completed', payload: 'x'.repeat(2048) });",
+      "  writeWithRetry({ id: `${tag}-${i}`, status: 'completed', payload: 'x'.repeat(2048) });",
       "}"
     ].join("\n"),
     "utf8"
