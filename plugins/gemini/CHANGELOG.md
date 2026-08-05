@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- **`node scripts/make-sample-repo.mjs`** materializes a benchmark corpus case into a disposable git repository and prints the defects planted in it. It is the safe target for a `--write` run, which is write-capable with no path sandbox ([`docs/THREAT-MODEL.md` §7.2](../../docs/THREAT-MODEL.md)). No new fixture content: `bench/lib/corpus.mjs` already built exactly this repo for the benchmark, so the script is that call minus the cleanup.
+
 ### Security
 - **A review no longer reads through an untracked symlink that leaves the workspace.** `formatUntrackedFile` checked `isSecretFile` against the *link* name — which whoever plants the link chooses — and then followed it with `readFileSync`. An untracked symlink called `notes.txt` pointing at `~/.ssh/id_rsa` passed every check and its target's contents were sent to the model. The link is now resolved with `fs.realpathSync.native` and skipped when the target falls outside the workspace; both sides are canonicalized first, because a `cwd` that is itself a symlinked path (macOS `/tmp`) would otherwise mark every file as an escape. In-repo aliases still inline normally and broken links still report as broken. The reachable route is a write-capable delegated task creating the link and a later review reading through it — see [`docs/THREAT-MODEL.md` §7.4](../../docs/THREAT-MODEL.md).
 
@@ -12,9 +15,14 @@
 - **`PRIVACY.md` states what the plugin sends, keeps, and reads**, with a source file cited beside each claim. It was the one directory-compliance document the repository did not have; nothing in `README.md`, `README.zh-TW.md`, `SECURITY.md`, or `docs/THREAT-MODEL.md` contained the word *privacy*. Both READMEs and `SECURITY.md` link to it.
   - The document says the uncomfortable parts out loud: secret detection is by filename only; the size caps and redaction bound what the *plugin* assembles, not what the agentic CLI may read on its own once running in your workspace ([`docs/THREAT-MODEL.md` §7.2](../../docs/THREAT-MODEL.md)); and the opt-in Stop review gate is the one path that transmits a diff without a fresh command.
 - **`SECURITY.md` supported-versions table said `0.12.x`** while 0.14.1 shipped — a security policy claiming the current release is unsupported. Corrected, with the rule ("only the current MINOR line") written down so the next bump does not re-stale it. The in-scope-components list also still pointed `isSecretFile()` at `transfer-context.mjs`; the definition moved to `lib/secrets.mjs` in 0.13.0.
+- **`docs/verifying-without-credentials.md`** — the complete path for reviewing this plugin with no Google account, no OAuth, and no API key, and an explicit table of what the credentialed steps add. Maintainer credentials are never distributed, so the offline path has to be written down.
+- **`docs/version-sources.md`** — the HANDOFF §14 P1 study, answered rather than left open. Recommendation: **keep all six version sources.** The duplication Anthropic's guidance warns about is mechanically enforced here by one bump script and a `check-version` gate that runs in both workflows, and the only redundant field interacts with a directory pipeline this repository cannot test against without experimenting on live users. Two named conditions would change the answer.
+- **Support sections** in both READMEs, routing setup trouble, deliberate divergences, bugs, compatibility reports, and vulnerabilities to different places — a vulnerability in a public issue is the failure worth preventing.
+- Issue templates for bug reports and compatibility reports. The bug template requires the exact command and `/gemini:setup` output, because those two answer most questions unaided. The compatibility template accepts "works on X" as readily as "breaks on X", since the docs only claim what has actually been run.
 
 ### Tests
 - `tests/privacy-doc.test.mjs` pins `PRIVACY.md`'s presence, the four questions it must answer, and the link from every entry document — a policy doc rots when a README rewrite silently drops the link, not when the file is deleted. It also derives the expected supported-version line from `package.json`, so the table cannot go stale again without failing CI.
+- `tests/sample-repo.test.mjs` covers the script a credential-free reviewer starts from: cases list, a materialized repo that is a real git repo with a non-empty diff and named defects, and an unknown case rejected rather than silently substituted.
 
 Coverage for the paths that had none, per HANDOFF §14 P1. Verified against real git output, not only hand-written diffs:
 - Untracked symlinks: escaping (skipped), in-workspace (still inlined), broken (still reported). Skipped with a reported reason on Windows hosts without symlink privilege rather than passing silently.

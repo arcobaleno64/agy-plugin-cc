@@ -1,0 +1,70 @@
+name: Compatibility report
+description: A CLI version, platform, or path the plugin has not been verified on.
+labels: ["compatibility"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The README and `docs/known-diffs.md` state which engine versions and
+        platforms have actually been run, and which are inferred. This is how
+        that list gets corrected — in either direction. A report that something
+        **works** where the docs say "not run" is as useful as one that it breaks.
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Engine
+      options:
+        - agy
+        - gemini
+    validations:
+      required: true
+
+  - type: input
+    id: engine-version
+    attributes:
+      label: Engine version
+      description: The exact output of `agy --version` or `gemini --version`.
+      placeholder: "1.1.11"
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: "macOS 15.4 arm64 / Ubuntu 24.04 under WSL2 / Windows 11"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Outcome
+      options:
+        - Works, and the docs say it is unverified
+        - Breaks, and the docs say it works
+        - Behaves differently from the documented behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: What you ran and what happened
+      description: >
+        Commands and their output. For an AGY version report, the transport
+        matters — say whether the prompt went by stdin or positionally if you can
+        tell, and include `/gemini:setup` output.
+      render: text
+    validations:
+      required: true
+
+  - type: input
+    id: doc-claim
+    attributes:
+      label: Which documented claim this contradicts
+      description: File and the sentence, if you found it.
+      placeholder: "README.md — 'AGY 1.1.2+ uses stdin transport'"
+    validations:
+      required: false

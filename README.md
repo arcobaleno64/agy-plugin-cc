@@ -368,6 +368,18 @@ Documented, non-blocking constraints — see the linked sections for detail:
 
 ---
 
+## Support
+
+- **Setup or auth failing** — check [Setup & Auth Troubleshooting](#setup--auth-troubleshooting) first; most install and OAuth symptoms are in that table.
+- **A feature behaves differently from `codex-plugin-cc`** — check [docs/known-diffs.md](docs/known-diffs.md) before filing. Several differences are deliberate and documented.
+- **A bug** — open a [bug report](https://github.com/arcobaleno64/gemini-plugin-cc/issues/new?template=bug_report.yml). Include the exact command and your `/gemini:setup` output; those two answer most questions on their own.
+- **An engine version or platform we have not verified** — open a [compatibility report](https://github.com/arcobaleno64/gemini-plugin-cc/issues/new?template=compatibility_report.yml). "It works on X" is as useful as "it breaks on X", because the docs only claim what has actually been run.
+- **A security vulnerability** — do not open an issue. Use [private disclosure](https://github.com/arcobaleno64/gemini-plugin-cc/security/advisories/new); see [`SECURITY.md`](SECURITY.md).
+
+Reviewing the plugin rather than using it? [`docs/verifying-without-credentials.md`](docs/verifying-without-credentials.md) is the complete offline path — no account, no API key.
+
+---
+
 ## Changelog
 
 See [CHANGELOG.md](plugins/gemini/CHANGELOG.md).
