@@ -2,19 +2,21 @@
   "name": "gemini-plugin-cc",
   "owner": {
     "name": "arcobaleno64",
-    "login": "arcobaleno64"
+    "login": "arcobaleno64",
+    "email": "arcobaleno830623@gmail.com"
   },
   "metadata": {
     "description": "Use Gemini CLI or Antigravity CLI (agy) inside Claude Code for task delegation, code review, and adversarial review.",
-    "version": "0.16.0"
+    "version": "0.16.1"
   },
   "plugins": [
     {
       "name": "gemini",
       "description": "Gemini CLI and Antigravity CLI bridge for Claude Code task delegation and adversarial review",
-      "version": "0.16.0",
+      "version": "0.16.1",
       "author": {
-        "name": "arcobaleno64"
+        "name": "arcobaleno64",
+        "email": "arcobaleno830623@gmail.com"
       },
       "source": "./plugins/gemini"
     }

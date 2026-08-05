@@ -381,6 +381,9 @@ Documented, non-blocking constraints — see the linked sections for detail:
 - **A bug** — open a [bug report](https://github.com/arcobaleno64/gemini-plugin-cc/issues/new?template=bug_report.yml). Include the exact command and your `/gemini:setup` output; those two answer most questions on their own.
 - **An engine version or platform we have not verified** — open a [compatibility report](https://github.com/arcobaleno64/gemini-plugin-cc/issues/new?template=compatibility_report.yml). "It works on X" is as useful as "it breaks on X", because the docs only claim what has actually been run.
 - **A security vulnerability** — do not open an issue. Use [private disclosure](https://github.com/arcobaleno64/gemini-plugin-cc/security/advisories/new); see [`SECURITY.md`](SECURITY.md).
+- **Anything else, or you cannot use GitHub** — email <arcobaleno830623@gmail.com>. GitHub is the faster route for anything that belongs in public, because the answer stays where the next person will find it.
+
+This is a single-maintainer project, not a staffed support desk. Everything above reaches one person.
 
 Reviewing the plugin rather than using it? [`docs/verifying-without-credentials.md`](docs/verifying-without-credentials.md) is the complete offline path — no account, no API key. For a run of every command end to end against a stand-in engine, start with `node scripts/reviewer-demo.mjs`.
 
