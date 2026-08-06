@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Compatibility
+- **CI now runs the suite on Windows as well as Linux.** Four tests are Windows-only by construction — they assert `cmd.exe` behaviour that cannot be observed elsewhere: that a resolved command passes argv literally, that `%PATH%` in an argument is not expanded, and that a stand-in earlier in PATH wins over a real install behind it. On `ubuntu-latest` alone they never executed, so a change breaking the Windows spawn path would have gone green — and argv handling plus npm-shim resolution are the most platform-specific code this plugin has. Five other tests are the mirror image and still need Linux, so each leg carries assertions the other cannot.
+  - `fail-fast: false`, so a Windows failure does not cancel Linux and hide whether a problem is platform-specific.
+  - Timeout raised from 10 to 20 minutes; the Windows runner is slower at `npm ci` and at a suite that spawns a Node process per background-job case.
+  - No version bump: this changes no plugin code. Recorded here for the next release, as the CI validation gate was in 0.15.0.
+
 ## 0.16.7 — 2026-08-06 — Cover what can go wrong, delete what nothing calls
 
 A coverage pass that treated the percentage as a way to find gaps, not as the thing to raise. Two of the three findings were answered by deleting code and by *declining* to add a test.
