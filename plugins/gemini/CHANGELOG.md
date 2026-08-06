@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.16.5 — 2026-08-05 — Job phases stop claiming detail that does not exist
+
+### Changed
+- **The background-job phase fallback no longer pretends to know what the engine is doing.** It scanned the progress log for tool-level prefixes — `"searching:"`, `"running command:"`, `"applying "` — and reported `investigating`, `verifying` or `editing`. Every one of those branches was unreachable, for two independent reasons:
+  - **Nothing writes such lines.** The log receives only the six messages `lib/gemini.mjs` emits (`"Detecting engine..."`, `"Starting <engine> turn..."`, `"Turn completed."` and the review equivalents). `runCommand` is `spawnSync`, so the engine's output arrives in one blocking return, not as events — there is nothing to narrate mid-run.
+  - **The comparison could not have matched anyway.** Every logged line is written as `[<iso timestamp>] <message>`, and the preview keeps only lines beginning with `[`, so `startsWith("searching:")` was false by construction.
+  - **No behavior change.** The removed code could not execute, so no job's reported phase differs. What remains is what is actually known: the job's status, and its class when the status says nothing.
+
+### Not adopted, with the measurement behind the decision
+- **AGY 1.1.8's `--output-format stream-json` cannot supply those phases, so it was not adopted.** Measured on 1.1.10, 2026-08-05: the stream carries an `init` event, `step_update` events, and a terminal `result` event that still holds the full response. The `step_type` values are `tool`, `agent_response`, `user_input`, `checkpoint` and `unknown` — and **`tool` carries no tool name and no arguments**, so "read a file" cannot be told from "run the tests" or "edit something". The phases the deleted code reported were never obtainable from any source.
+- What the stream *does* offer that today's path does not is `text_delta`: incremental output while the model is still writing. That is genuinely useful for a background job, and it needs `runCommand` to become asynchronous — which would reach every caller, the result assembly, timeout handling, and the injection seam the tests are built on, while still keeping the existing path for the gemini engine and for AGY below 1.1.8. Estimated two to three days and left open deliberately rather than started and abandoned.
+
+### Tests
+- Four cases pin the fallback: a job's own `phase` always wins; each status maps as documented; a log full of tool-shaped lines does **not** move the phase; and the set of progress messages the engine emits is asserted to contain no tool-level text — so if a future change starts emitting richer progress, that test fails and the phase logic is revisited deliberately rather than by accident.
+
 ## 0.16.4 — 2026-08-05 — A read-only AGY task can see the repository again
 
 ### Fixed
