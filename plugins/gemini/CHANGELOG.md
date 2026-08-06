@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.16.6 — 2026-08-06 — A denied AGY tool call stops looking like an empty response
+
+### Added
+- **`tool-permission-denied`, a failure category for AGY's headless soft-denial.** When a tool needs a permission AGY cannot prompt for, it exits **0** with empty stdout and explains itself on stderr. The classifier had no rule for that wording, so the run landed on `no-output` — which is marked **retryable**, and retrying a denied permission never succeeds. It is now classified, marked not retryable, and the message says what to actually do.
+  - Recovered from an unmerged worktree left over from the v0.8.0 era. The classification and its test were written then; what is new here is that the surrounding classifier had moved on, so it was reapplied rather than merged.
+  - **The advice was rewritten.** AGY's own message ends "re-run with `--dangerously-skip-permissions`". This plugin removed that flag in v0.16.0 — it granted nothing for edits and shell commands ([`docs/THREAT-MODEL.md` §7.2](../../docs/THREAT-MODEL.md)) — and offers no way to reinstate it, so repeating that suggestion would point users at something they cannot reach from here. The next step now names the allow-rule they can add and the interactive `agy` run that can ask on their behalf.
+  - The classifier still *matches* AGY's wording including the flag name. That the plugin no longer passes the flag does not stop AGY from mentioning it.
+
+### Tests
+- The live AGY denial message is classified as expected and marked not retryable.
+- A second test asserts the next step **never names `--dangerously-skip-permissions`**, so the original wording cannot come back with a future copy-paste.
+
 ## 0.16.5 — 2026-08-05 — Job phases stop claiming detail that does not exist
 
 ### Changed
