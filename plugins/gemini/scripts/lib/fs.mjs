@@ -1,26 +1,12 @@
 import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 
-export function ensureAbsolutePath(cwd, maybePath) {
-  return path.isAbsolute(maybePath) ? maybePath : path.resolve(cwd, maybePath);
-}
-
-export function createTempDir(prefix = "gemini-plugin-") {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-}
-
-export function readJsonFile(filePath) {
-  return JSON.parse(fs.readFileSync(filePath, "utf8"));
-}
-
-export function writeJsonFile(filePath, value) {
-  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
-
-export function safeReadFile(filePath) {
-  return fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : "";
-}
+// Two helpers, both with a caller. This file also held ensureAbsolutePath,
+// createTempDir, readJsonFile, writeJsonFile and safeReadFile — none of which
+// anything imported, in the plugin, the tests, the bench harness or the docs.
+// They were removed in v0.16.7 rather than covered: an untested export with no
+// caller is not a coverage gap, and keeping thin wrappers around one-line `fs`
+// calls invites a future reader to route through them instead of the module
+// that already does the job (state.mjs owns atomic JSON writes, for one).
 
 export function isProbablyText(buffer) {
   const sample = buffer.subarray(0, Math.min(buffer.length, 4096));
