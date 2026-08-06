@@ -75,6 +75,29 @@ test("classifyCliFailure identifies prompt-too-long preflight failures", () => {
   assert.match(failure.nextStep, /shorten|gemini/i);
 });
 
+// Verbatim wording from a live AGY run. The exit status is 0 and stdout is
+// empty, so without this rule the failure lands on "no-output" — which is marked
+// retryable, and retrying a denied permission never succeeds.
+test("classifyCliFailure identifies AGY headless tool-permission soft-denials", () => {
+  const failure = classifyCliFailure({
+    status: 0,
+    stdout: "",
+    stderr: 'jetski: no output produced — a tool required the "command" permission that headless mode cannot prompt for, so it was auto-denied. Add an allow-rule under permissions.allow in settings.json (e.g. command(<target>)). Alternatively, re-run with --dangerously-skip-permissions to auto-approve all tools.'
+  });
+  assert.equal(failure.category, "tool-permission-denied");
+  assert.equal(failure.retryable, false);
+  assert.match(failure.nextStep, /allow-rule/i);
+});
+
+// The plugin removed --dangerously-skip-permissions in v0.16.0 and offers no way
+// to reinstate it, so the advice must not tell a user to re-run with it — even
+// though AGY's own message does, and the classifier still matches that wording.
+test("the tool-permission next step does not name a flag the plugin cannot pass", () => {
+  const failure = classifyCliFailure({ status: 0, stdout: "", stderr: "a tool was auto-denied" });
+  assert.equal(failure.category, "tool-permission-denied");
+  assert.doesNotMatch(failure.nextStep, /dangerously-skip-permissions/);
+});
+
 test("classifyCliFailure falls back to unknown", () => {
   const failure = classifyCliFailure({ stderr: "unexpected failure shape" });
   assert.equal(failure.category, "unknown");

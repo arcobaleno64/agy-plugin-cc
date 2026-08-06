@@ -10,6 +10,7 @@ export const FAILURE_CATEGORIES = new Set([
   "transcript-missing",
   "transcript-ambiguous",
   "invalid-json",
+  "tool-permission-denied",
   "cancelled",
   "stale-job",
   "unknown"
@@ -70,6 +71,17 @@ const DEFAULTS = {
     retryable: true,
     summary: "The CLI returned output that was not valid structured JSON.",
     nextStep: "Retry the command; if it repeats, inspect the job log and run `/gemini:setup`."
+  },
+  "tool-permission-denied": {
+    retryable: false,
+    summary: "AGY auto-denied a tool call because headless mode cannot prompt for permission.",
+    // AGY's own message suggests re-running with --dangerously-skip-permissions.
+    // That is not advice this plugin can pass on: the flag was removed in v0.16.0
+    // (it granted nothing for edits and shell commands, docs/THREAT-MODEL.md 7.2)
+    // and there is no option that puts it back, so telling a user to "re-run
+    // with" it would name something they cannot reach from here. The allow-rule
+    // is the part they can act on; an interactive `agy` run is the other.
+    nextStep: "Add an allow-rule under `permissions.allow` in AGY's settings.json for the denied command, or run `agy` interactively once so it can ask."
   },
   cancelled: {
     retryable: true,
@@ -212,6 +224,15 @@ export function classifyCliFailure(input = {}) {
 
   if (data.invalidJson || /invalid json|JSON\.parse|Could not parse structured JSON|unexpected token/i.test(structuredText)) {
     return normalizeFailure("invalid-json", data);
+  }
+
+  // AGY exits 0 with empty stdout when a tool needed a permission it could not
+  // prompt for, which would otherwise land on "no-output" — retryable, and
+  // retrying never helps. Matched on AGY's own wording, including its suggestion
+  // to pass --dangerously-skip-permissions; that the plugin no longer offers the
+  // flag does not stop AGY from naming it.
+  if (/headless mode cannot prompt for|was auto-denied\b|dangerously-skip-permissions/i.test(structuredText)) {
+    return normalizeFailure("tool-permission-denied", data);
   }
   if (data.noOutput || (!String(stdout).trim() && !String(trusted).trim() && (data.status == null || data.status === 0))) {
     return normalizeFailure("no-output", data);
