@@ -5,8 +5,25 @@ permissions:
   contents: read
 jobs:
   ci:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Windows is not redundant here. Four tests are Windows-only by construction
+    # (`skip: process.platform !== "win32"`) because they assert cmd.exe
+    # behaviour: that a resolved command passes argv literally, that %PATH% is
+    # not expanded in an argument, and that a stand-in earlier in PATH wins over
+    # a real install behind it. On Linux alone they never ran, so a change that
+    # broke the Windows spawn path would have gone green — the plugin's argv
+    # handling and shim resolution are the most platform-specific code it has.
+    # Five other tests are the mirror image (`skip: === "win32"`) and still need
+    # Linux, so both legs carry assertions the other cannot.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Run both to completion: a Windows failure must not cancel Linux, or the
+      # first red build hides whether the problem is platform-specific.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    # Raised from 10: the Windows runner is slower at npm ci and at the ~350-test
+    # suite, which spawns a Node process per background-job case.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
