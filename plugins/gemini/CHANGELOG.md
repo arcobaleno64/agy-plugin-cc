@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.16.7 — 2026-08-06 — Cover what can go wrong, delete what nothing calls
+
+A coverage pass that treated the percentage as a way to find gaps, not as the thing to raise. Two of the three findings were answered by deleting code and by *declining* to add a test.
+
+### Removed
+- **Five unused exports from `lib/fs.mjs`**: `ensureAbsolutePath`, `createTempDir`, `readJsonFile`, `writeJsonFile`, `safeReadFile`. Nothing imported any of them — not the plugin, the tests, the bench harness, or the docs. Their 28% function coverage was not a testing gap; it was five thin wrappers around one-line `fs` calls waiting to tempt someone away from the module that already does the job properly (`state.mjs` owns atomic JSON writes). `isProbablyText` and `readStdinIfPiped` each have a caller and stay.
+
+### Tests
+- **A deleted secret file no longer had to be taken on trust.** `bSidePath` has a branch for `+++ /dev/null`, which is what git writes when a file is removed — and a deletion diff carries every line of the secret with a `-` in front of it. That branch had no test. It does now, together with its mirror image: a deleted *ordinary* file must pass through untouched, because falling back to the header must not start redacting things that are not credentials.
+- **Job progress updates are pinned where a user could see them fail**: a changed thread id must replace the old one (otherwise `/gemini:status` prints a stale `gemini --resume` command to copy), a turn-only update must not drop the thread id, and an update for a job whose record was swept mid-run must be dropped quietly rather than throw or resurrect the file. Plus the reporter contract callers rely on — `null` when there is nowhere to report, and an empty thread id normalized away rather than stored.
+
+### Deliberately not tested
+Stated because "why is this line red" deserves an answer in the record rather than a future patch:
+- **The updater's skip-when-unchanged branch.** The only way to observe it is the job file's mtime, which is flaky within a millisecond and tests an optimisation rather than a promise. Reaching it would raise the branch percentage and protect nothing.
+- **A newly added secret file.** Its `--- /dev/null` sits on the a-side, which `bSidePath` never reads, so it takes the identical path to the ordinary case already covered. The test was written, then removed for asserting nothing new.
+
+### Coverage
+Line 71.09% → 71.22%, branch 65.89% → 66.62% overall — small numbers, because the work was three targeted files and one deletion. Where it landed: `tracked-jobs.mjs` branch 41.30% → 72.22%, `fs.mjs` line 65% → 84.62%, `secrets.mjs` branch 70.37% → 74.07%. The engine, credential, state, failure-classification and model-map modules were already 95–100% and were left alone.
+
 ## 0.16.6 — 2026-08-06 — A denied AGY tool call stops looking like an empty response
 
 ### Added

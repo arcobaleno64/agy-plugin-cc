@@ -117,3 +117,49 @@ test("redactSecretsFromDiff tolerates empty and nullish input", () => {
     assert.deepEqual(redactedFiles, []);
   }
 });
+
+// Deleting a credential file is the case the `+++ /dev/null` branch exists for:
+// the b-side names no file, so the path has to come from the header instead.
+// The removed contents are still contents — a deletion diff carries every line
+// of the secret with a `-` in front of it.
+test("redactSecretsFromDiff withholds the body of a deleted secret file", () => {
+  const diff = [
+    "diff --git a/config/.env b/config/.env",
+    "deleted file mode 100644",
+    "index 1234567..0000000",
+    "--- a/config/.env",
+    "+++ /dev/null",
+    "@@ -1,2 +0,0 @@",
+    "-API_TOKEN=DELETED_SECRET_LEAK",
+    "-DB_PASSWORD=hunter2",
+    ""
+  ].join("\n");
+
+  const { text, redactedFiles } = redactSecretsFromDiff(diff);
+  assert.ok(!text.includes("DELETED_SECRET_LEAK"), "the deleted secret's value survived redaction");
+  assert.ok(!text.includes("hunter2"));
+  assert.deepEqual(redactedFiles, ["config/.env"]);
+  assert.ok(text.startsWith("diff --git a/config/.env b/config/.env"), "the header must survive so the review knows the file changed");
+});
+
+// The same branch, but for an ordinary file: falling back to the header must not
+// start redacting things that are not secrets.
+test("a deleted ordinary file is left alone", () => {
+  const diff = [
+    "diff --git a/src/old.js b/src/old.js",
+    "deleted file mode 100644",
+    "--- a/src/old.js",
+    "+++ /dev/null",
+    "@@ -1 +0,0 @@",
+    "-export const gone = true;",
+    ""
+  ].join("\n");
+
+  const { text, redactedFiles } = redactSecretsFromDiff(diff);
+  assert.equal(text, diff);
+  assert.deepEqual(redactedFiles, []);
+});
+
+// Not covered here: a newly added secret file. Its `--- /dev/null` sits on the
+// a-side, which bSidePath never reads, so it takes the identical path to the
+// ordinary case above and would assert nothing the first test does not.
