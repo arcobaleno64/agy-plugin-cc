@@ -231,7 +231,7 @@ export function detectEngine(requestedEngine = null, options = {}) {
 // run has empty stdout and no envelope to read.
 //
 // Verified against AGY 1.1.11 (2026-08-11): `--print-timeout 105s` is accepted.
-function formatAgyTimeout(timeoutMs) {
+export function formatAgyTimeout(timeoutMs) {
   if (!timeoutMs || timeoutMs <= 0) return null;
   return `${Math.max(1, Math.round(timeoutMs / 1000))}s`;
 }

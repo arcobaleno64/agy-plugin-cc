@@ -27,6 +27,13 @@ const MAX_REVIEW_CONTENT_CHARS = 400_000;
 // failure in miniature. Such files are dropped and named instead.
 const MIN_REVIEWABLE_FILE_CHARS = 400;
 
+// Reserved for the always-included sections (status, commit log, diff stat) and
+// for the truncation notice. Both are prepended or emitted whole, so without a
+// reservation they are unbounded additions on top of a cap that only ever
+// governed the diff. Unspent reservation returns to the files.
+const MAX_REVIEW_OVERHEAD_CHARS = 100_000;
+const TRUNCATION_NOTICE_RESERVE_CHARS = 20_000;
+
 // spawnSync defaults to a 1 MiB buffer, and git output above it comes back as a
 // raw ENOBUFS error — so a diff large enough to need budgeting used to kill the
 // review before any of this ran, surfacing as an unclassified `spawnSync git
@@ -242,18 +249,25 @@ function budgetReviewSections(sections, overheadChars) {
 // Stated at the top of the payload rather than once per omitted file: with
 // enough omitted files the per-file stubs would themselves overrun the budget
 // this exists to enforce.
+function nameList(files, limit = 50) {
+  const named = files.slice(0, limit);
+  const rest = files.length - named.length;
+  return `${named.join(", ")}${rest > 0 ? `, and ${rest} more` : ""}`;
+}
+
 function truncationNotice(truncatedFiles, omittedFiles) {
   if (truncatedFiles.length === 0 && omittedFiles.length === 0) return null;
 
-  const named = omittedFiles.slice(0, 50);
-  const rest = omittedFiles.length - named.length;
   return [
     "[REVIEW INPUT TRUNCATED — this is NOT the whole change.]",
+    // Both lists are capped. At the 400-char minimum allocation a single review
+    // can carry ~1000 truncated paths, and an uncapped join here would put the
+    // notice itself well past the budget it exists to announce.
     truncatedFiles.length > 0
-      ? `Cut short (partially reviewable): ${truncatedFiles.join(", ")}.`
+      ? `Cut short (partially reviewable): ${nameList(truncatedFiles)}.`
       : null,
     omittedFiles.length > 0
-      ? `Not included at all: ${named.join(", ")}${rest > 0 ? `, and ${rest} more` : ""}.`
+      ? `Not included at all: ${nameList(omittedFiles)}.`
       : null,
     "Say so in your summary, and do not describe the change as a whole — the files above were NOT reviewed."
   ]
@@ -261,15 +275,44 @@ function truncationNotice(truncatedFiles, omittedFiles) {
     .join("\n");
 }
 
+// A plain-body section is normally tiny, but "normally" is not a bound: in a
+// repository with a large unignored tree `git status --untracked-files=all` alone
+// runs to megabytes. Charging such a body as overhead while still emitting it
+// whole drove the file budget negative, which allocateBudget clamps to zero — so
+// every file was dropped and the oversized status was sent anyway, the exact
+// inversion of what the cap is for. Cap the bodies themselves.
+function capSectionBody(title, body, allowed) {
+  if (body.length <= allowed) return { body, truncated: false };
+  const marker = (kept) =>
+    `\n[TRUNCATED: ${title} — only the first ${kept} of ${body.length} characters are shown.]\n`;
+  const kept = Math.max(0, allowed - marker(allowed).length);
+  return { body: body.slice(0, kept) + marker(kept), truncated: true };
+}
+
 // `sections` are rendered in order. A section either carries a plain `body`
-// (small, always included whole — status, commit log, diff stat) or `units` to
-// be budgeted per file. Only the file bodies compete for the budget; the section
-// scaffolding and the always-included bodies are charged against it as overhead
-// so the total still respects the cap.
-function assembleReviewContent(sections) {
+// (status, commit log, diff stat) or `units` to be budgeted per file. The plain
+// bodies share a reserved slice of the cap; whatever they leave unspent returns
+// to the files, so the common case where all three are a few hundred characters
+// behaves exactly as before.
+export function assembleReviewContent(sections) {
+  const plainSections = sections.filter((section) => !section.units);
+  const plainAllocation = allocateBudget(
+    plainSections.map((section) => section.body.length),
+    MAX_REVIEW_OVERHEAD_CHARS
+  );
+  const cappedBody = new Map();
+  let overheadTruncated = false;
+  plainSections.forEach((section, index) => {
+    const capped = capSectionBody(section.title, section.body, plainAllocation[index]);
+    cappedBody.set(section, capped.body);
+    overheadTruncated ||= capped.truncated;
+  });
+
   const overheadChars = sections.reduce(
-    (total, section) => total + formatSection(section.title, section.units ? "" : section.body).length,
-    0
+    (total, section) => total + formatSection(section.title, section.units ? "" : cappedBody.get(section)).length,
+    // The notice is prepended outside the file budget, so reserve room for it
+    // rather than letting it push the total past the cap.
+    TRUNCATION_NOTICE_RESERVE_CHARS
   );
 
   const fileSections = sections.filter((section) => section.units);
@@ -277,13 +320,16 @@ function assembleReviewContent(sections) {
   const bodyBySection = new Map(budgeted.sections.map((section, index) => [fileSections[index], section.body]));
 
   const parts = sections.map((section) =>
-    formatSection(section.title, section.units ? bodyBySection.get(section) : section.body)
+    formatSection(section.title, section.units ? bodyBySection.get(section) : cappedBody.get(section))
   );
 
   const notice = truncationNotice(budgeted.truncatedFiles, budgeted.omittedFiles);
   return {
     content: notice ? `${notice}\n\n${parts.join("\n")}` : parts.join("\n"),
-    truncated: Boolean(notice),
+    // A cut-down status/commit log is incomplete input too, so it must set the
+    // same flag even when every file fitted — that flag is what downgrades an
+    // `approve` verdict.
+    truncated: Boolean(notice) || overheadTruncated,
     truncatedFiles: budgeted.truncatedFiles,
     omittedFiles: budgeted.omittedFiles
   };

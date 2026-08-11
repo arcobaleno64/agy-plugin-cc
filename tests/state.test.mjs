@@ -353,3 +353,51 @@ test("readJobFile fails closed for corrupted job JSON", () => {
   assert.equal(job.failure.category, "invalid-json");
   assert.match(job.errorMessage, /Unreadable job file/i);
 });
+
+// Corrupt and deleted are different. readJobFile fails closed on every error,
+// so a record removed between listJobs' readdir and its read surfaced as a
+// phantom `failed` job with an `invalid-json` cause — for an id that no longer
+// existed, and which then counted toward MAX_JOBS. Both deleters race this:
+// pruneJobStore fires on every new job, and the SessionEnd sweep on every exit,
+// while `/gemini:status --wait` polls listJobs every two seconds.
+test("a job deleted mid-scan is dropped from the listing, not reported as failed", (t) => {
+  const workspace = makeTempDir();
+  seedJobOnDisk(workspace, "task-alive");
+  seedJobOnDisk(workspace, "task-swept");
+
+  // The window is between the readdir and the read, so the deletion has to land
+  // there: deleting beforehand removes the directory entry too and the race is
+  // never entered. Patching readdirSync is the only way to occupy that window
+  // deterministically from a single process.
+  const realReaddirSync = fs.readdirSync;
+  t.after(() => {
+    fs.readdirSync = realReaddirSync;
+  });
+  fs.readdirSync = (...args) => {
+    const entries = realReaddirSync(...args);
+    if (entries.includes("task-swept.json")) {
+      fs.rmSync(resolveJobFile(workspace, "task-swept"));
+    }
+    return entries;
+  };
+
+  const jobs = listJobs(workspace);
+
+  assert.deepEqual(jobs.map((job) => job.id), ["task-alive"]);
+  assert.equal(jobs.some((job) => job.status === "failed"), false, "a deleted job was reported as failed");
+});
+
+// The fail-closed path must survive: a file that is present but unreadable is a
+// job whose fate is unknown, and dropping it silently would hide a real failure.
+test("an unreadable job file is still listed as failed", () => {
+  const workspace = makeTempDir();
+  seedJobOnDisk(workspace, "task-alive");
+  fs.writeFileSync(resolveJobFile(workspace, "task-corrupt"), "{ not-json", "utf8");
+
+  const jobs = listJobs(workspace);
+  const corrupt = jobs.find((job) => job.id === "task-corrupt");
+
+  assert.ok(corrupt, "a corrupt record must not be dropped from the listing");
+  assert.equal(corrupt.status, "failed");
+  assert.equal(corrupt.failure.category, "invalid-json");
+});

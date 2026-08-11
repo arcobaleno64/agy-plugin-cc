@@ -3,7 +3,7 @@ import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { collectReviewContext, formatUntrackedFile, getWorkingTreeState, resolveReviewTarget } from "../plugins/gemini/scripts/lib/git.mjs";
+import { assembleReviewContent, collectReviewContext, formatUntrackedFile, getWorkingTreeState, resolveReviewTarget } from "../plugins/gemini/scripts/lib/git.mjs";
 import { initGitRepo, makeTempDir, run, writeExecutable } from "./helpers.mjs";
 
 function commitInitial(cwd) {
@@ -377,4 +377,52 @@ test("several large files split the budget instead of being served in order", ()
   for (const name of names) {
     assert.ok(context.content.includes(`b/${name}`), `${name} is absent from the review payload`);
   }
+});
+
+// The cap governed the file diffs only. An always-included body — `git status
+// --short --untracked-files=all` over an unignored build tree runs to megabytes —
+// was charged as overhead but still emitted whole, so the file budget went
+// negative, allocateBudget clamped it to zero, every file was dropped, and the
+// oversized status was sent in their place. Driven through assembleReviewContent
+// rather than a real repository: reproducing it on disk needs ~12,000 untracked
+// files and takes 85 seconds, and the invariant under test is this function's.
+test("an always-included section cannot push the payload past the cap", () => {
+  const assembled = assembleReviewContent([
+    { title: "Git Status", body: "M  polluted.txt\n".repeat(60_000) },
+    {
+      title: "Working Tree Diff",
+      separator: "\n",
+      units: [
+        { path: "src/app.js", text: `diff --git a/src/app.js b/src/app.js\n+// MARKER_TRACKED\n` },
+        { path: "src/big.js", text: `diff --git a/src/big.js b/src/big.js\n${"+x\n".repeat(50_000)}` }
+      ]
+    }
+  ]);
+
+  assert.ok(
+    assembled.content.length <= 400_000,
+    `the payload must respect the cap, got ${assembled.content.length} characters`
+  );
+  assert.ok(assembled.content.includes("MARKER_TRACKED"), "the actual code change was evicted by the status body");
+  assert.equal(assembled.truncated, true, "a cut-down status is still truncated input");
+});
+
+// The notice names every truncated file. At the 400-char floor a single review
+// can truncate ~1000 of them, and joining all the names put the notice itself
+// past the cap it exists to announce.
+test("the truncation notice is bounded by the number of files it names", () => {
+  const units = Array.from({ length: 900 }, (_, index) => ({
+    path: `src/module-${index}/${"deeply-nested-directory-name/".repeat(4)}component.ts`,
+    text: `diff --git a/src/module-${index}/component.ts b/src/module-${index}/component.ts\n${"+x\n".repeat(400)}`
+  }));
+
+  const assembled = assembleReviewContent([{ title: "Working Tree Diff", separator: "\n", units }]);
+
+  assert.equal(assembled.truncated, true);
+  const notice = assembled.content.slice(0, assembled.content.indexOf("## Working Tree Diff"));
+  assert.ok(notice.length <= 20_000, `the notice alone was ${notice.length} characters`);
+  assert.ok(
+    assembled.content.length <= 400_000,
+    `the payload must respect the cap, got ${assembled.content.length} characters`
+  );
 });

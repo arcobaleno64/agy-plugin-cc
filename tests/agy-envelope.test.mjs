@@ -4,7 +4,7 @@ import path from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { runGeminiReview, runGeminiTurn } from "../plugins/gemini/scripts/lib/gemini.mjs";
+import { MIN_TURN_TIMEOUT_SECONDS, probeAgyLogin, runGeminiReview, runGeminiTurn } from "../plugins/gemini/scripts/lib/gemini.mjs";
 
 // AGY's stdout envelope, captured verbatim from a live `agy --output-format json`
 // run on 1.1.10. Keep these shapes tied to real output — an injected fake is only
@@ -418,4 +418,42 @@ test("--timeout raises both the hard kill and AGY's own window", async () => {
   const [call] = runCommandFn.calls;
   assert.equal(call.opts.timeout, 600_000);
   assert.equal(call.args[call.args.indexOf("--print-timeout") + 1], "585s");
+});
+
+// Subtracting a flat 15s and flooring the result at 30s made the grace window
+// vanish at the documented minimum: `--timeout 30` produced a 30s print-timeout
+// against a 30s hard kill, so AGY self-terminated on the same tick spawnSync
+// SIGKILLed it — the identical failure the minute-rounding used to cause, just
+// reached from the other end of the range.
+test("the grace window survives the smallest timeout the CLI accepts", async () => {
+  const runCommandFn = stubRun({ stdout: `${JSON.stringify(SUCCESS_ENVELOPE)}\n` });
+
+  await runGeminiTurn("\repo", { prompt: "hi", write: false, timeoutSeconds: MIN_TURN_TIMEOUT_SECONDS }, {
+    runCommandFn,
+    detectEngineFn: agyEngine()
+  });
+
+  const [call] = runCommandFn.calls;
+  const printTimeoutMs = Number(call.args[call.args.indexOf("--print-timeout") + 1].replace(/s$/, "")) * 1000;
+  assert.equal(call.opts.timeout, MIN_TURN_TIMEOUT_SECONDS * 1000);
+  assert.ok(
+    printTimeoutMs < call.opts.timeout,
+    `print-timeout ${printTimeoutMs}ms must precede the ${call.opts.timeout}ms hard kill, not equal it`
+  );
+});
+
+// The probe spawned `--print-timeout 30s` under a 30s kill, so a slow but
+// authenticated account was killed at the moment it would have answered and
+// reported back as `unknown`.
+test("the AGY probe leaves itself room to answer before being killed", () => {
+  const runCommandFn = stubRun({ stdout: "", stderr: "", status: 1 });
+
+  probeAgyLogin({ runCommandFn, detectEngineFn: agyEngine("1.1.11") });
+
+  const [call] = runCommandFn.calls;
+  const printTimeoutMs = Number(call.args[call.args.indexOf("--print-timeout") + 1].replace(/s$/, "")) * 1000;
+  assert.ok(
+    printTimeoutMs < call.opts.timeout,
+    `probe print-timeout ${printTimeoutMs}ms must precede the ${call.opts.timeout}ms kill`
+  );
 });

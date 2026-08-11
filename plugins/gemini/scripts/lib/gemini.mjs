@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 
-import { buildCliArgs, detectEngine, mapEffortToModel, normalizeAgyEffort, normalizeAgyRequestedModel, normalizeRequestedModel, supportsAgyModelSelection, supportsAgyReadOnlySlashCommands, supportsAgyStdinPrompt, supportsAgyStructuredOutput } from "./engine.mjs";
+import { buildCliArgs, detectEngine, formatAgyTimeout, mapEffortToModel, normalizeAgyEffort, normalizeAgyRequestedModel, normalizeRequestedModel, supportsAgyModelSelection, supportsAgyReadOnlySlashCommands, supportsAgyStdinPrompt, supportsAgyStructuredOutput } from "./engine.mjs";
 import { classifyCliFailure } from "./failures.mjs";
 import { binaryAvailable, runCommand } from "./process.mjs";
 import { resolveAgyBrainRoot, listConvDirs, recoverAgyResponse } from "./agy-transcript.mjs";
@@ -36,6 +36,18 @@ export function resolveSpawnTimeoutMs(engine, requestedSeconds = null) {
     return Number(requestedSeconds) * 1000;
   }
   return engine === "agy" ? AGY_SPAWN_TIMEOUT_MS : DEFAULT_SPAWN_TIMEOUT_MS;
+}
+
+// The grace window has to scale with the timeout, not sit at a fixed 15s: at the
+// documented minimum (`--timeout 30`) a flat subtraction floored at 30s left
+// --print-timeout equal to the spawn timeout, so AGY's self-terminate landed on
+// the same tick as spawnSync's SIGKILL and it was killed with empty stdout —
+// exactly the failure the minute-rounding in formatAgyTimeout used to cause.
+// Capping the grace at a quarter of the budget keeps the full 15s for every
+// timeout above a minute while still leaving a real window below it.
+export function resolveAgyPrintTimeoutMs(spawnTimeoutMs) {
+  const grace = Math.min(AGY_FLUSH_GRACE_MS, Math.floor(spawnTimeoutMs / 4));
+  return Math.max(1_000, spawnTimeoutMs - grace);
 }
 
 // Stable GA model served by every gemini CLI we target (verified on 0.44.1). Used
@@ -312,7 +324,7 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
   if (engineInfo.engine === "agy") {
     agyBrainRoot = resolveAgyBrainRoot();
     agyBefore = listConvDirs(agyBrainRoot);
-    agyPrintTimeoutMs = Math.max(30_000, spawnTimeoutMs - AGY_FLUSH_GRACE_MS);
+    agyPrintTimeoutMs = resolveAgyPrintTimeoutMs(spawnTimeoutMs);
   }
 
   const args = buildCliArgs(engineInfo.engine, {
@@ -504,7 +516,7 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
   if (engineInfo.engine === "agy") {
     agyBrainRoot = resolveAgyBrainRoot();
     agyBefore = listConvDirs(agyBrainRoot);
-    agyPrintTimeoutMs = Math.max(30_000, spawnTimeoutMs - AGY_FLUSH_GRACE_MS);
+    agyPrintTimeoutMs = resolveAgyPrintTimeoutMs(spawnTimeoutMs);
   }
 
   const args = buildCliArgs(engineInfo.engine, {
@@ -763,7 +775,11 @@ export function probeAgyLogin({ runCommandFn = runCommand, detectEngineFn = dete
     };
   }
 
-  const result = runCommandFn(engineInfo.binary, ["--print-timeout", "30s", "-p", "/quota", "--output-format", "json"], {
+  // Same grace window as a real turn: an equal --print-timeout would have AGY
+  // self-terminate on the tick runCommand kills it, so a slow-but-authenticated
+  // account would come back "unknown" instead of verified.
+  const printTimeout = formatAgyTimeout(resolveAgyPrintTimeoutMs(AGY_PROBE_TIMEOUT_MS));
+  const result = runCommandFn(engineInfo.binary, ["--print-timeout", printTimeout, "-p", "/quota", "--output-format", "json"], {
     timeout: AGY_PROBE_TIMEOUT_MS,
     maxBuffer: MAX_BUFFER
   });

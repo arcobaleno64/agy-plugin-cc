@@ -9,7 +9,8 @@ import { fileURLToPath } from "node:url";
 import { getConfig, listJobs } from "./lib/state.mjs";
 import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
 
-const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const SELF_PATH = fileURLToPath(import.meta.url);
+const SCRIPT_DIR = path.dirname(SELF_PATH);
 const COMPANION_SCRIPT = path.join(SCRIPT_DIR, "gemini-companion.mjs");
 const GATE_REVIEW_TIMEOUT_MS = 840_000; // 14 min (hook timeout is 900 s)
 
@@ -48,7 +49,7 @@ function runAdversarialReview(cwd) {
   }
 }
 
-function buildBlockReason(payload) {
+export function buildBlockReason(payload) {
   const result = payload?.result;
   if (!result) {
     return "Adversarial review flagged issues. Run /gemini:adversarial-review for details.";
@@ -65,7 +66,15 @@ function buildBlockReason(payload) {
     const unreviewed = [...(truncation.omittedFiles ?? []), ...(truncation.truncatedFiles ?? [])];
     const named = unreviewed.slice(0, 5).join(", ");
     const rest = unreviewed.length > 5 ? `, and ${unreviewed.length - 5} more` : "";
-    return `The change was too large to review in full, so it was only partially checked${named ? ` (not fully reviewed: ${named}${rest})` : ""}${countLabel}. Review those files yourself, or narrow the change, before stopping.`;
+    // Lead with what the review actually found. Returning the truncation notice
+    // alone discarded the summary, so a truncated review that DID find real
+    // problems reported only which files went unread — the findings existed and
+    // the user never saw them.
+    const found = summary ? `${summary}${countLabel} — and ` : "";
+    const partial = summary
+      ? "the change was too large to review in full"
+      : `The change was too large to review in full, so it was only partially checked${countLabel}`;
+    return `${found}${partial}${named ? ` (not fully reviewed: ${named}${rest})` : ""}. Review those files yourself, or narrow the change, before stopping.`;
   }
   return `${summary}${countLabel} — run /gemini:adversarial-review --wait before stopping.`;
 }
@@ -115,7 +124,11 @@ async function main() {
   emitDecision({ decision: "proceed" });
 }
 
-main().catch((error) => {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-  process.exit(0);
-});
+// Same guard as gemini-mcp.mjs and transfer.mjs: importing this module to test
+// buildBlockReason must not run the hook, which reads stdin and spawns a review.
+if (process.argv[1] === SELF_PATH) {
+  main().catch((error) => {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exit(0);
+  });
+}

@@ -231,6 +231,20 @@ function migrateLegacyJobIndex(cwd, stateDir) {
   saveState(cwd, { config: parsed.config ?? {} });
 }
 
+// null when the file vanished; a failed-job stub for any other read error, which
+// is the existing fail-closed behaviour and must stay — an unreadable file is a
+// job whose fate is unknown, and reporting it is the point.
+// Reads rather than stat-then-reads: an existsSync guard would lose the same
+// race one instruction later.
+function readJobEntry(jobFile) {
+  try {
+    return toIndexEntry(JSON.parse(fs.readFileSync(jobFile, "utf8")));
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    return toIndexEntry(readJobFile(jobFile));
+  }
+}
+
 export function listJobs(cwd) {
   // resolveStateDir shells out to git to find the workspace root, so resolve it
   // once for the whole call. `/gemini:status --wait` polls this every two
@@ -249,7 +263,14 @@ export function listJobs(cwd) {
 
   return entries
     .filter((name) => name.endsWith(".json"))
-    .map((name) => toIndexEntry(readJobFile(path.join(jobsDir, name))))
+    // A job deleted between the readdir and the read is gone, not corrupt.
+    // readJobFile fails closed on every error, so without this an entry that
+    // pruneJobStore or the SessionEnd sweep removed mid-scan surfaced as a
+    // phantom `failed` job with an `invalid-json` cause — and counted toward
+    // MAX_JOBS. `/gemini:status --wait` polls this every two seconds, so it
+    // races both deleters routinely.
+    .map((name) => readJobEntry(path.join(jobsDir, name)))
+    .filter((job) => job !== null)
     .sort((left, right) => String(right.updatedAt ?? "").localeCompare(String(left.updatedAt ?? "")));
 }
 
