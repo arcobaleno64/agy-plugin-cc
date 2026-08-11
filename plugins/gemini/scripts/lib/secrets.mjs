@@ -65,20 +65,38 @@ function bSidePath(part, header) {
   return match ? match[1] : null;
 }
 
+// Split a unified diff into one part per file, each keeping its original text
+// verbatim so that joining the parts with "" reproduces the input exactly.
+// `path` is null for a leading fragment that is not a file diff.
+//
+// Shared with lib/git.mjs, which budgets the review payload per file: the
+// boundary and path rules here are the subtle part (git's `diff --git` header is
+// ambiguous for paths containing spaces — see bSidePath), and they are already
+// covered by tests/secrets.test.mjs. A second splitter would be a second set of
+// those edge cases to get wrong.
+export function splitDiffByFile(diff) {
+  const text = String(diff ?? "");
+  if (!text.trim()) return [];
+
+  return text.split(/(?=^diff --git )/m).map((part) => {
+    if (!part.startsWith("diff --git ")) {
+      return { path: null, header: null, text: part };
+    }
+    const newline = part.indexOf("\n");
+    const header = part.slice(0, newline === -1 ? part.length : newline);
+    return { path: bSidePath(part, header), header, text: part };
+  });
+}
+
 export function redactSecretsFromDiff(diff) {
   const text = String(diff ?? "");
   if (!text.trim()) return { text, redactedFiles: [] };
 
-  const parts = text.split(/(?=^diff --git )/m);
   const redactedFiles = [];
-
-  const out = parts.map((part) => {
-    if (!part.startsWith("diff --git ")) return part;
-    const header = part.slice(0, part.indexOf("\n") === -1 ? part.length : part.indexOf("\n"));
-    const filePath = bSidePath(part, header);
-    if (!filePath || !isSecretFile(filePath)) return part;
-    redactedFiles.push(filePath);
-    return `${header}\n${SECRET_DIFF_PLACEHOLDER}\n`;
+  const out = splitDiffByFile(text).map((part) => {
+    if (!part.path || !isSecretFile(part.path)) return part.text;
+    redactedFiles.push(part.path);
+    return `${part.header}\n${SECRET_DIFF_PLACEHOLDER}\n`;
   });
 
   return { text: out.join(""), redactedFiles };

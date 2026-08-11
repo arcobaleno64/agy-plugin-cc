@@ -57,6 +57,16 @@ function buildBlockReason(payload) {
     typeof result.summary === "string" && result.summary.trim() ? result.summary.trim() : "";
   const count = Array.isArray(result.findings) ? result.findings.length : 0;
   const countLabel = count > 0 ? ` (${count} finding${count === 1 ? "" : "s"})` : "";
+  // A truncated review is recorded as `needs-attention` even with no findings,
+  // so say which files went unreviewed — otherwise this reads as "0 findings,
+  // but blocked anyway" and the user cannot act on it.
+  const truncation = payload?.truncation;
+  if (truncation?.truncated) {
+    const unreviewed = [...(truncation.omittedFiles ?? []), ...(truncation.truncatedFiles ?? [])];
+    const named = unreviewed.slice(0, 5).join(", ");
+    const rest = unreviewed.length > 5 ? `, and ${unreviewed.length - 5} more` : "";
+    return `The change was too large to review in full, so it was only partially checked${named ? ` (not fully reviewed: ${named}${rest})` : ""}${countLabel}. Review those files yourself, or narrow the change, before stopping.`;
+  }
   return `${summary}${countLabel} — run /gemini:adversarial-review --wait before stopping.`;
 }
 

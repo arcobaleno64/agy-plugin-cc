@@ -7,6 +7,9 @@ import assert from "node:assert/strict";
 
 import { makeTempDir } from "./helpers.mjs";
 import {
+  listJobs,
+  pruneJobStore,
+  removeJobs,
   resolveJobFile,
   resolveJobLogFile,
   resolveStateDir,
@@ -133,42 +136,118 @@ test("resolveStateDir separates two workspaces that share a basename", () => {
   assert.notEqual(resolveStateDir(first), resolveStateDir(second));
 });
 
-test("saveState prunes dropped job artifacts when indexed jobs exceed the cap", () => {
+function seedJobOnDisk(workspace, jobId, overrides = {}) {
+  const updatedAt = overrides.updatedAt ?? new Date().toISOString();
+  const logFile = resolveJobLogFile(workspace, jobId);
+  fs.writeFileSync(logFile, `log ${jobId}\n`, "utf8");
+  fs.writeFileSync(
+    resolveJobFile(workspace, jobId),
+    JSON.stringify({ id: jobId, status: "completed", logFile, createdAt: updatedAt, updatedAt, ...overrides }, null, 2),
+    "utf8"
+  );
+  return logFile;
+}
+
+test("a job whose record is on disk is listed even if state.json never mentioned it", () => {
+  const workspace = makeTempDir();
+  seedJobOnDisk(workspace, "task-orphaned");
+
+  // The defect this pins: the listing used to come from a shared state.json
+  // index that a concurrent writer could drop the entry from, and `/gemini:result`
+  // then reported "No job found" for a finished job whose record and output were
+  // sitting right there.
+  assert.deepEqual(listJobs(workspace).map((job) => job.id), ["task-orphaned"]);
+});
+
+test("the listing withholds job output so /gemini:status stays the size it was", () => {
+  const workspace = makeTempDir();
+  writeJobFile(workspace, "task-big", {
+    id: "task-big",
+    status: "completed",
+    result: { rawOutput: "x".repeat(1000) },
+    rendered: "x".repeat(1000)
+  });
+
+  const [listed] = listJobs(workspace);
+  assert.equal(listed.status, "completed");
+  assert.equal("result" in listed, false);
+  assert.equal("rendered" in listed, false);
+  // The output is still reachable where /gemini:result reads it.
+  assert.equal(readJobFile(resolveJobFile(workspace, "task-big")).rendered.length, 1000);
+});
+
+test("a legacy state.json job index is migrated into per-job files", () => {
   const workspace = makeTempDir();
   const stateFile = resolveStateFile(workspace);
   fs.mkdirSync(path.dirname(stateFile), { recursive: true });
-
-  const jobs = Array.from({ length: 51 }, (_, index) => {
-    const jobId = `job-${index}`;
-    const updatedAt = new Date(Date.UTC(2026, 0, 1, 0, index, 0)).toISOString();
-    const logFile = resolveJobLogFile(workspace, jobId);
-    const jobFile = resolveJobFile(workspace, jobId);
-    fs.writeFileSync(logFile, `log ${jobId}\n`, "utf8");
-    fs.writeFileSync(jobFile, JSON.stringify({ id: jobId, status: "completed" }, null, 2), "utf8");
-    return { id: jobId, status: "completed", logFile, updatedAt, createdAt: updatedAt };
-  });
-
-  fs.writeFileSync(stateFile, `${JSON.stringify({ version: 1, config: {}, jobs }, null, 2)}\n`, "utf8");
-
-  saveState(workspace, { version: 1, config: {}, jobs });
-
-  const jobsDir = path.dirname(resolveJobFile(workspace, "job-0"));
-  const savedState = JSON.parse(fs.readFileSync(stateFile, "utf8"));
-
-  assert.equal(savedState.jobs.length, 50);
-  assert.deepEqual(
-    savedState.jobs.map((job) => job.id),
-    Array.from({ length: 50 }, (_, index) => `job-${50 - index}`)
+  fs.writeFileSync(
+    stateFile,
+    `${JSON.stringify({
+      version: 1,
+      config: { stopReviewGateEnabled: true },
+      jobs: [{ id: "task-legacy", status: "completed", updatedAt: "2026-01-01T00:00:00.000Z" }]
+    }, null, 2)}\n`,
+    "utf8"
   );
+
+  assert.deepEqual(listJobs(workspace).map((job) => job.id), ["task-legacy"]);
+  assert.equal(fs.existsSync(resolveJobFile(workspace, "task-legacy")), true);
+
+  const migrated = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+  assert.equal(migrated.config.stopReviewGateEnabled, true, "config must survive the migration");
+  assert.equal("jobs" in migrated, false, "the legacy array must be dropped once materialized");
+});
+
+test("pruning past the cap drops the oldest finished jobs and their logs", () => {
+  const workspace = makeTempDir();
+  for (let index = 0; index < 51; index += 1) {
+    seedJobOnDisk(workspace, `job-${index}`, {
+      updatedAt: new Date(Date.UTC(2026, 0, 1, 0, index, 0)).toISOString()
+    });
+  }
+
+  pruneJobStore(workspace);
+
+  assert.equal(listJobs(workspace).length, 50);
   assert.equal(fs.existsSync(resolveJobFile(workspace, "job-50")), true);
   assert.equal(fs.existsSync(resolveJobFile(workspace, "job-0")), false);
   assert.equal(fs.existsSync(resolveJobLogFile(workspace, "job-0")), false);
-  assert.deepEqual(
-    fs.readdirSync(jobsDir).sort(),
-    Array.from({ length: 50 }, (_, index) => `job-${index + 1}`)
-      .flatMap((jobId) => [`${jobId}.json`, `${jobId}.log`])
-      .sort()
-  );
+});
+
+// The defect this pins: pruning used to diff the caller's in-memory job list
+// against what was on disk, so a worker that started before a sibling's job
+// existed deleted that sibling's record and log — measured at up to 4 of 6 jobs
+// destroyed per run on Windows. An unfinished job is never evictable now.
+test("pruning never evicts a job that is still queued or running", () => {
+  const workspace = makeTempDir();
+  seedJobOnDisk(workspace, "job-active", {
+    status: "running",
+    updatedAt: new Date(Date.UTC(2020, 0, 1)).toISOString() // oldest by far
+  });
+  for (let index = 0; index < 60; index += 1) {
+    seedJobOnDisk(workspace, `job-${index}`, {
+      updatedAt: new Date(Date.UTC(2026, 0, 1, 0, index, 0)).toISOString()
+    });
+  }
+
+  pruneJobStore(workspace);
+
+  assert.equal(fs.existsSync(resolveJobFile(workspace, "job-active")), true, "a running job was deleted");
+  assert.equal(fs.existsSync(resolveJobLogFile(workspace, "job-active")), true, "a running job's log was deleted");
+});
+
+test("removeJobs deletes only the records its predicate selects", () => {
+  const workspace = makeTempDir();
+  seedJobOnDisk(workspace, "task-mine", { sessionId: "session-a" });
+  seedJobOnDisk(workspace, "task-theirs", { sessionId: "session-b" });
+
+  const removed = removeJobs(workspace, (job) => job.sessionId === "session-a");
+
+  assert.deepEqual(removed.map((job) => job.id), ["task-mine"]);
+  assert.equal(fs.existsSync(resolveJobFile(workspace, "task-mine")), false);
+  assert.equal(fs.existsSync(resolveJobLogFile(workspace, "task-mine")), false);
+  assert.equal(fs.existsSync(resolveJobFile(workspace, "task-theirs")), true);
+  assert.equal(fs.existsSync(resolveJobLogFile(workspace, "task-theirs")), true);
 });
 
 test("generateJobId produces a prefixed id with a crypto-random suffix", () => {
@@ -181,104 +260,84 @@ test("state and job writes leave parseable JSON", () => {
   const workspace = makeTempDir();
   const stateFile = resolveStateFile(workspace);
 
-  saveState(workspace, {
-    version: 1,
-    config: { stopReviewGateEnabled: true },
-    jobs: [{ id: "task-1", status: "completed", updatedAt: "2026-01-01T00:00:00.000Z" }]
-  });
+  saveState(workspace, { version: 1, config: { stopReviewGateEnabled: true } });
   const jobFile = writeJobFile(workspace, "task-1", { id: "task-1", status: "completed" });
 
-  assert.equal(JSON.parse(fs.readFileSync(stateFile, "utf8")).jobs[0].id, "task-1");
+  assert.equal(JSON.parse(fs.readFileSync(stateFile, "utf8")).config.stopReviewGateEnabled, true);
   assert.equal(JSON.parse(fs.readFileSync(jobFile, "utf8")).status, "completed");
 });
 
-// saveState writes to a pid-and-random temp file and renames it into place. The
-// guarantee that buys is that a concurrent reader never sees a half-written
-// state.json — not that concurrent writers keep each other's jobs, which a
-// load/mutate/save cycle cannot promise. Assert the guarantee that exists.
+// The promise a background user actually depends on: start several jobs at once
+// and every one of them is still there, complete, when the batch finishes.
 //
-// The rename is atomic on both platforms, but only POSIX lets it succeed while a
-// reader holds the file open; on Windows it raises EPERM instead, so the writer
-// retries. See the note in the worker.
-test("concurrent writers never expose a partially written state.json", async () => {
+// The previous shape of this test asserted only that a reader never saw a
+// half-written state.json, with a comment conceding that "concurrent writers
+// keep each other's jobs" was something a load/mutate/save cycle could not
+// promise. It could not — so the store stopped being one shared mutable list.
+// Measured against the old code this fails outright: 6 concurrent workers lost
+// 1–4 job records per run to a sibling's prune, plus EPERM on the shared
+// rename. Writers here do NOT retry: any sharing error must be handled inside
+// state.mjs, not papered over by the test.
+test("concurrent workers each keep their own job record, log and output", async () => {
   const workspace = makeTempDir();
-  const stateFile = resolveStateFile(workspace);
-  // Node 18 has no import.meta.dirname; the repo's other tests resolve paths
-  // through the module URL for the same reason.
   const stateModule = new URL("../plugins/gemini/scripts/lib/state.mjs", import.meta.url).href;
-
   const worker = path.join(workspace, "writer.mjs");
+  const tags = ["a", "b", "c", "d", "e", "f"];
+
   fs.writeFileSync(
     worker,
     [
-      `const { upsertJob } = await import(${JSON.stringify(stateModule)});`,
+      `const { upsertJob, writeJobFile, resolveJobLogFile } = await import(${JSON.stringify(stateModule)});`,
+      "const fs = await import('node:fs');",
       "const [workspace, tag] = process.argv.slice(2);",
-      "",
-      "// Windows refuses to rename onto a path another process currently has",
-      "// open, so the reader loop below — which reopens state.json every",
-      "// millisecond, far harder than any real caller — makes saveState's",
-      "// rename throw EPERM. That is a property of the platform, not a torn",
-      "// write, and asserting it away would test the wrong thing. Retry, and",
-      "// let a persistent failure still fail the test.",
-      "function writeWithRetry(job) {",
-      "  for (let attempt = 0; ; attempt += 1) {",
-      "    try {",
-      "      upsertJob(workspace, job);",
-      "      return;",
-      "    } catch (error) {",
-      "      const sharing = error && (error.code === 'EPERM' || error.code === 'EBUSY' || error.code === 'EACCES');",
-      "      if (!sharing || attempt >= 50) throw error;",
-      "      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);",
-      "    }",
-      "  }",
-      "}",
-      "",
-      "for (let i = 0; i < 12; i += 1) {",
-      "  writeWithRetry({ id: `${tag}-${i}`, status: 'completed', payload: 'x'.repeat(2048) });",
-      "}"
+      "const id = `task-${tag}`;",
+      "const logFile = resolveJobLogFile(workspace, id);",
+      "fs.writeFileSync(logFile, `[start] ${id}\\n`, 'utf8');",
+      "writeJobFile(workspace, id, { id, status: 'queued', phase: 'queued', logFile });",
+      "// The transitions a real worker makes, ending in the record /gemini:result reads.",
+      "upsertJob(workspace, { id, status: 'running', phase: 'starting', logFile });",
+      "upsertJob(workspace, { id, phase: 'running', logFile });",
+      "upsertJob(workspace, { id, status: 'completed', phase: 'done', logFile, rendered: `OUTPUT-${tag}` });",
+      "fs.appendFileSync(logFile, `[final] ${id}\\n`, 'utf8');"
     ].join("\n"),
     "utf8"
   );
 
-  let torn = 0;
-  let reads = 0;
-  const reading = setInterval(() => {
-    let raw;
-    try {
-      raw = fs.readFileSync(stateFile, "utf8");
-    } catch {
-      return; // not created yet, or mid-rename on Windows
-    }
-    reads += 1;
-    try {
-      JSON.parse(raw);
-    } catch {
-      torn += 1;
-    }
-  }, 1);
+  await Promise.all(
+    tags.map(
+      (tag) =>
+        new Promise((resolve, reject) => {
+          const child = spawn(process.execPath, [worker, workspace, tag], { stdio: ["ignore", "ignore", "pipe"] });
+          let stderr = "";
+          child.stderr.on("data", (chunk) => (stderr += chunk));
+          child.on("error", reject);
+          child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`writer ${tag} exited ${code}: ${stderr}`))));
+        })
+    )
+  );
 
-  try {
-    await Promise.all(
-      ["a", "b", "c"].map(
-        (tag) =>
-          new Promise((resolve, reject) => {
-            const child = spawn(process.execPath, [worker, workspace, tag], { stdio: "ignore" });
-            child.on("error", reject);
-            child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`writer ${tag} exited ${code}`))));
-          })
-      )
-    );
-  } finally {
-    // Without this on the failure path, the 1 ms interval keeps the event loop
-    // alive and the whole test run hangs instead of reporting the failure.
-    clearInterval(reading);
+  const listed = listJobs(workspace);
+  assert.deepEqual(
+    listed.map((job) => job.id).sort(),
+    tags.map((tag) => `task-${tag}`).sort(),
+    "a concurrent worker's job went missing from the listing"
+  );
+  for (const job of listed) {
+    assert.equal(job.status, "completed", `${job.id} did not reach its final status`);
+  }
+  for (const tag of tags) {
+    const stored = readJobFile(resolveJobFile(workspace, `task-${tag}`));
+    assert.equal(stored.rendered, `OUTPUT-${tag}`, `task-${tag} lost the output it produced`);
+    const log = fs.readFileSync(resolveJobLogFile(workspace, `task-${tag}`), "utf8");
+    assert.match(log, /\[start\]/, `task-${tag}'s log was deleted mid-run and recreated`);
+    assert.match(log, /\[final\]/);
   }
 
-  assert.ok(reads > 0, "the reader never observed the state file");
-  assert.equal(torn, 0, `observed ${torn} torn reads of state.json`);
-  assert.doesNotThrow(() => JSON.parse(fs.readFileSync(stateFile, "utf8")));
-
-  const leftovers = fs.readdirSync(path.dirname(stateFile)).filter((name) => name.endsWith(".tmp"));
+  const stateDir = path.dirname(resolveStateFile(workspace));
+  const leftovers = fs
+    .readdirSync(path.join(stateDir, "jobs"))
+    .concat(fs.readdirSync(stateDir))
+    .filter((name) => name.endsWith(".tmp"));
   assert.deepEqual(leftovers, [], "temp files were left behind");
 });
 

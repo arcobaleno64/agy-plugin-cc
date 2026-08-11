@@ -100,18 +100,17 @@ export function createJobProgressUpdater(workspaceRoot, jobId) {
       return;
     }
 
-    upsertJob(workspaceRoot, patch);
-
-    const jobFile = resolveJobFile(workspaceRoot, jobId);
-    if (!fs.existsSync(jobFile)) {
+    // A session-end sweep or a prune can remove the job while its worker is
+    // still reporting. upsertJob would recreate the record from the patch, so
+    // the existence check stays — it is the only thing keeping a deleted job
+    // deleted. (It used to guard just the job-file mirror, because the shared
+    // index was patched unconditionally; with the directory as the store, one
+    // write does both and the guard covers it.)
+    if (!fs.existsSync(resolveJobFile(workspaceRoot, jobId))) {
       return;
     }
 
-    const storedJob = readJobFile(jobFile);
-    writeJobFile(workspaceRoot, jobId, {
-      ...storedJob,
-      ...patch
-    });
+    upsertJob(workspaceRoot, patch);
   };
 }
 
