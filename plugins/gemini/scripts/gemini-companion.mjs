@@ -215,8 +215,13 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
   const workspaceRoot = resolveWorkspaceRoot(cwd);
   const nodeStatus = binaryAvailable("node", ["--version"], { cwd });
   const npmStatus = binaryAvailable("npm", ["--version"], { cwd });
-  const geminiStatus = getGeminiAvailability(cwd);
-  const agyStatus = getAgyAvailability();
+  const geminiAvailabilityFn = options.geminiAvailabilityFn ?? getGeminiAvailability;
+  const geminiStatus = geminiAvailabilityFn(cwd);
+  // Availability shares the login seam below for the same reason: without it the
+  // readiness assertions only hold on a machine that happens to have AGY
+  // installed, and pass locally while failing on any runner that does not.
+  const agyAvailabilityFn = options.agyAvailabilityFn ?? getAgyAvailability;
+  const agyStatus = agyAvailabilityFn();
   const geminiAuth = getGeminiLoginStatus(cwd);
   // `geminiAuth` reports the OAuth *file* only. Readiness must use the full
   // credential check auto-routing uses — env keys and the OS keychain included —

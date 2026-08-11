@@ -111,10 +111,16 @@ function agyStatus(state) {
   };
 }
 
+// Availability is stubbed alongside the login status. Reading it off the machine
+// makes the assertions below depend on whether AGY happens to be installed:
+// green on a developer box, "not-ready" on every CI runner.
+const AGY_INSTALLED = { available: true, version: "1.1.11" };
+
 test("a verified AGY reaches ready, the state --engine agy could never hold", () => {
   const report = buildSetupReport(makeTempDir(), [], {
     engine: "agy",
     probedAgy: true,
+    agyAvailabilityFn: () => AGY_INSTALLED,
     agyLoginStatusFn: () => agyStatus("verified")
   });
 
@@ -129,6 +135,7 @@ test("a verified AGY reaches ready, the state --engine agy could never hold", ()
 test("an unprobed AGY stays partial but is told how to check for free", () => {
   const report = buildSetupReport(makeTempDir(), [], {
     engine: "agy",
+    agyAvailabilityFn: () => AGY_INSTALLED,
     agyLoginStatusFn: () => agyStatus("unknown")
   });
 
@@ -147,6 +154,7 @@ test("a probed-and-logged-out AGY is not-ready, not partial", () => {
   const report = buildSetupReport(makeTempDir(), [], {
     engine: "agy",
     probedAgy: true,
+    agyAvailabilityFn: () => AGY_INSTALLED,
     agyLoginStatusFn: () => agyStatus("logged-out")
   });
 
@@ -164,11 +172,9 @@ test("the report names the credential that satisfied gemini readiness", () => {
   try {
     const report = buildSetupReport(makeTempDir(), [], {
       engine: "gemini",
+      geminiAvailabilityFn: () => ({ available: true, version: "0.53.1" }),
       agyLoginStatusFn: () => agyStatus("unknown")
     });
-    if (!report.gemini.available) {
-      return; // no gemini CLI on this machine; the source field is exercised below
-    }
     assert.equal(report.geminiCredentialSource, "env-api-key");
     assert.equal(report.geminiReady, true);
   } finally {
@@ -180,12 +186,9 @@ test("the report names the credential that satisfied gemini readiness", () => {
 test("the credential source says so plainly when there is no engine", () => {
   const report = buildSetupReport(makeTempDir(), [], {
     engine: "gemini",
+    geminiAvailabilityFn: () => ({ available: false, version: null }),
     agyLoginStatusFn: () => agyStatus("unknown")
   });
 
-  if (report.gemini.available) {
-    assert.notEqual(report.geminiCredentialSource, "engine-unavailable");
-    return;
-  }
   assert.equal(report.geminiCredentialSource, "engine-unavailable");
 });
