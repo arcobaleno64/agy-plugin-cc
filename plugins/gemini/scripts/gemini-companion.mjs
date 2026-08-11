@@ -59,9 +59,12 @@ import {
   getAgyAvailability,
   getGeminiLoginStatus,
   getAgyLoginStatus,
+  probeAgyLogin,
   getGeminiPlanTier,
   hasGeminiCredentials,
-  getSessionRuntimeStatus
+  getSessionRuntimeStatus,
+  MIN_TURN_TIMEOUT_SECONDS,
+  MAX_TURN_TIMEOUT_SECONDS
 } from "./lib/gemini.mjs";
 import { MODEL_MAP_METADATA, MODEL_ALIAS_ENTRIES } from "./lib/model-map.mjs";
 
@@ -101,10 +104,10 @@ function printUsage() {
   console.log(
     [
       "Usage:",
-      "  node scripts/gemini-companion.mjs setup [--json] [--enable-review-gate|--disable-review-gate]",
-      "  node scripts/gemini-companion.mjs adversarial-review [--wait|--background] [--deep] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--effort <level>] [--engine agy|gemini|auto] [--engines gemini,agy] [focus text]",
-      "  node scripts/gemini-companion.mjs review [--wait|--background] [--deep] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--effort <level>] [--engine agy|gemini|auto]",
-      "  node scripts/gemini-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--model <model>] [--effort <low|medium|high>] [--engine agy|gemini|auto] [prompt]",
+      "  node scripts/gemini-companion.mjs setup [--json] [--probe-agy] [--enable-review-gate|--disable-review-gate]",
+      "  node scripts/gemini-companion.mjs adversarial-review [--wait|--background] [--deep] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--effort <level>] [--engine agy|gemini|auto] [--engines gemini,agy] [--timeout <seconds>] [focus text]",
+      "  node scripts/gemini-companion.mjs review [--wait|--background] [--deep] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--effort <level>] [--engine agy|gemini|auto] [--timeout <seconds>]",
+      "  node scripts/gemini-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--model <model>] [--effort <low|medium|high>] [--engine agy|gemini|auto] [--timeout <seconds>] [prompt]",
       "  node scripts/gemini-companion.mjs status [job-id] [--all] [--json]",
       "  node scripts/gemini-companion.mjs result [job-id] [--json]",
       "  node scripts/gemini-companion.mjs cancel [job-id] [--json]",
@@ -125,8 +128,50 @@ function outputCommandResult(payload, rendered, asJson) {
   outputResult(asJson ? payload : rendered, asJson);
 }
 
+// parseArgs keeps an unrecognized `--flag` as a positional, which is right for a
+// parser that cannot know the caller's option table but wrong for the commands
+// that read their positionals as free text: `task --help` became the prompt
+// "--help", and the model answered it with a plausible-looking AGY tutorial —
+// a real billed turn for what is the most natural first thing to type. Same for
+// `-h`, and for any mistyped or unsupported flag.
+//
+// Only a *leading* flag is judged. A `--word` later in a sentence stays prompt
+// text, as it is today; rejecting those would turn a mangled prompt into a hard
+// error for anyone whose request happens to name a flag.
+function describeLeadingFlag(argv, config = {}) {
+  const [first] = argv;
+  if (!first || first === "-" || first === "--" || !first.startsWith("-")) {
+    return null;
+  }
+  if (first === "--help" || first === "-h") {
+    return { help: true };
+  }
+
+  const name = first.startsWith("--") ? first.slice(2).split("=")[0] : first.slice(1);
+  const known = new Set([
+    ...(config.valueOptions ?? []),
+    ...(config.booleanOptions ?? []),
+    ...Object.keys(config.aliasMap ?? {}),
+    "cwd",
+    "C"
+  ]);
+  return known.has(name) ? null : { unknown: first };
+}
+
+export function isHelpRequest(argv) {
+  return describeLeadingFlag(normalizeArgv(argv))?.help === true;
+}
+
 function parseCommandInput(argv, config = {}) {
-  return parseArgs(normalizeArgv(argv), {
+  const normalized = normalizeArgv(argv);
+  const leading = describeLeadingFlag(normalized, config);
+  if (leading?.unknown) {
+    throw new Error(
+      `Unknown option "${leading.unknown}". Run \`node scripts/gemini-companion.mjs help\` for usage. If it is prompt text, put \`--\` before it.`
+    );
+  }
+
+  return parseArgs(normalized, {
     ...config,
     aliasMap: {
       C: "cwd",
@@ -166,18 +211,27 @@ function firstMeaningfulLine(text, fallback) {
   return line ?? fallback;
 }
 
-function buildSetupReport(cwd, actionsTaken = [], options = {}) {
+export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
   const workspaceRoot = resolveWorkspaceRoot(cwd);
   const nodeStatus = binaryAvailable("node", ["--version"], { cwd });
   const npmStatus = binaryAvailable("npm", ["--version"], { cwd });
-  const geminiStatus = getGeminiAvailability(cwd);
-  const agyStatus = getAgyAvailability();
+  const geminiAvailabilityFn = options.geminiAvailabilityFn ?? getGeminiAvailability;
+  const geminiStatus = geminiAvailabilityFn(cwd);
+  // Availability shares the login seam below for the same reason: without it the
+  // readiness assertions only hold on a machine that happens to have AGY
+  // installed, and pass locally while failing on any runner that does not.
+  const agyAvailabilityFn = options.agyAvailabilityFn ?? getAgyAvailability;
+  const agyStatus = agyAvailabilityFn();
   const geminiAuth = getGeminiLoginStatus(cwd);
   // `geminiAuth` reports the OAuth *file* only. Readiness must use the full
   // credential check auto-routing uses — env keys and the OS keychain included —
   // or setup reports "not authenticated" for a user whose next command works.
   const geminiCredentialed = hasGeminiCredentials();
-  const agyAuth = getAgyLoginStatus();
+  // Same injection seam as detectEngine/runGeminiTurn: the readiness mapping is
+  // the part worth testing, and it should not require a real AGY to reach.
+  const agyLoginStatusFn =
+    options.agyLoginStatusFn ?? (options.probedAgy ? probeAgyLogin : getAgyLoginStatus);
+  const agyAuth = agyLoginStatusFn();
   const geminiPlanTier = getGeminiPlanTier();
   const config = getConfig(workspaceRoot) ?? {};
 
@@ -196,23 +250,55 @@ function buildSetupReport(cwd, actionsTaken = [], options = {}) {
   const agySelected = requestedEngine === "agy";
   const geminiReady = geminiStatus.available && geminiCredentialed;
   const agyAvailable = agyStatus.available;
+  // `geminiReady: true` beside `geminiAuth.loggedIn: false` reads as a
+  // contradiction and was reported as one. Both are correct and they answer
+  // different questions: `geminiAuth` inspects the OAuth *file* only, while
+  // readiness uses the full credential resolution the CLI itself performs — env
+  // API key, that file, then the OS keychain. A user whose 0.53.1 CLI migrated
+  // its OAuth into the keychain (and deleted the file) sees an expired-looking
+  // `geminiAuth` and a working engine. Name the source that actually satisfied
+  // the check so the pair explains itself instead of needing this comment.
+  // Resolved in the order hasGeminiCredentials uses, which is the order the CLI
+  // itself uses: an env API key wins over the OAuth file, which wins over the
+  // keychain. Reporting the file whenever it happens to be valid would name the
+  // wrong source for an API-key user.
+  const geminiApiKeyInEnv = Boolean(
+    String(process.env.GEMINI_API_KEY ?? "").trim() || String(process.env.GOOGLE_API_KEY ?? "").trim()
+  );
+  const geminiCredentialSource = !geminiStatus.available
+    ? "engine-unavailable"
+    : geminiApiKeyInEnv
+      ? "env-api-key"
+      : geminiAuth.loggedIn
+        ? "oauth-file"
+        : geminiCredentialed
+          ? "os-keychain"
+          : "none";
   // Backward-compatible alias retained for existing JSON consumers. AGY is a
   // first-class supported engine; "fallback" describes only auto-routing order.
   const agyFallbackAvailable = agyAvailable;
-  // AGY auth cannot be verified non-interactively, so `--engine agy` is never
-  // reported as fully `ready` — the most it reaches is `readyState: "partial"`
-  // (binary present, auth unknown). `ready:true` is reserved for a verified
-  // runtime: an installed AND authenticated Gemini CLI. An unrecognized engine
-  // is never ready.
-  const ready = engineKnown && !agySelected && nodeStatus.available && geminiReady;
+  // `ready` means a verified runtime: installed AND authenticated. Without the
+  // probe AGY cannot clear that bar — its auth state is unknown, not bad — so
+  // `--engine agy` tops out at `partial`. `setup --probe-agy` asks AGY a
+  // question only an authenticated account can answer, at no token cost, and a
+  // verified answer promotes AGY to `ready` exactly as an authenticated Gemini
+  // CLI is. A probe that comes back logged-out is now a *worse* state than
+  // unknown, and must not read as `partial`. An unrecognized engine is never
+  // ready.
+  const agyVerified = agyAuth.state === "verified";
+  const agyLoggedOut = agyAuth.state === "logged-out";
+  const ready =
+    engineKnown && nodeStatus.available && (agySelected ? agyVerified : geminiReady);
   const readyState = !engineKnown
     ? "not-ready"
     : !nodeStatus.available
       ? "not-ready"
       : agySelected
-        ? agyStatus.available
-          ? "partial"
-          : "not-ready"
+        ? !agyStatus.available || agyLoggedOut
+          ? "not-ready"
+          : agyVerified
+            ? "ready"
+            : "partial"
         : geminiReady
           ? "ready"
           : agyAvailable
@@ -230,9 +316,21 @@ function buildSetupReport(cwd, actionsTaken = [], options = {}) {
       "AGY was requested via `--engine agy` but is not installed. Install it with `curl -fsSL https://antigravity.google/cli/install.sh | bash`, or drop `--engine agy` to use the default Gemini CLI."
     );
   }
-  if (agySelected && agyStatus.available) {
+  if (agySelected && agyStatus.available && agyLoggedOut) {
     nextSteps.push(
-      "AGY is installed, but its authentication state cannot be verified non-interactively. Run an `--engine agy` command to confirm it is logged in."
+      `AGY is installed but not signed in: ${agyAuth.detail} Run \`agy\` once interactively, then re-run \`setup --probe-agy\`.`
+    );
+  }
+  // The old advice here was "run an `--engine agy` command to confirm it is
+  // logged in" — i.e. spend a billed turn, and read the answer out of whether it
+  // failed. `--probe-agy` answers the same question for nothing. If it already
+  // ran and still could not tell, its own detail says why (too old an AGY, or a
+  // probe that did not answer) and repeating the suggestion would be a loop.
+  if (agySelected && agyStatus.available && !agyVerified && !agyLoggedOut) {
+    nextSteps.push(
+      options.probedAgy
+        ? agyAuth.detail
+        : "AGY is installed, but its authentication state has not been checked. Run `setup --probe-agy` to verify it without spending a turn."
     );
   }
   if (!geminiStatus.available && !agyStatus.available) {
@@ -270,6 +368,7 @@ function buildSetupReport(cwd, actionsTaken = [], options = {}) {
     readyState,
     requestedEngine: requestedEngine || "auto",
     geminiReady,
+    geminiCredentialSource,
     agyAvailable,
     agyFallbackAvailable,
     geminiPlanTier,
@@ -294,7 +393,7 @@ function buildSetupReport(cwd, actionsTaken = [], options = {}) {
 function handleSetup(argv) {
   const { options } = parseCommandInput(argv, {
     valueOptions: ["cwd", "engine"],
-    booleanOptions: ["json", "enable-review-gate", "disable-review-gate"]
+    booleanOptions: ["json", "enable-review-gate", "disable-review-gate", "probe-agy"]
   });
 
   const cwd = resolveCommandCwd(options);
@@ -312,7 +411,10 @@ function handleSetup(argv) {
     actionsTaken.push("Review gate disabled.");
   }
 
-  const finalReport = buildSetupReport(cwd, actionsTaken, { engine: requestedEngine });
+  const finalReport = buildSetupReport(cwd, actionsTaken, {
+    engine: requestedEngine,
+    probedAgy: Boolean(options["probe-agy"])
+  });
   outputResult(options.json ? finalReport : renderSetupReport(finalReport), options.json);
 }
 
@@ -390,6 +492,48 @@ export function buildReviewPrompt(request) {
   };
 }
 
+// A review whose input was truncated has not seen the whole change, so it must
+// not report `approve` — the verdict is what a reader, `--json` consumer and the
+// stop-review gate all take as "this code was looked at", and a banner they may
+// not read cannot carry that. The schema's enum has only `approve` and
+// `needs-attention`, so the conservative value stands in; the model's own
+// verdict is preserved rather than discarded.
+//
+// `parsedResult` is mutated in place on purpose: it is the same object behind
+// `payload.result` and the rendered output, so correcting it once is what keeps
+// those two from disagreeing.
+function buildTruncationReport(context, parsedResult) {
+  if (!context?.truncated) return null;
+
+  const report = {
+    truncated: true,
+    truncatedFiles: context.truncatedFiles ?? [],
+    omittedFiles: context.omittedFiles ?? []
+  };
+  if (parsedResult?.verdict === "approve") {
+    parsedResult.verdict = "needs-attention";
+    report.modelVerdict = "approve";
+    report.verdictDowngraded = true;
+  }
+  return report;
+}
+
+function renderTruncationBanner(truncation) {
+  if (!truncation) return "";
+
+  const lines = ["> ⚠️ Review input was truncated — this verdict does not cover the whole change."];
+  if (truncation.truncatedFiles.length > 0) {
+    lines.push(`> Cut short: ${truncation.truncatedFiles.join(", ")}`);
+  }
+  if (truncation.omittedFiles.length > 0) {
+    lines.push(`> Not sent at all: ${truncation.omittedFiles.join(", ")}`);
+  }
+  if (truncation.verdictDowngraded) {
+    lines.push("> Gemini reported `approve`; recorded as `needs-attention` because the review was partial.");
+  }
+  return `${lines.join("\n")}\n\n`;
+}
+
 async function executeReviewRun(request) {
   const reviewName = request.reviewName ?? "Adversarial Review";
   const templateName = request.templateName ?? "adversarial-review";
@@ -429,6 +573,7 @@ async function executeReviewRun(request) {
     effort: request.effort,
     engine: request.engine,
     isAdversarial: templateName === "adversarial-review",
+    timeoutSeconds: request.timeoutSeconds ?? null,
     onProgress: request.onProgress
   });
 
@@ -436,11 +581,14 @@ async function executeReviewRun(request) {
     ? { parsed: result.reviewJson, rawOutput: result.reviewText, parseError: null, failure: result.failure ?? null }
     : { parsed: null, rawOutput: result.reviewText, parseError: "Could not parse structured JSON from review output.", failure: result.failure ?? null };
 
+  const truncation = buildTruncationReport(context, parsed.parsed);
+
   const payload = {
     review: reviewName,
     target: context.target,
     gemini: { status: result.status, stdout: result.reviewText, stderr: result.stderr ?? "" },
     result: parsed.parsed,
+    ...(truncation ? { truncation } : {}),
     ...(result.failure ? { failure: result.failure } : {})
   };
 
@@ -452,7 +600,7 @@ async function executeReviewRun(request) {
     turnId: null,
     engine: result.engine ?? null,
     payload,
-    rendered: fallbackBanner + renderReviewResult(parsed, {
+    rendered: fallbackBanner + renderTruncationBanner(truncation) + renderReviewResult(parsed, {
       reviewLabel: reviewName,
       targetLabel: context.target?.label ?? "",
       reasoningSummary: result.reasoningSummary
@@ -488,6 +636,7 @@ async function executeTaskRun(request) {
     engine: request.engine,
     write: request.write,
     resumeLast,
+    timeoutSeconds: request.timeoutSeconds ?? null,
     onProgress: request.onProgress
   });
 
@@ -584,7 +733,7 @@ function buildTaskJob(workspaceRoot, taskMetadata, write) {
   });
 }
 
-function buildTaskRequest({ cwd, model, effort, engine, prompt, write, resumeLast, jobId }) {
+function buildTaskRequest({ cwd, model, effort, engine, prompt, write, resumeLast, jobId, timeoutSeconds = null }) {
   return {
     cwd,
     model,
@@ -593,7 +742,8 @@ function buildTaskRequest({ cwd, model, effort, engine, prompt, write, resumeLas
     prompt,
     write,
     resumeLast,
-    jobId
+    jobId,
+    ...(timeoutSeconds != null ? { timeoutSeconds } : {})
   };
 }
 
@@ -601,7 +751,7 @@ function buildTaskRequest({ cwd, model, effort, engine, prompt, write, resumeLas
 // review re-resolves base/scope when the worker runs. A grouped blind review may
 // supply one preparedReview snapshot so every engine receives byte-identical
 // input even if the working tree changes between worker starts.
-function buildReviewRequest({ cwd, base, scope, model, effort, engine, focusText, reviewName, templateName, deep = false, preparedReview = null }) {
+function buildReviewRequest({ cwd, base, scope, model, effort, engine, focusText, reviewName, templateName, deep = false, preparedReview = null, timeoutSeconds = null }) {
   return {
     cwd,
     base,
@@ -613,6 +763,7 @@ function buildReviewRequest({ cwd, base, scope, model, effort, engine, focusText
     reviewName,
     templateName,
     deep,
+    ...(timeoutSeconds != null ? { timeoutSeconds } : {}),
     ...(preparedReview ? { preparedReview } : {})
   };
 }
@@ -691,6 +842,21 @@ function enqueueBackgroundJob(cwd, job, request, workerCommand, { spawnFn = spaw
   };
 }
 
+// `--timeout <seconds>`. Before this existed, a turn that produced more output
+// than the fixed window allowed was killed and reported as `timeout (retryable)`
+// — advice that cannot work, because the cause is the size of the request, not a
+// transient fault. Retrying an identical batch fails identically.
+function parseTimeoutSeconds(value) {
+  if (value == null) return null;
+  const seconds = Number(value);
+  if (!Number.isInteger(seconds) || seconds < MIN_TURN_TIMEOUT_SECONDS || seconds > MAX_TURN_TIMEOUT_SECONDS) {
+    throw new Error(
+      `Invalid --timeout "${value}". Give whole seconds between ${MIN_TURN_TIMEOUT_SECONDS} and ${MAX_TURN_TIMEOUT_SECONDS}.`
+    );
+  }
+  return seconds;
+}
+
 function validateEffortLevel(effort) {
   if (effort != null && !VALID_EFFORT_LEVELS.has(String(effort).trim().toLowerCase())) {
     throw new Error(`Invalid --effort "${effort}". Valid values: ${[...VALID_EFFORT_LEVELS].join(", ")}.`);
@@ -763,6 +929,7 @@ export function dispatchBackgroundReview(request, { spawnFn = spawn, detectEngin
     reviewName,
     templateName,
     deep: request.deep,
+    timeoutSeconds: request.timeoutSeconds ?? null,
     preparedReview: request.preparedReview
   });
   return enqueueBackgroundJob(cwd, job, storedRequest, "review-worker", { spawnFn }).payload;
@@ -856,14 +1023,15 @@ export function dispatchBackgroundTask(request, { spawnFn = spawn, detectEngineF
     prompt,
     write: Boolean(request.write),
     resumeLast,
-    jobId: job.id
+    jobId: job.id,
+    timeoutSeconds: request.timeoutSeconds ?? null
   });
   return enqueueBackgroundJob(cwd, job, storedRequest, "task-worker", { spawnFn }).payload;
 }
 
 async function handleReviewCommand(argv, { reviewName, templateName, supportsFocus, supportsEngines = false }) {
   const { options, positionals } = parseCommandInput(argv, {
-    valueOptions: ["base", "scope", "model", "effort", "engine", "cwd", ...(supportsEngines ? ["engines"] : [])],
+    valueOptions: ["base", "scope", "model", "effort", "engine", "cwd", "timeout", ...(supportsEngines ? ["engines"] : [])],
     booleanOptions: ["json", "wait", "background", "deep"],
     aliasMap: { m: "model" }
   });
@@ -872,6 +1040,7 @@ async function handleReviewCommand(argv, { reviewName, templateName, supportsFoc
   const workspaceRoot = resolveCommandWorkspace(options);
   const focusText = supportsFocus ? positionals.join(" ").trim() : "";
   validateEffortLevel(options.effort);
+  const timeoutSeconds = parseTimeoutSeconds(options.timeout);
 
   if (supportsEngines && options.engines != null) {
     if (options.engine != null) throw new Error("Choose either --engine or --engines, not both.");
@@ -884,7 +1053,8 @@ async function handleReviewCommand(argv, { reviewName, templateName, supportsFoc
       effort: options.effort ?? null,
       engines: String(options.engines).split(","),
       focusText,
-      deep: options.deep
+      deep: options.deep,
+      timeoutSeconds
     });
     if (dispatch.groupId) {
       const payload = {
@@ -915,7 +1085,8 @@ async function handleReviewCommand(argv, { reviewName, templateName, supportsFoc
       focusText,
       reviewName,
       templateName,
-      deep: options.deep
+      deep: options.deep,
+      timeoutSeconds
     });
     outputCommandResult(payload, renderQueuedTaskLaunch(payload), options.json);
     return;
@@ -948,6 +1119,7 @@ async function handleReviewCommand(argv, { reviewName, templateName, supportsFoc
         reviewName,
         templateName,
         deep: options.deep,
+        timeoutSeconds,
         onProgress: progress
       }),
     { json: options.json }
@@ -969,7 +1141,7 @@ async function handleAdversarialReview(argv) {
 
 async function handleTask(argv) {
   const { options, positionals } = parseCommandInput(argv, {
-    valueOptions: ["model", "effort", "engine", "cwd", "prompt-file"],
+    valueOptions: ["model", "effort", "engine", "cwd", "prompt-file", "timeout"],
     booleanOptions: ["json", "write", "resume-last", "resume", "fresh", "background"],
     aliasMap: { m: "model" }
   });
@@ -979,6 +1151,7 @@ async function handleTask(argv) {
   const model = options.model ?? null;
   const engine = options.engine ?? null;
   validateEffortLevel(options.effort);
+  const timeoutSeconds = parseTimeoutSeconds(options.timeout);
   const prompt = readTaskPrompt(cwd, options, positionals);
 
   const resumeLast = Boolean(options["resume-last"] || options.resume);
@@ -997,7 +1170,8 @@ async function handleTask(argv) {
       engine,
       prompt,
       write,
-      resumeLast
+      resumeLast,
+      timeoutSeconds
     });
     outputCommandResult(payload, renderQueuedTaskLaunch(payload), options.json);
     return;
@@ -1015,6 +1189,7 @@ async function handleTask(argv) {
         prompt,
         write,
         resumeLast,
+        timeoutSeconds,
         jobId: job.id,
         onProgress: progress
       }),
@@ -1230,6 +1405,14 @@ export function cancelJob({ cwd = process.cwd(), jobId = "", all = false }, { te
 async function main() {
   const [subcommand, ...argv] = process.argv.slice(2);
   if (!subcommand || subcommand === "help" || subcommand === "--help") {
+    printUsage();
+    return;
+  }
+
+  // `<subcommand> --help` prints usage and exits 0 rather than reaching an
+  // engine. Handled before dispatch so it applies to every subcommand, including
+  // the ones whose positionals are free text and would otherwise swallow it.
+  if (isHelpRequest(argv)) {
     printUsage();
     return;
   }

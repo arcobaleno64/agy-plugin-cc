@@ -189,11 +189,26 @@ export async function callTool(name, args = {}, { runtime = DEFAULT_RUNTIME } = 
     });
   }
 
+  // Every job tool here is addressed by an explicit job id, so all three cross
+  // sessions — matching gemini_job_status, which never filtered by session at
+  // all. The session filter exists to keep the *discovery* paths honest (the
+  // bare `/gemini:status` listing, `--resume-last`, cancel's "the one active
+  // job" shortcut); it cannot serve that purpose for a caller who already holds
+  // the id, and here it actively broke them.
+  //
+  // This MCP server is launched from .mcp.json and so never receives
+  // GEMINI_COMPANION_SESSION_ID — session-lifecycle-hook.mjs can only export it
+  // into CLAUDE_ENV_FILE, which reaches later Bash commands, not a server
+  // started alongside them. With no session id the filter admits only jobs that
+  // carry none, i.e. the ones this server queued itself. So every job queued by
+  // the CLI or a slash command reported `No job found` from gemini_job_result
+  // and gemini_job_cancel while gemini_job_status returned it fine — not
+  // intermittently, always.
   const jobId = requiredString(args.jobId, "jobId");
   if (name === "gemini_job_status") return runtime.getJobStatus({ cwd: workspace, jobId });
-  if (name === "gemini_job_result") return runtime.getJobResult({ cwd: workspace, jobId });
+  if (name === "gemini_job_result") return runtime.getJobResult({ cwd: workspace, jobId, all: true });
   if (name === "gemini_job_cancel") {
-    const cancelled = await runtime.cancelJob({ cwd: workspace, jobId });
+    const cancelled = await runtime.cancelJob({ cwd: workspace, jobId, all: true });
     return cancelled.payload ?? cancelled;
   }
   throw new Error(`Unknown tool: ${name}`);

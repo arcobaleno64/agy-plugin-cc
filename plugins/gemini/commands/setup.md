@@ -1,6 +1,6 @@
 ---
 description: Check whether Gemini CLI / AGY is ready and optionally toggle the stop-time review gate
-argument-hint: '[--engine <agy|gemini>] [--enable-review-gate|--disable-review-gate]'
+argument-hint: '[--engine <agy|gemini>] [--probe-agy] [--enable-review-gate|--disable-review-gate]'
 allowed-tools: Bash(node:*), Bash(npm:*), Bash(curl:*), AskUserQuestion
 ---
 
@@ -70,8 +70,28 @@ above takes precedence even if Gemini CLI is already present — the user routed
 to AGY (via `--engine agy` or `GEMINI_ENGINE=agy`), so do not silently fall back
 to Gemini.
 
+AGY authentication cannot be read off disk, so an unprobed `--engine agy` reports
+`readyState: "partial"` with `agyAuth.state: "unknown"` — that is "not checked",
+not "not signed in". When the user asks whether AGY is ready, or when they are
+about to act on a `partial` verdict, rerun with `--probe-agy`:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" setup --json --probe-agy "$ARGUMENTS"
+```
+
+It asks AGY a read-only question the account has to answer, so it verifies the
+login without starting a turn or spending quota (AGY 1.1.11+; below that it
+declines and says so). A verified AGY then reports `readyState: "ready"`; a probe
+that comes back `logged-out` reports `not-ready`, and the fix is to run `agy`
+once interactively.
+
 Output rules:
 - Present the final setup output to the user.
+- `geminiReady` and `geminiAuth.loggedIn` answer different questions and can
+  disagree: `geminiAuth` inspects the OAuth file alone, while readiness uses the
+  full credential resolution (env API key, that file, then the OS keychain).
+  `geminiCredentialSource` names the one that actually applied — quote it rather
+  than reporting the pair as a contradiction.
 - If installation was skipped, present the original setup output.
 - If Gemini is installed but not authenticated, preserve the guidance to run `!gemini` once to complete OAuth authentication. The plugin authenticates by running `gemini`; there is no separate login subcommand.
 - If the setup output (`nextSteps` / `geminiPlanTier`) includes a 2026-06-18 EOL heads-up, surface it: personal-plan Gemini CLI free access ends then. After that date, either upgrade to Gemini Code Assist Standard/Enterprise to keep the gemini engine, or use `--engine agy` (the plugin recovers AGY responses from its on-disk transcript because `agy --print` does not pipe output — upstream google-gemini/gemini-cli#27466).

@@ -3,7 +3,7 @@ import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { collectReviewContext, formatUntrackedFile, getWorkingTreeState, resolveReviewTarget } from "../plugins/gemini/scripts/lib/git.mjs";
+import { assembleReviewContent, collectReviewContext, formatUntrackedFile, getWorkingTreeState, resolveReviewTarget } from "../plugins/gemini/scripts/lib/git.mjs";
 import { initGitRepo, makeTempDir, run, writeExecutable } from "./helpers.mjs";
 
 function commitInitial(cwd) {
@@ -245,4 +245,184 @@ test("collectReviewContext withholds secret file content from a working-tree rev
   assert.ok(payload.includes("const a = 2"), "ordinary code must still be reviewed");
   // The filename survives so the review can still flag that the file changed.
   assert.ok(payload.includes(".env"));
+});
+
+// ---------------------------------------------------------------------------
+// Review payload budgeting
+//
+// The defect these pin: the payload was filled front-to-back and cut at 400,000
+// characters, so one large file evicted every file after it. Measured on a
+// 5,200-line `data/questions.json` edit beside one tracked source change and
+// three untracked new files, the whole `## Untracked Files` section and the
+// tracked `src/quiz.ts` change (which sorts after `data/`) never reached the
+// model — and the review came back `approve`, having seen one file. The only
+// signal was a notice sitting at character 400,000 that the model was asked to
+// relay, and nothing told the plugin itself that anything had been dropped.
+// ---------------------------------------------------------------------------
+
+function seedOversizedChange(cwd, { dataRows = 6000, rationaleWidth = 70 } = {}) {
+  fs.mkdirSync(path.join(cwd, "data"), { recursive: true });
+  fs.mkdirSync(path.join(cwd, "src"), { recursive: true });
+  fs.writeFileSync(path.join(cwd, "data", "questions.json"), "[\n]\n");
+  fs.writeFileSync(path.join(cwd, "src", "quiz.ts"), "export const scoreQuiz = () => 0;\n");
+  run("git", ["add", "-A"], { cwd });
+  run("git", ["commit", "-m", "baseline"], { cwd });
+
+  const rows = Array.from(
+    { length: dataRows },
+    (_, index) => `  { "id": ${index}, "rationale": "${"x".repeat(rationaleWidth)}" }`
+  );
+  fs.writeFileSync(path.join(cwd, "data", "questions.json"), `[\n${rows.join(",\n")}\n]\n`);
+  fs.writeFileSync(path.join(cwd, "src", "quiz.ts"), "export const scoreQuiz = () => {\n  // MARKER_TRACKED\n  return 1;\n};\n");
+  fs.writeFileSync(path.join(cwd, "src", "question-pool.ts"), "// MARKER_UNTRACKED_POOL\n");
+  fs.writeFileSync(path.join(cwd, "src", "QuestionCard.vue"), "<!-- MARKER_UNTRACKED_CARD -->\n");
+  fs.writeFileSync(path.join(cwd, "src", "pool.test.ts"), "// MARKER_UNTRACKED_TEST\n");
+}
+
+test("a huge data file cannot evict the code files reviewed alongside it", () => {
+  const cwd = makeTempDir();
+  initGitRepo(cwd);
+  seedOversizedChange(cwd);
+
+  const context = collectReviewContext(cwd, resolveReviewTarget(cwd, { scope: "working-tree" }));
+
+  for (const marker of ["MARKER_TRACKED", "MARKER_UNTRACKED_POOL", "MARKER_UNTRACKED_CARD", "MARKER_UNTRACKED_TEST"]) {
+    assert.ok(context.content.includes(marker), `${marker} never reached the model`);
+  }
+  assert.ok(context.content.includes("## Untracked Files"), "the untracked section was evicted entirely");
+  assert.equal(context.truncatedFiles.includes("data/questions.json"), true);
+});
+
+test("the caller is told what was truncated, not just the model", () => {
+  const cwd = makeTempDir();
+  initGitRepo(cwd);
+  seedOversizedChange(cwd);
+
+  const context = collectReviewContext(cwd, resolveReviewTarget(cwd, { scope: "working-tree" }));
+
+  assert.equal(context.truncated, true);
+  assert.ok(Array.isArray(context.truncatedFiles) && Array.isArray(context.omittedFiles));
+  // Stated up front rather than buried at the size limit, where a model that
+  // stopped reading early never sees it.
+  assert.match(context.content.slice(0, 200), /REVIEW INPUT TRUNCATED/);
+});
+
+test("an untruncated review payload is unchanged by budgeting", () => {
+  const cwd = makeTempDir();
+  initGitRepo(cwd);
+  commitInitial(cwd);
+  fs.writeFileSync(path.join(cwd, "app.js"), "console.log('v2');\n");
+  fs.writeFileSync(path.join(cwd, "notes.txt"), "untracked note\n");
+
+  const context = collectReviewContext(cwd, resolveReviewTarget(cwd, { scope: "working-tree" }));
+
+  assert.equal(context.truncated, false);
+  assert.deepEqual(context.truncatedFiles, []);
+  assert.deepEqual(context.omittedFiles, []);
+  assert.equal(context.content.startsWith("## Git Status"), true, "no notice may be added when nothing was cut");
+  assert.match(context.content, /console\.log\('v2'\)/);
+  assert.match(context.content, /untracked note/);
+});
+
+test("the budgeted payload still respects the size cap", () => {
+  const cwd = makeTempDir();
+  initGitRepo(cwd);
+  seedOversizedChange(cwd, { dataRows: 20000, rationaleWidth: 120 });
+
+  const context = collectReviewContext(cwd, resolveReviewTarget(cwd, { scope: "working-tree" }));
+
+  assert.equal(context.truncated, true);
+  // The 400,000-character budget, plus the leading notice, which is bounded by
+  // the number of names it lists and is the most important text in the payload.
+  assert.ok(context.content.length <= 405_000, `payload was ${context.content.length} characters`);
+});
+
+// A diff larger than spawnSync's 1 MiB default used to abort the whole review
+// with a raw `spawnSync git ENOBUFS` before any budgeting could run.
+test("a diff larger than the default spawn buffer is budgeted, not crashed on", () => {
+  const cwd = makeTempDir();
+  initGitRepo(cwd);
+  seedOversizedChange(cwd, { dataRows: 20000, rationaleWidth: 120 });
+
+  const context = collectReviewContext(cwd, resolveReviewTarget(cwd, { scope: "working-tree" }));
+
+  assert.ok(context.content.includes("MARKER_TRACKED"), "the tracked code change was lost");
+  assert.equal(context.truncatedFiles.includes("data/questions.json"), true);
+});
+
+// Several large files must share the budget rather than be served in order.
+// Spending it in order is not merely unfair: with three comparable files and a
+// budget for one and a bit, the third receives nothing and drops out of the
+// review completely — the same silent omission as the single-huge-file case,
+// reached by a different route. Ascending order alone does not prevent this;
+// the per-file share is what does.
+test("several large files split the budget instead of being served in order", () => {
+  const cwd = makeTempDir();
+  initGitRepo(cwd);
+  const names = ["alpha.json", "bravo.json", "charlie.json"];
+  for (const name of names) {
+    fs.writeFileSync(path.join(cwd, name), "[]\n");
+  }
+  run("git", ["add", "-A"], { cwd });
+  run("git", ["commit", "-m", "baseline"], { cwd });
+
+  for (const name of names) {
+    const rows = Array.from({ length: 2600 }, (_, index) => `  { "id": ${index}, "v": "${"x".repeat(90)}" }`);
+    fs.writeFileSync(path.join(cwd, name), `[\n${rows.join(",\n")}\n]\n`);
+  }
+
+  const context = collectReviewContext(cwd, resolveReviewTarget(cwd, { scope: "working-tree" }));
+
+  assert.deepEqual(context.omittedFiles, [], "a large file was dropped rather than given its share");
+  for (const name of names) {
+    assert.ok(context.content.includes(`b/${name}`), `${name} is absent from the review payload`);
+  }
+});
+
+// The cap governed the file diffs only. An always-included body — `git status
+// --short --untracked-files=all` over an unignored build tree runs to megabytes —
+// was charged as overhead but still emitted whole, so the file budget went
+// negative, allocateBudget clamped it to zero, every file was dropped, and the
+// oversized status was sent in their place. Driven through assembleReviewContent
+// rather than a real repository: reproducing it on disk needs ~12,000 untracked
+// files and takes 85 seconds, and the invariant under test is this function's.
+test("an always-included section cannot push the payload past the cap", () => {
+  const assembled = assembleReviewContent([
+    { title: "Git Status", body: "M  polluted.txt\n".repeat(60_000) },
+    {
+      title: "Working Tree Diff",
+      separator: "\n",
+      units: [
+        { path: "src/app.js", text: `diff --git a/src/app.js b/src/app.js\n+// MARKER_TRACKED\n` },
+        { path: "src/big.js", text: `diff --git a/src/big.js b/src/big.js\n${"+x\n".repeat(50_000)}` }
+      ]
+    }
+  ]);
+
+  assert.ok(
+    assembled.content.length <= 400_000,
+    `the payload must respect the cap, got ${assembled.content.length} characters`
+  );
+  assert.ok(assembled.content.includes("MARKER_TRACKED"), "the actual code change was evicted by the status body");
+  assert.equal(assembled.truncated, true, "a cut-down status is still truncated input");
+});
+
+// The notice names every truncated file. At the 400-char floor a single review
+// can truncate ~1000 of them, and joining all the names put the notice itself
+// past the cap it exists to announce.
+test("the truncation notice is bounded by the number of files it names", () => {
+  const units = Array.from({ length: 900 }, (_, index) => ({
+    path: `src/module-${index}/${"deeply-nested-directory-name/".repeat(4)}component.ts`,
+    text: `diff --git a/src/module-${index}/component.ts b/src/module-${index}/component.ts\n${"+x\n".repeat(400)}`
+  }));
+
+  const assembled = assembleReviewContent([{ title: "Working Tree Diff", separator: "\n", units }]);
+
+  assert.equal(assembled.truncated, true);
+  const notice = assembled.content.slice(0, assembled.content.indexOf("## Working Tree Diff"));
+  assert.ok(notice.length <= 20_000, `the notice alone was ${notice.length} characters`);
+  assert.ok(
+    assembled.content.length <= 400_000,
+    `the payload must respect the cap, got ${assembled.content.length} characters`
+  );
 });

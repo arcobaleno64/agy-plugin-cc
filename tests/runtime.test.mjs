@@ -24,9 +24,9 @@ import {
 import { initGitRepo, makeTempDir, run } from "./helpers.mjs";
 import { DELEGATED_OUTPUT_MARKER } from "../plugins/gemini/scripts/lib/render.mjs";
 import {
+  listJobs,
   readJobFile,
   resolveJobFile,
-  resolveStateDir,
   resolveStateFile,
   writeJobFile
 } from "../plugins/gemini/scripts/lib/state.mjs";
@@ -65,11 +65,20 @@ function commit(repo, file, contents) {
   run("git", ["commit", "-m", `add ${file}`], { cwd: repo });
 }
 
+// Seeds through the legacy state.json shape on purpose: listJobs migrates such
+// an index into per-job files on first read, so this doubles as coverage that
+// jobs recorded by an older release survive the upgrade.
 function seedState(workspace, jobs, config = {}) {
   const stateFile = resolveStateFile(workspace);
   fs.mkdirSync(path.dirname(stateFile), { recursive: true });
   fs.writeFileSync(stateFile, `${JSON.stringify({ version: 1, config, jobs }, null, 2)}\n`, "utf8");
   return stateFile;
+}
+
+// The recorded jobs, newest first. The store is the jobs/ directory; state.json
+// carries configuration only.
+function storedJobs(workspace) {
+  return listJobs(workspace);
 }
 
 // The host Claude session exports GEMINI_COMPANION_SESSION_ID, which would make
@@ -325,6 +334,46 @@ test("review renders a clean working-tree verdict from structured JSON", () => {
   assert.match(result.stdout, /Target: working tree/);
   assert.match(result.stdout, /Verdict: approve/);
   assert.match(result.stdout, /No material findings\./);
+});
+
+// The top-severity defect this pins: a review that saw 8% of a change reported
+// `approve` and `No material findings`, which is worse than no review — a reader
+// concludes the code was checked. `approve` is what carries that belief, in the
+// rendered output, in `--json`, and at the stop-review gate, so a partial review
+// must not be recorded as one. The schema's enum has only `approve` and
+// `needs-attention`, so the conservative value stands in and the model's own
+// verdict is kept alongside it rather than discarded.
+test("a review whose input was truncated is not recorded as approve", () => {
+  const { repo, binDir } = setupRepo("review-clean");
+  fs.mkdirSync(path.join(repo, "data"), { recursive: true });
+  commit(repo, "data/questions.json", "[\n]\n");
+  commit(repo, "src/quiz.js", "export const score = () => 0;\n");
+
+  const rows = Array.from(
+    { length: 8000 },
+    (_, index) => `  { "id": ${index}, "rationale": "${"x".repeat(80)}" }`
+  );
+  fs.writeFileSync(path.join(repo, "data", "questions.json"), `[\n${rows.join(",\n")}\n]\n`);
+  fs.writeFileSync(path.join(repo, "src", "quiz.js"), "export const score = () => 1;\n");
+
+  const result = run("node", [SCRIPT, "review", "--scope", "working-tree", "--json"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.truncation.truncated, true);
+  assert.equal(payload.truncation.truncatedFiles.includes("data/questions.json"), true);
+  assert.equal(payload.truncation.modelVerdict, "approve", "the engine's own verdict must be preserved");
+  assert.equal(payload.result.verdict, "needs-attention", "a partial review was recorded as approve");
+
+  const rendered = run("node", [SCRIPT, "review", "--scope", "working-tree"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+  assert.match(rendered.stdout, /Review input was truncated/);
+  assert.match(rendered.stdout, /data\/questions\.json/);
 });
 
 test("review honors --base over the dirty-tree auto default", () => {
@@ -671,16 +720,96 @@ test("task surfaces a failed gemini turn as a non-zero exit", () => {
   assert.notEqual(result.status, 0);
   assert.match(`${result.stdout}${result.stderr}`, /simulated failure/i);
 
-  const state = JSON.parse(fs.readFileSync(path.join(resolveStateDir(repo), "state.json"), "utf8"));
-  assert.equal(state.jobs[0].status, "failed");
-  assert.equal(state.jobs[0].failure.category, "no-output");
-  assert.equal(typeof state.jobs[0].failure.nextStep, "string");
+  const jobs = storedJobs(repo);
+  assert.equal(jobs[0].status, "failed");
+  assert.equal(jobs[0].failure.category, "no-output");
+  assert.equal(typeof jobs[0].failure.nextStep, "string");
 
   const status = JSON.parse(run("node", [SCRIPT, "status", "--json"], { cwd: repo, env: buildEnv(binDir) }).stdout);
   assert.equal(status.latestFinished.failure.category, "no-output");
 
-  const stored = JSON.parse(run("node", [SCRIPT, "result", state.jobs[0].id, "--json"], { cwd: repo, env: buildEnv(binDir) }).stdout);
+  const stored = JSON.parse(run("node", [SCRIPT, "result", jobs[0].id, "--json"], { cwd: repo, env: buildEnv(binDir) }).stdout);
   assert.equal(stored.storedJob.failure.category, "no-output");
+});
+
+// The defect this pins: `parseArgs` keeps an unrecognized `--flag` as a
+// positional, and `task` reads its positionals as the prompt — so `task --help`
+// was sent to the model, which answered it with a plausible AGY tutorial. A
+// billed turn for the most natural first thing anyone types at a new CLI, and
+// the answer looks reasonable enough that the user may not notice they never
+// got the plugin's usage.
+test("`task --help` prints usage instead of spending a turn on it", () => {
+  const { repo, binDir } = setupRepo("task");
+  commit(repo, "README.md", "hello\n");
+
+  for (const flag of ["--help", "-h"]) {
+    const result = run("node", [SCRIPT, "task", flag], { cwd: repo, env: buildEnv(binDir) });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /^Usage:/);
+    assert.match(result.stdout, /gemini-companion\.mjs task /);
+    assert.ok(
+      !fs.existsSync(path.join(binDir, "fake-gemini-state.json")),
+      `${flag} reached the engine`
+    );
+  }
+});
+
+test("a leading unknown flag is an error, not prompt text", () => {
+  const { repo, binDir } = setupRepo("task");
+  commit(repo, "README.md", "hello\n");
+
+  const result = run("node", [SCRIPT, "task", "--verbose"], { cwd: repo, env: buildEnv(binDir) });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Unknown option "--verbose"/);
+  assert.ok(
+    !fs.existsSync(path.join(binDir, "fake-gemini-state.json")),
+    "an unknown flag was still delegated to the engine"
+  );
+});
+
+test("`--` still delivers a prompt that starts with a dash", () => {
+  const { repo, binDir } = setupRepo("task");
+  commit(repo, "README.md", "hello\n");
+
+  const result = run("node", [SCRIPT, "task", "--", "--help"], { cwd: repo, env: buildEnv(binDir) });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFakeState(binDir).lastInvocation.prompt.trim(), "--help");
+});
+
+// Only a leading flag is judged. A slash command arrives as one string that
+// gets split on whitespace, so any `--word` a user writes mid-sentence becomes
+// its own token; rejecting those would turn "explain what --foo does" into a
+// hard error. The narrow rule is what keeps the fix from costing more than the
+// bug it removes.
+test("a flag-like word inside a prompt is still prompt text", () => {
+  const { repo, binDir } = setupRepo("task");
+  commit(repo, "README.md", "hello\n");
+
+  const result = run("node", [SCRIPT, "task", "explain what --nonexistent does"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFakeState(binDir).lastInvocation.prompt.trim(), "explain what --nonexistent does");
+});
+
+test("adversarial-review --help does not become focus text", () => {
+  const { repo, binDir } = setupRepo("review-clean");
+  commit(repo, "src/app.js", "export const value = 1;\n");
+  fs.writeFileSync(path.join(repo, "src", "app.js"), "export const value = 2;\n");
+
+  const result = run("node", [SCRIPT, "adversarial-review", "--help"], { cwd: repo, env: buildEnv(binDir) });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^Usage:/);
+  assert.ok(
+    !fs.existsSync(path.join(binDir, "fake-gemini-state.json")),
+    "--help reached the engine as focus text"
+  );
 });
 
 test("task rejects an unknown engine", () => {
@@ -719,7 +848,7 @@ test("AGY 1.1.2 task sends a long prompt only on stdin and keeps transcript auth
   assert.equal(capture.stdin, marker);
   assert.ok(!capture.args.includes("--print"));
   assert.ok(!capture.args.includes(marker));
-  assert.deepEqual(capture.args.slice(-2), ["--print-timeout", "2m"]);
+  assert.deepEqual(capture.args.slice(-2), ["--print-timeout", "105s"]);
 });
 
 // --- AGY >=1.1.8 structured output supersedes transcript recovery ---
@@ -759,8 +888,8 @@ test("AGY 1.1.10 task takes the response and conversation id from the stdout env
 
   // The foreground command prints only the final message; the conversation id
   // is persisted on the job and surfaced by /gemini:status.
-  const state = JSON.parse(fs.readFileSync(path.join(resolveStateDir(repo), "state.json"), "utf8"));
-  assert.equal(state.jobs[0].threadId, "11111111-2222-3333-4444-555555555555");
+  const jobs = storedJobs(repo);
+  assert.equal(jobs[0].threadId, "11111111-2222-3333-4444-555555555555");
 
   const capture = JSON.parse(fs.readFileSync(capturePath, "utf8"));
   assert.ok(capture.args.includes("--output-format"), "1.1.10 must request the JSON envelope");
@@ -863,9 +992,9 @@ test("task preserves AGY stderr when no transcript response is recoverable", () 
   assert.notEqual(result.status, 0);
   assert.match(`${result.stdout}${result.stderr}`, expectedStderr);
 
-  const state = JSON.parse(fs.readFileSync(path.join(resolveStateDir(repo), "state.json"), "utf8"));
-  assert.equal(state.jobs[0].status, "failed");
-  assert.equal(state.jobs[0].failure.category, EXPECTED_FAILING_AGY_CATEGORY);
+  const jobs = storedJobs(repo);
+  assert.equal(jobs[0].status, "failed");
+  assert.equal(jobs[0].failure.category, EXPECTED_FAILING_AGY_CATEGORY);
 });
 
 test("AGY failure classification prefers actionable stderr over transcript recovery failure", () => {
@@ -895,9 +1024,9 @@ test("review preserves AGY stderr when no transcript response is recoverable", (
   assert.notEqual(result.status, 0);
   assert.match(`${result.stdout}${result.stderr}`, expectedStderr);
 
-  const state = JSON.parse(fs.readFileSync(path.join(resolveStateDir(repo), "state.json"), "utf8"));
-  assert.equal(state.jobs[0].status, "failed");
-  assert.equal(state.jobs[0].failure.category, EXPECTED_FAILING_AGY_CATEGORY);
+  const jobs = storedJobs(repo);
+  assert.equal(jobs[0].status, "failed");
+  assert.equal(jobs[0].failure.category, EXPECTED_FAILING_AGY_CATEGORY);
 });
 
 test("dispatchAdversarialReview queues prompt-identical blind jobs with a shared groupId", () => {
@@ -1403,8 +1532,8 @@ test("cancel stops an active job and marks it cancelled", async (t) => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).status, "cancelled");
 
-  const state = JSON.parse(fs.readFileSync(path.join(resolveStateDir(workspace), "state.json"), "utf8"));
-  assert.equal(state.jobs.find((job) => job.id === "task-live").status, "cancelled");
+  const jobs = storedJobs(workspace);
+  assert.equal(jobs.find((job) => job.id === "task-live").status, "cancelled");
 });
 
 test("cancel is honest when there is no live process to terminate", () => {
@@ -1433,8 +1562,8 @@ test("cancel is honest when there is no live process to terminate", () => {
   assert.equal(payload.status, "cancelled");
   assert.equal(payload.processTerminated, false);
 
-  const state = JSON.parse(fs.readFileSync(path.join(resolveStateDir(workspace), "state.json"), "utf8"));
-  assert.equal(state.jobs.find((job) => job.id === "task-stale").status, "cancelled");
+  const jobs = storedJobs(workspace);
+  assert.equal(jobs.find((job) => job.id === "task-stale").status, "cancelled");
 });
 
 test("task-resume-candidate returns the latest completed task thread", () => {

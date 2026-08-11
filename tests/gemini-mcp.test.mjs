@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
@@ -6,6 +7,7 @@ import test from "node:test";
 import { handleRequest } from "../plugins/gemini/scripts/gemini-mcp.mjs";
 import { dispatchBackgroundTask } from "../plugins/gemini/scripts/gemini-companion.mjs";
 import { readStoredJob } from "../plugins/gemini/scripts/lib/job-control.mjs";
+import { writeJobFile } from "../plugins/gemini/scripts/lib/state.mjs";
 import { initGitRepo, makeTempDir } from "./helpers.mjs";
 
 function toolRequest(name, args) {
@@ -168,6 +170,94 @@ test("handleRequest delegates job status, result, and cancel without reading sta
   }
   assert.deepEqual(calls.map(([kind]) => kind), ["status", "result", "cancel"]);
   assert.ok(calls.every(([, input]) => input.cwd === path.resolve(workspace) && input.jobId === "job-1"));
+});
+
+// The defect this pins: the MCP server is launched from .mcp.json and never
+// receives GEMINI_COMPANION_SESSION_ID, so the session filter admitted only jobs
+// carrying no session id — the ones this server queued itself. Every job queued
+// by the CLI or a slash command was therefore reachable through
+// gemini_job_status but reported `No job found` from gemini_job_result and
+// gemini_job_cancel. Always, not intermittently.
+test("the MCP job tools reach a job the CLI tagged with a Claude session id", async (t) => {
+  const workspace = makeTempDir();
+  const dataDir = makeTempDir();
+  initGitRepo(workspace);
+
+  // A live worker pid, so the active job is not reconciled to `failed` as stale
+  // before gemini_job_cancel gets to it — that reconcile is correct behaviour
+  // and would hide whether cancel can resolve the job at all.
+  const sleeper = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+    cwd: workspace,
+    detached: true,
+    stdio: "ignore"
+  });
+  sleeper.unref();
+  t.after(() => {
+    try {
+      process.kill(sleeper.pid);
+    } catch {
+      // already gone
+    }
+  });
+
+  const previous = {
+    data: process.env.GEMINI_COMPANION_DATA,
+    session: process.env.GEMINI_COMPANION_SESSION_ID
+  };
+  process.env.GEMINI_COMPANION_DATA = dataDir;
+  delete process.env.GEMINI_COMPANION_SESSION_ID;
+
+  // Fresh, not a fixed date: an active job older than the 6-hour stale
+  // threshold is reconciled to `failed` before cancel sees it, which would make
+  // this test rot into a false pass the day after it was written.
+  const now = new Date().toISOString();
+  const base = {
+    jobClass: "task",
+    kind: "task",
+    title: "Gemini Task",
+    workspaceRoot: workspace,
+    sessionId: "session-from-another-process",
+    createdAt: now,
+    updatedAt: now
+  };
+
+  try {
+    writeJobFile(workspace, "task-finished", {
+      ...base,
+      id: "task-finished",
+      status: "completed",
+      phase: "done",
+      result: { rawOutput: "the output the user paid for" },
+      rendered: "the output the user paid for"
+    });
+    writeJobFile(workspace, "task-active", {
+      ...base,
+      id: "task-active",
+      status: "running",
+      phase: "running",
+      startedAt: now,
+      pid: sleeper.pid
+    });
+
+    const status = await handleRequest(toolRequest("gemini_job_status", { workspace, jobId: "task-finished" }));
+    assert.equal(status.isError, undefined, status.content?.[0]?.text);
+    assert.equal(status.structuredContent.job.id, "task-finished");
+
+    const result = await handleRequest(toolRequest("gemini_job_result", { workspace, jobId: "task-finished" }));
+    assert.equal(result.isError, undefined, result.content?.[0]?.text);
+    assert.equal(result.structuredContent.storedJob.rendered, "the output the user paid for");
+
+    const cancelled = await handleRequest(toolRequest("gemini_job_cancel", { workspace, jobId: "task-active" }));
+    assert.equal(cancelled.isError, undefined, cancelled.content?.[0]?.text);
+    assert.equal(cancelled.structuredContent.status, "cancelled");
+  } finally {
+    if (previous.data === undefined) delete process.env.GEMINI_COMPANION_DATA;
+    else process.env.GEMINI_COMPANION_DATA = previous.data;
+    if (previous.session !== undefined) process.env.GEMINI_COMPANION_SESSION_ID = previous.session;
+    // The temp directories are left for the OS, as the rest of this suite does.
+    // The sleeper still holds `workspace` as its cwd until t.after kills it, and
+    // Windows refuses to remove a directory a live process is sitting in.
+  }
 });
 
 test("handleRequest returns MCP tool errors for invalid arguments", async () => {

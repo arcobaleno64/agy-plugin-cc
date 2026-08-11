@@ -33,15 +33,36 @@ const STATE_FILE_NAME = "state.json";
 const JOBS_DIR_NAME = "jobs";
 const MAX_JOBS = 50;
 
+// Windows refuses to rename onto a path another process holds open, raising
+// EPERM/EBUSY/EACCES where POSIX simply succeeds. Every writer here is a
+// detached worker racing its siblings, so a bare renameSync failed whole jobs
+// on the plugin's most-used path. Retry briefly instead of surfacing a platform
+// sharing conflict as a job failure. Bounded: a genuine permission problem
+// still throws, it just throws ~250 ms later.
+const RENAME_RETRY_ATTEMPTS = 50;
+const RENAME_RETRY_DELAY_MS = 5;
+const SHARING_ERROR_CODES = new Set(["EPERM", "EBUSY", "EACCES"]);
+
 function nowIso() {
   return new Date().toISOString();
 }
 
+// state.json holds configuration only. It used to also hold the job index — a
+// single array that every detached worker loaded, mutated and rewrote — which
+// could not survive concurrency: the last writer's snapshot won, so a sibling's
+// job silently vanished from the index (`/gemini:result` then reported "No job
+// found" for a job whose record and output were sitting on disk), and the
+// pruning step deleted the artifacts of any job missing from that stale
+// snapshot. Measured on Windows at 6 concurrent jobs: up to 4 of 6 job records
+// and logs destroyed per run, with EPERM absent from the run entirely.
+//
+// The jobs/ directory is now the index. Each job owns exactly one file, written
+// only by the process that owns that job, so there is no shared mutable list to
+// lose an update on and nothing a sibling can delete.
 function defaultState() {
   return {
     version: STATE_VERSION,
-    config: {},
-    jobs: []
+    config: {}
   };
 }
 
@@ -74,37 +95,55 @@ export function ensureStateDir(cwd) {
   fs.mkdirSync(resolveJobsDir(cwd), { recursive: true });
 }
 
-export function loadState(cwd) {
-  const stateFile = resolveStateFile(cwd);
+function readStateDirFile(stateDir) {
+  const stateFile = path.join(stateDir, STATE_FILE_NAME);
   if (!fs.existsSync(stateFile)) {
-    return defaultState();
+    return null;
   }
-
   try {
-    const parsed = JSON.parse(fs.readFileSync(stateFile, "utf8"));
-    return {
-      ...defaultState(),
-      ...parsed,
-      config: {
-        ...defaultState().config,
-        ...(parsed.config ?? {})
-      },
-      jobs: Array.isArray(parsed.jobs) ? parsed.jobs : []
-    };
+    return JSON.parse(fs.readFileSync(stateFile, "utf8"));
   } catch {
-    return defaultState();
+    return null;
   }
 }
 
-function pruneJobs(jobs) {
-  return [...jobs]
-    .sort((left, right) => String(right.updatedAt ?? "").localeCompare(String(left.updatedAt ?? "")))
-    .slice(0, MAX_JOBS);
+export function loadState(cwd) {
+  const parsed = readStateDirFile(resolveStateDir(cwd));
+  if (!parsed) {
+    return defaultState();
+  }
+  return {
+    version: STATE_VERSION,
+    config: {
+      ...defaultState().config,
+      ...(parsed.config ?? {})
+    }
+  };
 }
 
 function removeFileIfExists(filePath) {
   if (filePath && fs.existsSync(filePath)) {
     fs.unlinkSync(filePath);
+  }
+}
+
+function sleepMs(ms) {
+  // Synchronous by necessity: every caller here is a sync fs path reached from
+  // both the CLI and detached workers.
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function renameWithRetry(tempFile, filePath) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      fs.renameSync(tempFile, filePath);
+      return;
+    } catch (error) {
+      if (!SHARING_ERROR_CODES.has(error?.code) || attempt >= RENAME_RETRY_ATTEMPTS) {
+        throw error;
+      }
+      sleepMs(RENAME_RETRY_DELAY_MS);
+    }
   }
 }
 
@@ -116,7 +155,7 @@ function atomicWriteJson(filePath, payload) {
   );
   try {
     fs.writeFileSync(tempFile, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
-    fs.renameSync(tempFile, filePath);
+    renameWithRetry(tempFile, filePath);
   } catch (error) {
     removeFileIfExists(tempFile);
     throw error;
@@ -124,27 +163,14 @@ function atomicWriteJson(filePath, payload) {
 }
 
 export function saveState(cwd, state) {
-  const previousJobs = loadState(cwd).jobs;
   ensureStateDir(cwd);
-  const nextJobs = pruneJobs(state.jobs ?? []);
   const nextState = {
     version: STATE_VERSION,
     config: {
       ...defaultState().config,
       ...(state.config ?? {})
-    },
-    jobs: nextJobs
-  };
-
-  const retainedIds = new Set(nextJobs.map((job) => job.id));
-  for (const job of previousJobs) {
-    if (retainedIds.has(job.id)) {
-      continue;
     }
-    removeJobFile(resolveJobFile(cwd, job.id));
-    removeFileIfExists(job.logFile);
-  }
-
+  };
   atomicWriteJson(resolveStateFile(cwd), nextState);
   return nextState;
 }
@@ -160,28 +186,125 @@ export function generateJobId(prefix = "job") {
   return `${prefix}-${Date.now().toString(36)}-${random}`;
 }
 
+// Merge a patch into the job's own file. Nothing else is touched, so two
+// workers patching two different jobs cannot interfere at all, and a worker
+// patching its own job is the only writer of that file.
 export function upsertJob(cwd, jobPatch) {
-  return updateState(cwd, (state) => {
-    const timestamp = nowIso();
-    const existingIndex = state.jobs.findIndex((job) => job.id === jobPatch.id);
-    if (existingIndex === -1) {
-      state.jobs.unshift({
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        ...jobPatch
-      });
-      return;
+  ensureStateDir(cwd);
+  const jobFile = resolveJobFile(cwd, jobPatch.id);
+  const existing = fs.existsSync(jobFile) ? readJobFile(jobFile) : null;
+  const timestamp = nowIso();
+  const next = existing
+    ? { ...existing, ...jobPatch, updatedAt: timestamp }
+    : { createdAt: timestamp, ...jobPatch, updatedAt: timestamp };
+  atomicWriteJson(jobFile, next);
+  return next;
+}
+
+// The listed form of a job. `result` and `rendered` are the job's output, which
+// only `/gemini:result` reads (through readStoredJob); withholding them here
+// keeps `/gemini:status --json` the size and shape it has always been, now that
+// the listing reads the full record rather than a summary index.
+function toIndexEntry(job) {
+  const { result, rendered, ...entry } = job;
+  return entry;
+}
+
+// One-time upgrade path: releases through v0.16.7 kept the job list inside
+// state.json. Materialize any such entry that has no file of its own, then drop
+// the array, so a user's existing jobs survive the upgrade instead of
+// disappearing the moment the listing stops reading state.json.
+function migrateLegacyJobIndex(cwd, stateDir) {
+  const parsed = readStateDirFile(stateDir);
+  const legacyJobs = Array.isArray(parsed?.jobs) ? parsed.jobs : [];
+  if (legacyJobs.length === 0) {
+    return;
+  }
+  const jobsDir = path.join(stateDir, JOBS_DIR_NAME);
+  for (const job of legacyJobs) {
+    const jobFile = path.join(jobsDir, `${job?.id}.json`);
+    if (!job?.id || fs.existsSync(jobFile)) {
+      continue;
     }
-    state.jobs[existingIndex] = {
-      ...state.jobs[existingIndex],
-      ...jobPatch,
-      updatedAt: timestamp
-    };
-  });
+    atomicWriteJson(jobFile, job);
+  }
+  saveState(cwd, { config: parsed.config ?? {} });
+}
+
+// null when the file vanished; a failed-job stub for any other read error, which
+// is the existing fail-closed behaviour and must stay — an unreadable file is a
+// job whose fate is unknown, and reporting it is the point.
+// Reads rather than stat-then-reads: an existsSync guard would lose the same
+// race one instruction later.
+function readJobEntry(jobFile) {
+  try {
+    return toIndexEntry(JSON.parse(fs.readFileSync(jobFile, "utf8")));
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    return toIndexEntry(readJobFile(jobFile));
+  }
 }
 
 export function listJobs(cwd) {
-  return loadState(cwd).jobs;
+  // resolveStateDir shells out to git to find the workspace root, so resolve it
+  // once for the whole call. `/gemini:status --wait` polls this every two
+  // seconds, and the migration check plus the directory scan used to resolve it
+  // separately — two process spawns per poll where the old shared index cost one.
+  const stateDir = resolveStateDir(cwd);
+  migrateLegacyJobIndex(cwd, stateDir);
+  const jobsDir = path.join(stateDir, JOBS_DIR_NAME);
+
+  let entries;
+  try {
+    entries = fs.readdirSync(jobsDir);
+  } catch {
+    return [];
+  }
+
+  return entries
+    .filter((name) => name.endsWith(".json"))
+    // A job deleted between the readdir and the read is gone, not corrupt.
+    // readJobFile fails closed on every error, so without this an entry that
+    // pruneJobStore or the SessionEnd sweep removed mid-scan surfaced as a
+    // phantom `failed` job with an `invalid-json` cause — and counted toward
+    // MAX_JOBS. `/gemini:status --wait` polls this every two seconds, so it
+    // races both deleters routinely.
+    .map((name) => readJobEntry(path.join(jobsDir, name)))
+    .filter((job) => job !== null)
+    .sort((left, right) => String(right.updatedAt ?? "").localeCompare(String(left.updatedAt ?? "")));
+}
+
+function removeJobArtifacts(jobsDir, job) {
+  removeFileIfExists(path.join(jobsDir, `${job.id}.json`));
+  removeFileIfExists(job.logFile);
+}
+
+export function removeJobs(cwd, predicate) {
+  const removed = listJobs(cwd).filter((job) => predicate(job));
+  const jobsDir = path.join(resolveStateDir(cwd), JOBS_DIR_NAME);
+  for (const job of removed) {
+    removeJobArtifacts(jobsDir, job);
+  }
+  return removed;
+}
+
+// Bound the store at MAX_JOBS, deciding from what is on disk right now rather
+// than from any caller's snapshot — the stale-snapshot version of this deleted
+// live siblings. An unfinished job is never a candidate no matter how far down
+// the list it sorts: its worker is still writing to those files.
+export function pruneJobStore(cwd, { keepId = null } = {}) {
+  const jobs = listJobs(cwd);
+  if (jobs.length <= MAX_JOBS) {
+    return [];
+  }
+  const evictable = jobs
+    .slice(MAX_JOBS)
+    .filter((job) => job.id !== keepId && job.status !== "queued" && job.status !== "running");
+  const jobsDir = path.join(resolveStateDir(cwd), JOBS_DIR_NAME);
+  for (const job of evictable) {
+    removeJobArtifacts(jobsDir, job);
+  }
+  return evictable;
 }
 
 export function setConfig(cwd, key, value) {
@@ -200,7 +323,13 @@ export function getConfig(cwd) {
 export function writeJobFile(cwd, jobId, payload) {
   ensureStateDir(cwd);
   const jobFile = resolveJobFile(cwd, jobId);
+  // Prune once per job, when its file first appears. Doing it on every write
+  // would rescan the directory four times per job for no gain.
+  const isNewJob = !fs.existsSync(jobFile);
   atomicWriteJson(jobFile, payload);
+  if (isNewJob) {
+    pruneJobStore(cwd, { keepId: jobId });
+  }
   return jobFile;
 }
 
@@ -222,12 +351,6 @@ export function readJobFile(jobFile) {
         nextStep: "Run `/gemini:status` to reconcile the failed job, then retry the command if needed."
       })
     };
-  }
-}
-
-function removeJobFile(jobFile) {
-  if (fs.existsSync(jobFile)) {
-    fs.unlinkSync(jobFile);
   }
 }
 

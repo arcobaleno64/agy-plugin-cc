@@ -124,6 +124,19 @@ export function supportsAgyStructuredOutput(version) {
   return agyVersionAtLeast(version, 1, 8);
 }
 
+// AGY 1.1.11 answers the read-only slash commands (`/usage`, `/quota`,
+// `/credits`, `/model`, `/effort`, `/skills`) in print mode without starting an
+// agent turn, spending quota, or leaving a conversation behind. That is what
+// makes a non-interactive AGY auth check possible at all: `/quota` needs the
+// account to answer, so a SUCCESS envelope proves authentication, and measured
+// on 1.1.11 it reports `num_turns: 0` with every token count at zero.
+//
+// Below 1.1.11 the same input is sent to the model as literal prompt text, so
+// the probe would cost a real turn and prove nothing. Gate on the version.
+export function supportsAgyReadOnlySlashCommands(version) {
+  return agyVersionAtLeast(version, 1, 11);
+}
+
 // --add-dir puts a directory in AGY's workspace, which is what makes the model
 // treat it as "here". Without it a read-only turn reports its cwd as
 // ~/.gemini/antigravity-cli/scratch and every relative path misses — measured on
@@ -209,10 +222,18 @@ export function detectEngine(requestedEngine = null, options = {}) {
   throw new Error("No Gemini or AGY engine found. Install either supported engine and retry.");
 }
 
-function formatAgyTimeout(timeoutMs) {
+// AGY parses this with Go's duration syntax (its own default prints as `5m0s`),
+// so seconds are accepted and are the only unit fine-grained enough to express
+// the flush grace window. Rounding up to whole minutes silently defeated it: the
+// 105,000 ms window `runGeminiTurn` computes became `2m`, exactly the 120,000 ms
+// hard kill it was supposed to land 15 seconds ahead of. AGY was therefore
+// SIGKILLed rather than self-terminating, which is why a timed-out structured
+// run has empty stdout and no envelope to read.
+//
+// Verified against AGY 1.1.11 (2026-08-11): `--print-timeout 105s` is accepted.
+export function formatAgyTimeout(timeoutMs) {
   if (!timeoutMs || timeoutMs <= 0) return null;
-  const minutes = Math.max(1, Math.ceil(timeoutMs / 60000));
-  return `${minutes}m`;
+  return `${Math.max(1, Math.round(timeoutMs / 1000))}s`;
 }
 
 function assertAgyPromptSafe(prompt) {

@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 
-import { buildCliArgs, detectEngine, mapEffortToModel, normalizeAgyEffort, normalizeAgyRequestedModel, normalizeRequestedModel, supportsAgyModelSelection, supportsAgyStdinPrompt, supportsAgyStructuredOutput } from "./engine.mjs";
+import { buildCliArgs, detectEngine, formatAgyTimeout, mapEffortToModel, normalizeAgyEffort, normalizeAgyRequestedModel, normalizeRequestedModel, supportsAgyModelSelection, supportsAgyReadOnlySlashCommands, supportsAgyStdinPrompt, supportsAgyStructuredOutput } from "./engine.mjs";
 import { classifyCliFailure } from "./failures.mjs";
 import { binaryAvailable, runCommand } from "./process.mjs";
 import { resolveAgyBrainRoot, listConvDirs, recoverAgyResponse } from "./agy-transcript.mjs";
@@ -14,7 +14,41 @@ const DEFAULT_SPAWN_TIMEOUT_MS = 600_000; // 10 minutes (gemini)
 // hang silently. Cap AGY far shorter so the plugin fails fast instead. This also
 // feeds AGY's own `--print-timeout` via buildCliArgs.
 const AGY_SPAWN_TIMEOUT_MS = 120_000; // 2 minutes
+// How much earlier AGY's own --print-timeout lands, so it self-terminates and
+// flushes its final transcript row before spawnSync SIGKILLs it.
+const AGY_FLUSH_GRACE_MS = 15_000;
 const MAX_BUFFER = 50 * 1024 * 1024; // 50 MB
+
+// `--timeout <seconds>`. AGY's 2-minute default is this plugin's, not AGY's
+// (AGY itself defaults --print-timeout to 5m): it was chosen to fail fast when
+// `agy --print` returned nothing over a pipe, and it doubles as a hard ceiling
+// on output size, since a turn producing more than it can emit in two minutes is
+// killed with nothing to show. A user batching work has no way to raise it and
+// no signal that size is what they are hitting.
+//
+// Bounded rather than free: below 30s no engine finishes, and the upper bound
+// keeps a wedged background job inside the 6-hour stale-job reconcile.
+export const MIN_TURN_TIMEOUT_SECONDS = 30;
+export const MAX_TURN_TIMEOUT_SECONDS = 3600;
+
+export function resolveSpawnTimeoutMs(engine, requestedSeconds = null) {
+  if (requestedSeconds != null) {
+    return Number(requestedSeconds) * 1000;
+  }
+  return engine === "agy" ? AGY_SPAWN_TIMEOUT_MS : DEFAULT_SPAWN_TIMEOUT_MS;
+}
+
+// The grace window has to scale with the timeout, not sit at a fixed 15s: at the
+// documented minimum (`--timeout 30`) a flat subtraction floored at 30s left
+// --print-timeout equal to the spawn timeout, so AGY's self-terminate landed on
+// the same tick as spawnSync's SIGKILL and it was killed with empty stdout —
+// exactly the failure the minute-rounding in formatAgyTimeout used to cause.
+// Capping the grace at a quarter of the budget keeps the full 15s for every
+// timeout above a minute while still leaving a real window below it.
+export function resolveAgyPrintTimeoutMs(spawnTimeoutMs) {
+  const grace = Math.min(AGY_FLUSH_GRACE_MS, Math.floor(spawnTimeoutMs / 4));
+  return Math.max(1_000, spawnTimeoutMs - grace);
+}
 
 // Stable GA model served by every gemini CLI we target (verified on 0.44.1). Used
 // as the graceful-degradation target when a requested model id is not found.
@@ -129,8 +163,16 @@ export function tryParseJsonFromText(text) {
 // AGY >=1.1.8 emits one JSON envelope on stdout:
 //   {conversation_id, status: "SUCCESS"|"ERROR", response, error?, duration_seconds,
 //    num_turns, usage{...}}
-// Anything else on this path is a malformed run, not a reason to fall back to the
-// transcript — the version already promised an envelope.
+// Unparseable output on this path is a malformed run, not a reason to fall back
+// to the transcript — the version already promised an envelope.
+//
+// That reasoning holds for output that arrived and made no sense. It does not
+// cover output that never arrived: when the hard spawn timeout SIGKILLs agy,
+// stdout is *empty*, and "the version promised an envelope" says nothing about a
+// process that was killed before it could print one. The turn ran and was
+// billed, and its response is on disk in the transcript. So an empty stdout —
+// and only an empty one — now falls back to the recovery the pre-1.1.8 path
+// already performs. See resolveAgyStructuredResult.
 function readAgyEnvelope(rawStdout) {
   const parsed = tryParseJsonFromText(rawStdout);
   if (!parsed || typeof parsed !== "object") return null;
@@ -148,11 +190,47 @@ function readAgyEnvelope(rawStdout) {
 
 // Shared by the task and review paths: turns the envelope into the neutral pieces
 // both need. The caller decides what to do with `text`.
-function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, engineInfo }) {
+function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, engineInfo, brainRoot = null, conversationsBefore = null }) {
   const envelope = readAgyEnvelope(rawStdout);
   const failedExit = exitCode === 0 ? 1 : exitCode;
 
   if (!envelope) {
+    // Empty stdout, not merely unparseable stdout: agy was killed before it
+    // could print. The turn still ran and was still billed, and agy writes its
+    // response to the transcript as it goes, so that file is the only surviving
+    // copy — the pre-1.1.8 path already knows how to read it. Output that did
+    // arrive and failed to parse is a malformed run and keeps failing, because
+    // there the promise of an envelope really was broken.
+    const killedBeforePrinting = !String(rawStdout).trim();
+    const recovered = brainRoot && killedBeforePrinting ? recoverAgyResponse(brainRoot, conversationsBefore) : null;
+    if (recovered?.response) {
+      if (!recovered.confident) {
+        process.stderr.write(
+          `[gemini-companion] Warning: AGY returned no envelope and the recovered transcript match is not certain (${recovered.reason}). Verify the response corresponds to this run.\n`
+        );
+      }
+      return {
+        text: String(recovered.response).trim(),
+        threadId: recovered.convDir ?? null,
+        // A completed transcript row means the work finished even though the
+        // envelope never made it out; an incomplete one is partial output, which
+        // is worth returning but not worth calling success.
+        exitCode: recovered.done ? 0 : failedExit,
+        failure: recovered.done
+          ? (recovered.failure ?? null)
+          : classifyCliFailure({
+              engine: engineInfo.engine,
+              status: failedExit,
+              signal: result.signal,
+              error: result.error,
+              stdout: rawStdout,
+              stderr: rawStderr,
+              transcriptReason: recovered.reason
+            }),
+        recoveredFromTranscript: true
+      };
+    }
+
     return {
       text: null,
       threadId: null,
@@ -199,7 +277,7 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
 // a fixture there cannot report a chosen version, and spawn-driven tests cost
 // ~150s per suite against ~0.2s for direct calls.
 export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runCommand, detectEngineFn = detectEngine } = {}) {
-  const { prompt, effort: requestedEffort, write = true, resumeLast = false, engine: requestedEngine, onProgress } = options;
+  const { prompt, effort: requestedEffort, write = true, resumeLast = false, engine: requestedEngine, timeoutSeconds = null, onProgress } = options;
   let { model } = options;
   let effort = requestedEffort;
 
@@ -228,22 +306,25 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
     || (engineInfo.engine === "agy" && supportsAgyStdinPrompt(engineInfo.version));
   const agyStructured = engineInfo.engine === "agy" && supportsAgyStructuredOutput(engineInfo.version);
   const useJson = engineInfo.engine === "gemini" || agyStructured;
-  const spawnTimeoutMs = engineInfo.engine === "agy" ? AGY_SPAWN_TIMEOUT_MS : DEFAULT_SPAWN_TIMEOUT_MS;
+  const spawnTimeoutMs = resolveSpawnTimeoutMs(engineInfo.engine, timeoutSeconds);
 
   // AGY >=1.1.8 returns the response, conversation id, and terminal status in a
-  // stdout envelope. Older versions surface none of them reliably, so those runs
-  // snapshot the conversation dirs BEFORE the spawn to identify the new one
-  // afterwards. Give agy's own --print-timeout a shorter window than the hard
-  // spawn kill either way, so agy self-terminates and flushes before SIGKILL.
+  // stdout envelope. Older versions surface none of them reliably, so they need
+  // the conversation dirs snapshotted BEFORE the spawn to identify the new one
+  // afterwards.
+  //
+  // Structured runs snapshot too, even though they normally never read it: when
+  // the envelope is missing the turn has still run and been billed, and the
+  // transcript on disk is the only remaining copy of what it produced. Costs one
+  // readdir. Give agy's own --print-timeout a shorter window than the hard spawn
+  // kill either way, so agy self-terminates and flushes before SIGKILL.
   let agyBrainRoot = null;
   let agyBefore = null;
   let agyPrintTimeoutMs = spawnTimeoutMs;
   if (engineInfo.engine === "agy") {
-    if (!agyStructured) {
-      agyBrainRoot = resolveAgyBrainRoot();
-      agyBefore = listConvDirs(agyBrainRoot);
-    }
-    agyPrintTimeoutMs = Math.max(30_000, AGY_SPAWN_TIMEOUT_MS - 15_000);
+    agyBrainRoot = resolveAgyBrainRoot();
+    agyBefore = listConvDirs(agyBrainRoot);
+    agyPrintTimeoutMs = resolveAgyPrintTimeoutMs(spawnTimeoutMs);
   }
 
   const args = buildCliArgs(engineInfo.engine, {
@@ -303,7 +384,7 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
   let recoveryFailure = null;
 
   if (agyStructured) {
-    const structured = resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, engineInfo });
+    const structured = resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, engineInfo, brainRoot: agyBrainRoot, conversationsBefore: agyBefore });
     exitCode = structured.exitCode;
     recoveryFailure = structured.failure;
     threadId = structured.threadId;
@@ -381,7 +462,7 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
 
 // Same injection seam as runGeminiTurn; see the note there.
 export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCommand, detectEngineFn = detectEngine } = {}) {
-  const { prompt, model: requestedModel, effort: requestedEffort, engine: requestedEngine, isAdversarial = true, onProgress } = options;
+  const { prompt, model: requestedModel, effort: requestedEffort, engine: requestedEngine, isAdversarial = true, timeoutSeconds = null, onProgress } = options;
 
   // Mode-aware label: the standard /review and adversarial /adversarial-review
   // share this runner, so the progress line must reflect the actual mode.
@@ -422,21 +503,20 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
 
   const useStdin = engineInfo.engine === "gemini"
     || (engineInfo.engine === "agy" && supportsAgyStdinPrompt(engineInfo.version));
-  const spawnTimeoutMs = engineInfo.engine === "agy" ? AGY_SPAWN_TIMEOUT_MS : DEFAULT_SPAWN_TIMEOUT_MS;
+  const spawnTimeoutMs = resolveSpawnTimeoutMs(engineInfo.engine, timeoutSeconds);
 
   // AGY >=1.1.8 returns the review in a stdout envelope. Older versions need the
-  // transcript, so those runs snapshot the conversation dirs before the spawn.
+  // transcript, and structured runs snapshot it too so a killed run's already-
+  // billed output can still be recovered (see resolveAgyStructuredResult).
   // Either way, give agy's --print-timeout a grace window shorter than the hard
   // spawn kill so it flushes before SIGKILL.
   let agyBrainRoot = null;
   let agyBefore = null;
   let agyPrintTimeoutMs = spawnTimeoutMs;
   if (engineInfo.engine === "agy") {
-    if (!agyStructured) {
-      agyBrainRoot = resolveAgyBrainRoot();
-      agyBefore = listConvDirs(agyBrainRoot);
-    }
-    agyPrintTimeoutMs = Math.max(30_000, AGY_SPAWN_TIMEOUT_MS - 15_000);
+    agyBrainRoot = resolveAgyBrainRoot();
+    agyBefore = listConvDirs(agyBrainRoot);
+    agyPrintTimeoutMs = resolveAgyPrintTimeoutMs(spawnTimeoutMs);
   }
 
   const args = buildCliArgs(engineInfo.engine, {
@@ -492,7 +572,7 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
   let recoveryFailure = null;
 
   if (agyStructured) {
-    const structured = resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, engineInfo });
+    const structured = resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, engineInfo, brainRoot: agyBrainRoot, conversationsBefore: agyBefore });
     exitCode = structured.exitCode;
     recoveryFailure = structured.failure;
     if (structured.text) {
@@ -660,6 +740,85 @@ export function getAgyLoginStatus() {
     state: "unknown",
     verifiable: false,
     detail: `AGY ${status.detail ?? ""} present; authentication cannot be verified non-interactively. Run \`agy\` once interactively to authenticate or refresh credentials.`.trim(),
+  };
+}
+
+// Non-interactive AGY authentication check. `getAgyLoginStatus` can only report
+// "unknown", which left `/gemini:setup` telling the user to "run an `--engine
+// agy` command to confirm it is logged in" — i.e. to spend a billed turn to
+// learn whether they are logged in, and to read the answer out of whether it
+// failed. This asks AGY a question only an authenticated account can answer and
+// costs nothing: measured on 1.1.11, `num_turns: 0` and every token count zero.
+//
+// Opt-in (`setup --probe-agy`) rather than part of every setup run: it spawns
+// AGY and takes ~5 seconds, and `setup` is otherwise a local inspection.
+export const AGY_PROBE_TIMEOUT_MS = 30_000;
+
+export function probeAgyLogin({ runCommandFn = runCommand, detectEngineFn = detectEngine } = {}) {
+  // detectEngine resolves the binary the way every other AGY call does — on
+  // Windows an absolute .exe spawned with shell:false (CVE-2024-27980), which
+  // also keeps a shell from rewriting the probe's leading `/` into a path.
+  let engineInfo;
+  try {
+    engineInfo = detectEngineFn("agy");
+  } catch {
+    return { loggedIn: false, state: "unavailable", verifiable: false, detail: "AGY binary not found." };
+  }
+
+  const version = engineInfo.version;
+  if (!supportsAgyReadOnlySlashCommands(version)) {
+    return {
+      loggedIn: false,
+      state: "unknown",
+      verifiable: false,
+      detail: `AGY ${version ?? "(unknown version)"} cannot be probed without spending a turn. Read-only slash commands in print mode arrived in AGY 1.1.11; below that, \`/quota\` is sent to the model as prompt text. Upgrade to probe, or run \`agy\` interactively once.`
+    };
+  }
+
+  // Same grace window as a real turn: an equal --print-timeout would have AGY
+  // self-terminate on the tick runCommand kills it, so a slow-but-authenticated
+  // account would come back "unknown" instead of verified.
+  const printTimeout = formatAgyTimeout(resolveAgyPrintTimeoutMs(AGY_PROBE_TIMEOUT_MS));
+  const result = runCommandFn(engineInfo.binary, ["--print-timeout", printTimeout, "-p", "/quota", "--output-format", "json"], {
+    timeout: AGY_PROBE_TIMEOUT_MS,
+    maxBuffer: MAX_BUFFER
+  });
+  const envelope = readAgyEnvelope(stripAnsi(result.stdout ?? ""));
+
+  if (envelope?.status === "SUCCESS") {
+    return {
+      loggedIn: true,
+      state: "verified",
+      verifiable: true,
+      detail: `AGY ${version} answered \`/quota\` from the account, so it is authenticated. No turn was spent.`
+    };
+  }
+
+  // A failure here is not proof of a logout: the probe can also fail on a
+  // network error or a version that answers differently. Say which it was, and
+  // do not upgrade "did not answer" into "not logged in".
+  const reason = envelope?.error ?? String(result.stderr ?? "").trim() ?? "";
+  const failure = classifyCliFailure({
+    engine: "agy",
+    status: result.status,
+    signal: result.signal,
+    error: result.error,
+    stdout: result.stdout,
+    stderr: envelope?.error ?? result.stderr
+  });
+  if (failure.category === "auth") {
+    return {
+      loggedIn: false,
+      state: "logged-out",
+      verifiable: true,
+      detail: `AGY ${version} rejected the \`/quota\` probe as unauthenticated. Run \`agy\` interactively once to sign in.${reason ? ` (${reason})` : ""}`
+    };
+  }
+  return {
+    loggedIn: false,
+    state: "unknown",
+    verifiable: false,
+    detail: `AGY ${version} did not answer the \`/quota\` probe (${failure.category}), so its authentication state is still unknown.${reason ? ` (${reason})` : ""}`
   };
 }
 

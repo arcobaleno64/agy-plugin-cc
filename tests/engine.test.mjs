@@ -148,7 +148,7 @@ test("AGY stdin mode omits --print and prompt while preserving execution flags",
   assert.ok(!args.includes(prompt));
   assert.ok(!args.includes("--dangerously-skip-permissions"));
   assert.ok(args.includes("--new-project"));
-  assert.deepEqual(args.slice(-2), ["--print-timeout", "2m"]);
+  assert.deepEqual(args.slice(-2), ["--print-timeout", "105s"]);
 });
 
 test("AGY forwards an explicit model ID or effort as literal argv", () => {

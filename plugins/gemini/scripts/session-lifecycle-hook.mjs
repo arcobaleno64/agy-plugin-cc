@@ -4,7 +4,7 @@ import fs from "node:fs";
 import process from "node:process";
 
 import { terminateProcessTree } from "./lib/process.mjs";
-import { loadState, resolveStateFile, saveState } from "./lib/state.mjs";
+import { listJobs, removeJobs } from "./lib/state.mjs";
 import { SESSION_ID_ENV } from "./lib/tracked-jobs.mjs";
 import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
 
@@ -35,18 +35,12 @@ function cleanupSessionJobs(cwd, sessionId) {
   }
 
   const workspaceRoot = resolveWorkspaceRoot(cwd);
-  const stateFile = resolveStateFile(workspaceRoot);
-  if (!fs.existsSync(stateFile)) {
+  const sessionJobs = listJobs(workspaceRoot).filter((job) => job.sessionId === sessionId);
+  if (sessionJobs.length === 0) {
     return;
   }
 
-  const state = loadState(workspaceRoot);
-  const removedJobs = state.jobs.filter((job) => job.sessionId === sessionId);
-  if (removedJobs.length === 0) {
-    return;
-  }
-
-  for (const job of removedJobs) {
+  for (const job of sessionJobs) {
     const stillRunning = job.status === "queued" || job.status === "running";
     if (!stillRunning) {
       continue;
@@ -58,10 +52,10 @@ function cleanupSessionJobs(cwd, sessionId) {
     }
   }
 
-  saveState(workspaceRoot, {
-    ...state,
-    jobs: state.jobs.filter((job) => job.sessionId !== sessionId)
-  });
+  // Same jobs this hook has always discarded at session end — named explicitly
+  // now that the store is the jobs/ directory, rather than falling out of a
+  // shared-index rewrite as a side effect.
+  removeJobs(workspaceRoot, (job) => job.sessionId === sessionId);
 }
 
 function handleSessionStart(input) {
