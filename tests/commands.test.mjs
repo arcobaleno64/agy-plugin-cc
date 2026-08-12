@@ -239,3 +239,40 @@ test("setup's argument-hint lists the flags its usage advertises", () => {
     assert.ok(hint.includes(flag), `argument-hint omits ${flag}, so it is undiscoverable`);
   }
 });
+
+// A documented invocation that spends the user's quota must be gated by a
+// question, not by prose asking the model to use restraint. `--probe-gemini`
+// costs a turn when the credential works, and setup.md already mandates
+// AskUserQuestion before the cheaper act of installing an npm package — the
+// expensive one must not be the decision made on the user's behalf.
+test("a quota-spending invocation is gated by AskUserQuestion", () => {
+  for (const file of fs.readdirSync(COMMANDS_DIR).filter((name) => name.endsWith(".md"))) {
+    const source = readCommand(file);
+    const lines = source.split(/\r?\n/);
+    const spendingLine = lines.findIndex((line) => /--probe-gemini/.test(line) && /gemini-companion\.mjs/.test(line));
+    if (spendingLine === -1) continue;
+
+    // Look back over the passage that introduces the invocation, not the whole
+    // file: a mention of AskUserQuestion 80 lines earlier for an unrelated
+    // install prompt would not gate this one.
+    const passage = lines.slice(Math.max(0, spendingLine - 25), spendingLine).join("\n");
+    assert.match(
+      passage,
+      /AskUserQuestion/,
+      `${file} runs --probe-gemini without an AskUserQuestion gate in the surrounding passage`
+    );
+    // Inside a backticked option label, not merely somewhere in the passage: the
+    // prose above already says "it spends a turn", so a looser match was satisfied
+    // by the explanation while the option the user actually clicks said nothing.
+    // Line-scoped because a negated character class still crosses newlines — the
+    // first version of this matched from a backtick two paragraphs up.
+    assert.ok(
+      passage.split(/\r?\n/).some((line) => /`[^`]*spends (a|one) turn[^`]*`/.test(line)),
+      `${file} must put the cost in the option the user picks, not only in the prose`
+    );
+    assert.ok(
+      source.includes("allowed-tools:") && /AskUserQuestion/.test(source.split("---")[1] ?? ""),
+      `${file} must declare AskUserQuestion in allowed-tools for that gate to be usable`
+    );
+  }
+});
