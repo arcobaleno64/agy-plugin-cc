@@ -401,3 +401,66 @@ test("an unreadable job file is still listed as failed", () => {
   assert.equal(corrupt.status, "failed");
   assert.equal(corrupt.failure.category, "invalid-json");
 });
+
+// Eviction deletes results that were already paid for, and it used to do so in
+// complete silence: writeJobFile discarded pruneJobStore's return value, so the
+// 51st job removed the oldest finished result and its log with nothing in the
+// output. "most recent 50 kept" in the README reads as housekeeping, not as "a
+// result you have not read can disappear".
+test("making room for a new job says which finished results it deleted", () => {
+  const workspace = makeTempDir();
+  for (let index = 0; index < 50; index += 1) {
+    seedJobOnDisk(workspace, `job-${index}`, {
+      updatedAt: new Date(Date.UTC(2026, 0, 1, 0, index, 0)).toISOString()
+    });
+  }
+
+  const written = [];
+  const original = process.stderr.write;
+  process.stderr.write = (chunk, ...rest) => {
+    written.push(String(chunk));
+    return original.call(process.stderr, chunk, ...rest);
+  };
+  try {
+    writeJobFile(workspace, "job-new", {
+      id: "job-new",
+      status: "queued",
+      updatedAt: new Date(Date.UTC(2026, 0, 2)).toISOString()
+    });
+  } finally {
+    process.stderr.write = original;
+  }
+
+  const warning = written.find((line) => /job store is capped/.test(line));
+  assert.ok(warning, `expected an eviction warning; got ${JSON.stringify(written)}`);
+  assert.match(warning, /removed 1 finished job\(s\)/);
+  assert.match(warning, /job-0\b/, "the warning must name what was deleted");
+  assert.match(warning, /gemini:result/, "it must say what is no longer retrievable");
+  // It must not claim the result was uncollected: nothing records whether
+  // /gemini:result ever read a job, so that would be a guess presented as fact.
+  assert.doesNotMatch(warning, /uncollected|never (read|collected)/i);
+  assert.equal(fs.existsSync(resolveJobFile(workspace, "job-0")), false);
+});
+
+test("a new job that evicts nothing stays quiet", () => {
+  const workspace = makeTempDir();
+  seedJobOnDisk(workspace, "job-only");
+
+  const written = [];
+  const original = process.stderr.write;
+  process.stderr.write = (chunk, ...rest) => {
+    written.push(String(chunk));
+    return original.call(process.stderr, chunk, ...rest);
+  };
+  try {
+    writeJobFile(workspace, "job-second", { id: "job-second", status: "queued" });
+  } finally {
+    process.stderr.write = original;
+  }
+
+  assert.equal(
+    written.filter((line) => /job store is capped/.test(line)).length,
+    0,
+    "under the cap there is nothing to report"
+  );
+});

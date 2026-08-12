@@ -328,7 +328,7 @@ Claude Code
 
 背景模式會產生一個分離的 `task-worker` 子程序並立即回傳工作 ID，可透過 `/gemini:status` 查詢；即使 Claude 會話中斷，背景結果仍然存在。
 
-工作狀態寫入 Claude Code 的每外掛資料目錄——`$CLAUDE_PLUGIN_DATA/state/<workspace>-<hash>/`，內含 `state.json` 以及每個工作各一份 `.json` 與 `.log`，最多保留最近 50 筆。在 Claude Code 之外、該變數未設定時，改用 `<系統暫存目錄>/gemini-companion/<workspace>-<hash>/`；該處會被作業系統定期清理，故跨越清理週期仍在執行的工作可能消失。可設定 `GEMINI_COMPANION_DATA` 自行指定位置。
+工作狀態寫入 Claude Code 的每外掛資料目錄——`$CLAUDE_PLUGIN_DATA/state/<workspace>-<hash>/`，內含 `state.json` 以及每個工作各一份 `.json` 與 `.log`，最多保留最近 50 筆。**第 51 個工作會刪掉最舊的那個已完成工作**，其結果隨即消失——不論你先前是否讀過，`/gemini:result` 都再也取不回來。外掛會印出警告並列出被刪除的工作，所以這件事不會無聲發生；queued 或 running 的工作永遠不會被刪。在 Claude Code 之外、該變數未設定時，改用 `<系統暫存目錄>/gemini-companion/<workspace>-<hash>/`；該處會被作業系統定期清理，故跨越清理週期仍在執行的工作可能消失。可設定 `GEMINI_COMPANION_DATA` 自行指定位置。
 
 工作區內的 `.omc/` 是另一回事：它只存放 `/gemini:transfer` 快照，不存工作狀態。
 

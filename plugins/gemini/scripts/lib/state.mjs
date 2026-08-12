@@ -328,7 +328,26 @@ export function writeJobFile(cwd, jobId, payload) {
   const isNewJob = !fs.existsSync(jobFile);
   atomicWriteJson(jobFile, payload);
   if (isNewJob) {
-    pruneJobStore(cwd, { keepId: jobId });
+    // Say it out loud. Every job this deletes was a real spend, and the deletion
+    // used to be completely silent: the return value was discarded here, so a
+    // 51st job removed the oldest finished result and its log with nothing in the
+    // output to show it had happened. `most recent 50 kept` in the README reads as
+    // housekeeping, not as "a result you have not read can disappear".
+    //
+    // Deliberately does NOT claim the results were uncollected: nothing records
+    // whether `/gemini:result` ever read a job, so that would be a guess. State
+    // what was removed and let the reader judge.
+    //
+    // Warning lives here rather than in pruneJobStore so that function stays a
+    // pure store operation — a caller that wants a silent prune still has one.
+    const evicted = pruneJobStore(cwd, { keepId: jobId });
+    if (evicted.length > 0) {
+      const shown = evicted.slice(0, 5).map((job) => job.id);
+      const ids = shown.join(", ") + (evicted.length > shown.length ? `, +${evicted.length - shown.length} more` : "");
+      process.stderr.write(
+        `[gemini-companion] Warning: the job store is capped at ${MAX_JOBS}, so making room for ${jobId} removed ${evicted.length} finished job(s) and their logs: ${ids}. Those results can no longer be retrieved with \`/gemini:result\`.\n`
+      );
+    }
   }
   return jobFile;
 }
