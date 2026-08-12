@@ -196,6 +196,15 @@ Runs an adversarial review over the current working tree or branch diff.
 
 Prints availability and auth status for Node, Gemini CLI, and AGY.
 
+| Flag | Description |
+|---|---|
+| `--engine <agy\|gemini>` | Report readiness for that engine rather than the auto-routing default |
+| `--probe-agy` | Verify AGY's login by asking it a read-only question. **Free** — the account answers `/quota` without starting a turn (AGY 1.1.11+; below that AGY declines and setup says so) |
+| `--probe-gemini` | Verify the stored Gemini credential by making a real request. **Not free** — it costs nothing when the credential is already broken (the API refuses it before generating), but it spends a turn when the credential works. Skipped, with a note, under `--engine agy` |
+| `--enable-review-gate` / `--disable-review-gate` | Toggle the stop-time review gate (see [Review Gate](#review-gate-optional)) |
+
+Without a probe, Gemini readiness is read off disk, which can only prove staleness: a present-but-expired `oauth_creds.json` reports `partial`, while a credential living only in the OS keychain cannot be judged at all (gemini CLI 0.53.1 migrates the file into the keychain and deletes it). `geminiCredentialSource` names which credential actually satisfied the check.
+
 ### `/gemini:status [job-id]`
 
 Lists active and recent background jobs. Pass a job ID to inspect a single job.

@@ -80,5 +80,6 @@ campaign matrix for the full three-way comparison.
 - **gemini engine end-to-end** depends on Gemini API auth; the CLI OAuth path is
   retired upstream and will not be restored (owner-confirmed 2026-07-14;
   observed `API_KEY_INVALID`). With the gemini engine effectively unavailable,
-  the plugin's agy path (transcript recovery) is the practical route; the gemini
-  path remains for environments where a working key exists.
+  the plugin's agy path is the practical route — on AGY 1.1.8+ it reads the native
+  JSON envelope, and transcript recovery is the fallback for older AGY only; the
+  gemini path remains for environments where a working key exists.

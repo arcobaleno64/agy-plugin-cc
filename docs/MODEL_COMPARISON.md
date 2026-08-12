@@ -69,9 +69,10 @@ Probed on this machine (gemini CLI **0.44.1**, then-current on npm), 2026-06-02:
 | **`gemini-3.5-flash`** | ❌ **404 ModelNotFound** | Not served by this CLI version in this probe |
 | **`gemini-3.5-pro`** | ❌ **404** | Not served by this CLI version in this probe |
 
-- **AGY (antigravity 1.0.4)** exposed **no `--model`/`--effort`** flag in the original 2026-06-02 probe. By 2026-07-06, local AGY 1.0.16 exposes `--model` and `agy models`; this plugin still does not translate Gemini aliases / effort tiers to AGY arguments.
+- **AGY (antigravity 1.0.4)** exposed **no `--model`/`--effort`** flag in the original 2026-06-02 probe. By 2026-07-06, local AGY 1.0.16 exposed `--model` and `agy models`.
+  **Superseded since — current behavior (verified on AGY 1.1.12, 2026-08-12):** the plugin forwards both. `--effort <low|medium|high>` is passed to AGY natively, and `--model` is passed through as an exact AGY model id from `agy models`. What it still does *not* do is translate Gemini aliases into AGY ids — `flash` and `pro` are Gemini aliases only — and the two flags cannot be combined, because the AGY model ids reject the pairing. See `supportsAgyModelSelection` (gated at 1.1.10, the first version that applies the selection instead of silently falling back to the persisted model).
 - The plugin therefore points `flash` at `gemini-3-flash-preview` (served) and **gracefully degrades** to the GA `gemini-2.5-flash` if a requested id 404s — see the model-not-found fallback in `lib/gemini.mjs`.
-- Heads-up: Google announced the consumer Gemini CLI transition for **2026-06-18**; after that date, access depends on the user's tier and current Google CLI policy.
+- Heads-up: Google's consumer Gemini CLI transition took effect on **2026-06-18** — this is past, not upcoming. On a personal account gemini CLI still installs and answers `--version`, but every request returns `API key not valid` / `API_KEY_INVALID` (verified 2026-08-04); Standard/Enterprise access and API keys are unaffected. See the note at the top of the README.
 
 ---
 
