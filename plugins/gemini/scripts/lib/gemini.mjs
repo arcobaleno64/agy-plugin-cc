@@ -360,8 +360,14 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
 
   // Graceful degradation (gemini engine): a requested model id that is not found
   // (preview/retired, or absent on this CLI version) retries ONCE on the GA
-  // fallback so the task still runs instead of hard-failing. agy has no model
-  // selection so this never applies to it.
+  // fallback so the task still runs instead of hard-failing.
+  //
+  // Scoped to gemini because isModelNotFoundError matches gemini's wording, not
+  // because AGY cannot hit the case: AGY 1.1.10+ does take --model (verified on
+  // 1.1.12), and a bad AGY model id therefore hard-fails with no fallback. That
+  // is a gap, not an impossibility — the earlier note here said AGY has no model
+  // selection, which stopped being true two AGY releases before this comment was
+  // read again.
   if (engineInfo.engine === "gemini" && model && model !== GA_FALLBACK_MODEL && isModelNotFoundError(rawStdout, rawStderr, tryParseJsonFromText(rawStdout))) {
     process.stderr.write(`[gemini-companion] Model '${model}' is unavailable on this gemini CLI (model-not-found); retrying task on GA fallback '${GA_FALLBACK_MODEL}'.\n`);
     const fbArgs = buildCliArgs("gemini", {

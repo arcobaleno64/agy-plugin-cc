@@ -19,7 +19,7 @@
 - 對目前 diff 或 branch 執行 pragmatic code review 與 adversarial review。
 - 用 background task delegation 處理較長時間的 companion-agent 工作。
 - Gemini model aliases、graceful model fallback 與 transient review retry。
-- 具版本分流的 AGY prompt transport：1.1.8 以上採原生 JSON envelope，更舊版本才用 transcript recovery。
+- 具版本分流的 AGY 結果取回：1.1.8 以上採原生 JSON envelope，更舊版本才用 transcript recovery。
 - Gemini 與 AGY 1.1.2 以上採用較安全的 stdin prompt delivery。
 
 | 需求 | 適合使用本外掛的情境 |
@@ -249,7 +249,7 @@
 - **CLI probe snapshot。** 上表最後於 2026-08-05 對 Gemini API 模型清單複驗，所用的六個 id 全數有效。Google 可能隨時下架 preview id。若某別名無法解析，以 `--model <精確 ID>` 覆蓋——任何非已知別名之值將原樣透傳給 CLI。
 - **Gemini 3.5 可用性已變動。** 2026-06-02 實測時 `gemini-3.5-flash` 與 `gemini-3.5-pro` 皆回 `404 ModelNotFound`；至 2026-08-05，`gemini-3.5-flash` 已為 GA，`gemini-3.5-pro` 仍不存在。未知或不可用 model ID 會優雅降級至 GA fallback。
 - **模型優雅降級。** 若所請求之 model id 在你的 gemini CLI 上找不到（preview/已退役 id，或 CLI 版本落差），外掛會**以 GA fallback `gemini-2.5-flash` 重試一次**並印出明確提示——讓過時 id 優雅降級，而非硬性失敗。
-- **AGY model selection 尚未由本外掛管理。** 部分 AGY 版本提供自己的 `--model` 介面，但 `--engine agy` 目前走 AGY 的 configured/default model；本外掛不會把 `--model` 或 `--effort` 翻譯成 AGY 參數。若要由外掛管理 model selection，請用 `--engine gemini`。
+- **AGY 1.1.10+ 的 model 與推理強度選擇。** 使用 `agy models` 所列的 `--model <精確 ID>`，或原生的 `--effort <low|medium|high>`，二者互斥。AGY 的 model ID 不是 Gemini alias；雙引擎審查不可使用 `--model`，因為 model ID 具引擎特性。
 
 ---
 
