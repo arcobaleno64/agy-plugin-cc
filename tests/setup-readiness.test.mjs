@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { buildSetupReport } from "../plugins/gemini/scripts/gemini-companion.mjs";
-import { getSessionRuntimeStatus, probeAgyLogin } from "../plugins/gemini/scripts/lib/gemini.mjs";
+import { getSessionRuntimeStatus, probeAgyLogin, probeGeminiLogin } from "../plugins/gemini/scripts/lib/gemini.mjs";
 import { makeTempDir } from "./helpers.mjs";
 
 // ---------------------------------------------------------------------------
@@ -298,4 +298,168 @@ test("the label matches the engine the real resolver picks, not a stub", () => {
   });
   assert.equal(missing.selected, null, "a requested engine that is not installed cannot be the runtime");
   assert.equal(missing.label, "installed, but no engine is ready");
+});
+
+// ---------------------------------------------------------------------------
+// gemini readiness, and --probe-gemini
+//
+// The defect: `/gemini:setup --engine gemini` answered `"readyState": "ready"`
+// with `"nextSteps": []` for an account that returns API_KEY_INVALID on every
+// request (measured live, 2026-08-12). The keychain still held an entry, so the
+// credential *resolved*; the OAuth file in the same payload said the token had
+// expired four days earlier, and readiness ignored it. That flag only became
+// reachable in 0.17.1 — before, `--engine gemini` was silently dropped.
+// ---------------------------------------------------------------------------
+
+function geminiFileStatus(state, detail = `OAuth file reported ${state}.`) {
+  return { loggedIn: state === "valid", state, verifiable: false, detail };
+}
+
+function geminiProbeStatus(state) {
+  return {
+    loggedIn: state === "verified",
+    state,
+    verifiable: state === "verified" || state === "logged-out",
+    detail: `Gemini probe reported ${state}.`
+  };
+}
+
+test("an expired OAuth file blocks the ready claim even when a credential resolves", () => {
+  const report = buildSetupReport(makeTempDir(), [], {
+    engine: "gemini",
+    geminiAvailabilityFn: () => ({ available: true, detail: "0.54.4" }),
+    agyAvailabilityFn: () => ({ available: true, detail: "1.1.12" }),
+    geminiCredentialedFn: () => true,
+    geminiLoginStatusFn: () => geminiFileStatus("expired", "OAuth token expired at 2026-08-08T04:28:48.236Z."),
+    agyLoginStatusFn: () => agyStatus("unknown")
+  });
+
+  assert.notEqual(report.readyState, "ready", "a stale credential must not read as ready");
+  assert.equal(report.ready, false);
+  assert.ok(
+    report.nextSteps.some((step) => /stale|expired/i.test(step)),
+    `the report must say what to do; got ${JSON.stringify(report.nextSteps)}`
+  );
+  assert.ok(
+    report.nextSteps.some((step) => /probe-gemini/.test(step) && /spends a turn/.test(step)),
+    "offering --probe-gemini must disclose that it costs a turn"
+  );
+});
+
+test("a missing OAuth file is not evidence, because 0.53.1 deletes it", () => {
+  // The keychain-only install is healthy and must keep reading as ready — this is
+  // the case the credential check was added for, and the expiry rule must not
+  // swallow it.
+  const report = buildSetupReport(makeTempDir(), [], {
+    engine: "gemini",
+    geminiAvailabilityFn: () => ({ available: true, detail: "0.54.4" }),
+    agyAvailabilityFn: () => ({ available: false, detail: null }),
+    geminiCredentialedFn: () => true,
+    geminiLoginStatusFn: () => geminiFileStatus("missing"),
+    agyLoginStatusFn: () => agyStatus("unknown")
+  });
+
+  assert.equal(report.readyState, "ready");
+  assert.equal(report.ready, true);
+});
+
+test("a probe that comes back rejected is not-ready for an explicit --engine gemini", () => {
+  const report = buildSetupReport(makeTempDir(), [], {
+    engine: "gemini",
+    probedGemini: true,
+    geminiAvailabilityFn: () => ({ available: true, detail: "0.54.4" }),
+    agyAvailabilityFn: () => ({ available: true, detail: "1.1.12" }),
+    geminiCredentialedFn: () => true,
+    geminiLoginStatusFn: () => geminiProbeStatus("logged-out"),
+    agyLoginStatusFn: () => agyStatus("unknown")
+  });
+
+  assert.equal(report.readyState, "not-ready", "a verified negative is worse than unknown");
+  assert.equal(report.ready, false);
+});
+
+test("a rejected gemini stays partial under auto, because auto routes to AGY", () => {
+  const report = buildSetupReport(makeTempDir(), [], {
+    engine: "",
+    probedGemini: true,
+    geminiAvailabilityFn: () => ({ available: true, detail: "0.54.4" }),
+    agyAvailabilityFn: () => ({ available: true, detail: "1.1.12" }),
+    geminiCredentialedFn: () => true,
+    geminiLoginStatusFn: () => geminiProbeStatus("logged-out"),
+    agyLoginStatusFn: () => agyStatus("unknown")
+  });
+
+  assert.equal(report.readyState, "partial");
+});
+
+test("a verified probe outranks the file and reaches ready", () => {
+  const report = buildSetupReport(makeTempDir(), [], {
+    engine: "gemini",
+    probedGemini: true,
+    geminiAvailabilityFn: () => ({ available: true, detail: "0.54.4" }),
+    agyAvailabilityFn: () => ({ available: false, detail: null }),
+    geminiCredentialedFn: () => true,
+    geminiLoginStatusFn: () => geminiProbeStatus("verified"),
+    agyLoginStatusFn: () => agyStatus("unknown")
+  });
+
+  assert.equal(report.readyState, "ready");
+  assert.equal(report.ready, true);
+});
+
+// ---------------------------------------------------------------------------
+// probeGeminiLogin
+// ---------------------------------------------------------------------------
+
+test("the gemini probe reports a rejected credential as logged out, with proof", () => {
+  const runCommandFn = stubRun({
+    status: 1,
+    stderr: '{"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","status":"INVALID_ARGUMENT"}}'
+  });
+  const status = probeGeminiLogin({
+    runCommandFn,
+    detectEngineFn: () => ({ engine: "gemini", binary: "gemini", version: "0.54.4" })
+  });
+
+  assert.equal(status.state, "logged-out");
+  assert.equal(status.verifiable, true, "a classified auth refusal is proof, not a guess");
+  assert.equal(status.loggedIn, false);
+  assert.match(status.detail, /No turn was spent/);
+  // The prompt travels on stdin, like every other gemini call in this plugin.
+  assert.equal(runCommandFn.calls[0].opts.input, "ok");
+  assert.ok(!runCommandFn.calls[0].args.includes("-p"), "stdin transport must not also pass -p");
+});
+
+test("the gemini probe says a completed request cost a turn", () => {
+  const status = probeGeminiLogin({
+    runCommandFn: stubRun({ status: 0, stdout: '{"response":"ok"}' }),
+    detectEngineFn: () => ({ engine: "gemini", binary: "gemini", version: "0.54.4" })
+  });
+
+  assert.equal(status.state, "verified");
+  assert.equal(status.loggedIn, true);
+  assert.match(status.detail, /spent a turn/, "the cost must be visible where the result is read");
+});
+
+test("a gemini probe that fails for another reason leaves the state unknown", () => {
+  const status = probeGeminiLogin({
+    runCommandFn: stubRun({ status: 1, stderr: "socket hang up" }),
+    detectEngineFn: () => ({ engine: "gemini", binary: "gemini", version: "0.54.4" })
+  });
+
+  assert.equal(status.state, "unknown");
+  assert.equal(status.verifiable, false, "a network failure is not proof of a logout");
+});
+
+test("the gemini probe does not spawn when the binary is absent", () => {
+  const runCommandFn = stubRun({ status: 0 });
+  const status = probeGeminiLogin({
+    runCommandFn,
+    detectEngineFn: () => {
+      throw new Error("Gemini engine requested but gemini binary is not available.");
+    }
+  });
+
+  assert.equal(status.state, "unavailable");
+  assert.equal(runCommandFn.calls.length, 0);
 });

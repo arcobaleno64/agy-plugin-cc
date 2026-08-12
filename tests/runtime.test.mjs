@@ -769,6 +769,28 @@ test("a leading unknown flag is an error, not prompt text", () => {
   );
 });
 
+// A flag with whitespace in it was split by the shell, not typed that way: a
+// double-quoted value inside the slash command's own quoted argument string closes
+// that quoting early. The generic advice to prefix `--` cannot help here — review
+// takes no prompt text at all — so the message has to name the real cause.
+test("a flag the shell split apart says to use single quotes", () => {
+  const { repo, binDir } = setupRepo("review");
+  commit(repo, "README.md", "hello\n");
+
+  // process.execPath, not "node": the helper only skips the shell for an absolute
+  // command, and cmd.exe would re-split "--base my" into two arguments, which is
+  // the very shape this test needs to arrive intact.
+  const result = run(process.execPath, [SCRIPT, "review", "--base my", "branch --wait"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Unknown option "--base my"/);
+  assert.match(result.stderr, /single quotes/);
+  assert.doesNotMatch(result.stderr, /put `--` before it/);
+});
+
 test("`--` still delivers a prompt that starts with a dash", () => {
   const { repo, binDir } = setupRepo("task");
   commit(repo, "README.md", "hello\n");

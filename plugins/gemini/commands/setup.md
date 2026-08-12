@@ -4,9 +4,9 @@ argument-hint: '[--engine <agy|gemini>] [--probe-agy] [--enable-review-gate|--di
 allowed-tools: Bash(node:*), Bash(npm:*), Bash(curl:*), AskUserQuestion
 ---
 
-Run this exactly as written — `--json` belongs inside the quoted expansion. A
-token placed beside `"$ARGUMENTS"` makes the expansion a second argv element,
-and every flag inside it is then read as one positional and ignored, which is how
+Run this exactly as written — `--json` belongs inside the quoted argument string.
+A token placed beside that quoted string makes it a second argv element, and every
+flag inside it is then read as one positional and ignored, which is how
 `/gemini:setup --engine gemini` came back reporting a different engine:
 
 ```bash
@@ -87,6 +87,26 @@ login without starting a turn or spending quota (AGY 1.1.11+; below that it
 declines and says so). A verified AGY then reports `readyState: "ready"`; a probe
 that comes back `logged-out` reports `not-ready`, and the fix is to run `agy`
 once interactively.
+
+There is a matching `--probe-gemini`, and **it is not free**. Gemini CLI has no
+question the account answers without generating, so the probe makes a real
+request: on a credential that no longer works it costs nothing (the API refuses it
+before generating), but on a working credential it spends a turn. Do not offer it
+by reflex the way `--probe-agy` can be offered — suggest it only when the report
+says a stored gemini credential cannot be trusted, or when the user asks whether
+gemini really works:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" setup "--json --probe-gemini $ARGUMENTS"
+```
+
+Without it, gemini readiness is read off disk, which can only prove staleness, not
+health: a present-but-expired `oauth_creds.json` now blocks the `ready` claim and
+reports `partial`, while a credential living only in the OS keychain cannot be
+judged at all (0.53.1 migrates the file into the keychain and deletes it). A probe
+that comes back `logged-out` reports `not-ready` for an explicitly requested
+`--engine gemini`, and stays `partial` under `auto` when AGY is installed, because
+auto routes to AGY when gemini's credential does not work.
 
 Output rules:
 - Present the final setup output to the user.

@@ -822,6 +822,79 @@ export function probeAgyLogin({ runCommandFn = runCommand, detectEngineFn = dete
   };
 }
 
+// Deliberately NOT the twin of probeAgyLogin, despite the matching name and
+// return shape: AGY's `/quota` is answered by the account without starting a
+// turn, so probing it is free. Gemini CLI has no such question — the only way to
+// learn whether a stored credential still works is to make a request. On a
+// rejected credential that costs nothing (the API answers 400 before generating
+// anything), but on a working one it spends a real turn. Every place that offers
+// this flag has to say so, or a user who learned `--probe-agy` will assume it is
+// free here too.
+//
+// It exists because the file check cannot see the case that matters most: once
+// gemini 0.53.1 migrates OAuth into the keychain and deletes oauth_creds.json,
+// an invalid keychain credential is indistinguishable from a good one on disk.
+export const GEMINI_PROBE_TIMEOUT_MS = 30_000;
+const GEMINI_PROBE_PROMPT = "ok";
+
+export function probeGeminiLogin({ runCommandFn = runCommand, detectEngineFn = detectEngine } = {}) {
+  let engineInfo;
+  try {
+    engineInfo = detectEngineFn("gemini");
+  } catch {
+    return { loggedIn: false, state: "unavailable", verifiable: false, detail: "Gemini CLI binary not found." };
+  }
+
+  const version = engineInfo.version ?? "(unknown version)";
+  // Shortest possible request, over the same stdin transport a real turn uses,
+  // so what the probe proves is what a real turn would do.
+  const args = buildCliArgs("gemini", { prompt: GEMINI_PROBE_PROMPT, useStdin: true, outputJson: true });
+  const result = runCommandFn(engineInfo.binary, args, {
+    input: GEMINI_PROBE_PROMPT,
+    timeout: GEMINI_PROBE_TIMEOUT_MS,
+    maxBuffer: MAX_BUFFER
+  });
+
+  if ((result.status ?? (result.error ? 1 : 0)) === 0) {
+    return {
+      loggedIn: true,
+      state: "verified",
+      verifiable: true,
+      detail: `Gemini CLI ${version} completed a request, so its credential works. This spent a turn.`
+    };
+  }
+
+  const reason = String(result.stderr ?? "").trim();
+  const failure = classifyCliFailure({
+    engine: "gemini",
+    status: result.status,
+    signal: result.signal,
+    error: result.error,
+    stdout: result.stdout,
+    stderr: result.stderr
+  });
+  if (failure.category === "auth") {
+    return {
+      loggedIn: false,
+      state: "logged-out",
+      verifiable: true,
+      detail: `Gemini CLI ${version} rejected the probe as unauthenticated, so its stored credential does not work. Run \`gemini\` once interactively to sign in, or set GEMINI_API_KEY. No turn was spent — the request was refused before any generation.`
+    };
+  }
+  // As with AGY: a probe that failed for another reason is not proof of a logout.
+  return {
+    loggedIn: false,
+    state: "unknown",
+    verifiable: false,
+    detail: `Gemini CLI ${version} did not complete the probe (${failure.category}), so its authentication state is still unknown.${reason ? ` (${shortenProbeReason(reason)})` : ""}`
+  };
+}
+
+function shortenProbeReason(reason) {
+  const collapsed = reason.replace(/\s+/g, " ").trim();
+  return collapsed.length > 200 ? `${collapsed.slice(0, 197)}...` : collapsed;
+}
+
 export function getSessionRuntimeStatus(options = {}) {
   // Unlike the Codex app-server (a shared persistent runtime), the Gemini plugin
   // invokes the CLI directly per command, so the runtime label describes which

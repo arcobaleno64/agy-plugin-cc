@@ -60,6 +60,7 @@ import {
   getGeminiLoginStatus,
   getAgyLoginStatus,
   probeAgyLogin,
+  probeGeminiLogin,
   getGeminiPlanTier,
   hasGeminiCredentials,
   getSessionRuntimeStatus,
@@ -104,7 +105,7 @@ function printUsage() {
   console.log(
     [
       "Usage:",
-      "  node scripts/gemini-companion.mjs setup [--json] [--probe-agy] [--enable-review-gate|--disable-review-gate]",
+      "  node scripts/gemini-companion.mjs setup [--json] [--probe-agy] [--probe-gemini] [--enable-review-gate|--disable-review-gate]",
       "  node scripts/gemini-companion.mjs adversarial-review [--wait|--background] [--deep] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--effort <level>] [--engine agy|gemini|auto] [--engines gemini,agy] [--timeout <seconds>] [focus text]",
       "  node scripts/gemini-companion.mjs review [--wait|--background] [--deep] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--effort <level>] [--engine agy|gemini|auto] [--timeout <seconds>]",
       "  node scripts/gemini-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--model <model>] [--effort <low|medium|high>] [--engine agy|gemini|auto] [--timeout <seconds>] [prompt]",
@@ -166,8 +167,16 @@ function parseCommandInput(argv, config = {}) {
   const normalized = normalizeArgv(argv);
   const leading = describeLeadingFlag(normalized, config);
   if (leading?.unknown) {
+    // Whitespace inside a single flag did not come from anyone's keyboard. A slash
+    // command expands into one quoted word, so a double-quoted value *inside* that
+    // word closes the quoting early and the shell splits the flag apart:
+    // `--base "my branch"` arrives as `--base my` plus `branch ...`. Telling that
+    // user to prefix `--` is useless advice — the fix is single quotes, which
+    // survive to the runtime's own splitter (lib/args.mjs).
     throw new Error(
-      `Unknown option "${leading.unknown}". Run \`node scripts/gemini-companion.mjs help\` for usage. If it is prompt text, put \`--\` before it.`
+      /\s/.test(leading.unknown.trim())
+        ? `Unknown option "${leading.unknown}". A double-quoted value closes the slash command's own quoting early, so the shell split this flag apart. Use single quotes instead, e.g. \`--base 'my branch'\`.`
+        : `Unknown option "${leading.unknown}". Run \`node scripts/gemini-companion.mjs help\` for usage. If it is prompt text, put \`--\` before it.`
     );
   }
 
@@ -222,11 +231,23 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
   // installed, and pass locally while failing on any runner that does not.
   const agyAvailabilityFn = options.agyAvailabilityFn ?? getAgyAvailability;
   const agyStatus = agyAvailabilityFn();
-  const geminiAuth = getGeminiLoginStatus(cwd);
-  // `geminiAuth` reports the OAuth *file* only. Readiness must use the full
-  // credential check auto-routing uses — env keys and the OS keychain included —
-  // or setup reports "not authenticated" for a user whose next command works.
-  const geminiCredentialed = hasGeminiCredentials();
+  // Same seam as AGY below: unprobed, this reads the OAuth file; `--probe-gemini`
+  // asks the API instead. Unlike `--probe-agy` that is not free, so nothing here
+  // probes unless the caller asked.
+  const geminiLoginStatusFn =
+    options.geminiLoginStatusFn ?? (options.probedGemini ? probeGeminiLogin : getGeminiLoginStatus);
+  const geminiAuth = geminiLoginStatusFn(cwd);
+  // `geminiAuth` reports the OAuth *file* only (unless probed). Readiness must use
+  // the full credential check auto-routing uses — env keys and the OS keychain
+  // included — or setup reports "not authenticated" for a user whose next command
+  // works.
+  // Injected for the same reason as the availability probes: without a seam the
+  // readiness assertions only hold on a machine that happens to have a gemini
+  // credential in its OS keychain, and the interesting cases here are about a
+  // credential that resolves but does not work. Forcing it with GEMINI_API_KEY
+  // instead would change the answer — an env key deliberately outranks the file.
+  const geminiCredentialedFn = options.geminiCredentialedFn ?? hasGeminiCredentials;
+  const geminiCredentialed = geminiCredentialedFn();
   // Same injection seam as detectEngine/runGeminiTurn: the readiness mapping is
   // the part worth testing, and it should not require a real AGY to reach.
   const agyLoginStatusFn =
@@ -248,7 +269,27 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
   const engineKnown =
     requestedEngine === "" || requestedEngine === "auto" || requestedEngine === "gemini" || requestedEngine === "agy";
   const agySelected = requestedEngine === "agy";
-  const geminiReady = geminiStatus.available && geminiCredentialed;
+  const geminiApiKeyInEnvForReadiness = Boolean(
+    String(process.env.GEMINI_API_KEY ?? "").trim() || String(process.env.GOOGLE_API_KEY ?? "").trim()
+  );
+  // A credential that resolves is not a credential that works, and this is the one
+  // case where we hold proof of the difference: `state: "expired"` means the OAuth
+  // file is present and says so. `/gemini:setup --engine gemini` used to answer
+  // `ready` with no next steps for an account that returns API_KEY_INVALID on
+  // every request, because the keychain still had a (stale) entry and outvoted the
+  // file. Positive evidence of staleness now blocks the `ready` claim.
+  //
+  // Only `expired` — not `missing`. 0.53.1 migrates OAuth into the keychain and
+  // deletes the file, so a healthy install also has no file; treating that as
+  // evidence would recreate the false "not authenticated" that the keychain check
+  // was added to fix. A probe that verified the credential outranks the file.
+  const geminiStaleFileEvidence =
+    !geminiApiKeyInEnvForReadiness && geminiAuth.state === "expired" && geminiAuth.verifiable !== true;
+  // A probe that came back rejected is the strongest evidence available, and it
+  // outranks a resolvable keychain entry — the same rule AGY already follows.
+  const geminiProbedLoggedOut = geminiAuth.state === "logged-out" && geminiAuth.verifiable === true;
+  const geminiReady =
+    geminiStatus.available && geminiCredentialed && !geminiStaleFileEvidence && !geminiProbedLoggedOut;
   const agyAvailable = agyStatus.available;
   // `geminiReady: true` beside `geminiAuth.loggedIn: false` reads as a
   // contradiction and was reported as one. Both are correct and they answer
@@ -301,9 +342,15 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
             : "partial"
         : geminiReady
           ? "ready"
-          : agyAvailable
-            ? "partial"
-            : "not-ready";
+          : // An explicitly selected gemini whose probe came back rejected is
+            // not-ready, not partial: the same "a verified negative is worse than
+            // unknown" rule as AGY. Under `auto` it stays partial, because auto
+            // routes to an available AGY when gemini's credential does not work.
+            requestedEngine === "gemini" && geminiProbedLoggedOut
+            ? "not-ready"
+            : agyAvailable
+              ? "partial"
+              : "not-ready";
 
   const nextSteps = [];
   if (!engineKnown) {
@@ -340,6 +387,17 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
   }
   if (!agySelected && geminiStatus.available && !geminiCredentialed) {
     nextSteps.push("Run `gemini` once to authenticate, or set GEMINI_API_KEY.");
+  }
+  // Both of the gemini "resolvable but does not work" cases. Without these the
+  // report was silent: `readyState` said `ready` and `nextSteps` was empty while
+  // `geminiAuth.detail` said the token had expired days earlier.
+  if (!agySelected && geminiStaleFileEvidence) {
+    nextSteps.push(
+      `Gemini CLI has a stored credential, but the OAuth file says it is stale: ${geminiAuth.detail} If a keychain credential is meant to be in use instead, \`setup --probe-gemini\` checks it against the API — that one spends a turn when the credential works, unlike \`--probe-agy\`.`
+    );
+  }
+  if (!agySelected && geminiProbedLoggedOut) {
+    nextSteps.push(geminiAuth.detail);
   }
   if (!agySelected && !geminiStatus.available && agyAvailable) {
     nextSteps.push(
@@ -401,7 +459,7 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
 function handleSetup(argv) {
   const { options } = parseCommandInput(argv, {
     valueOptions: ["cwd", "engine"],
-    booleanOptions: ["json", "enable-review-gate", "disable-review-gate", "probe-agy"]
+    booleanOptions: ["json", "enable-review-gate", "disable-review-gate", "probe-agy", "probe-gemini"]
   });
 
   const cwd = resolveCommandCwd(options);
@@ -421,7 +479,8 @@ function handleSetup(argv) {
 
   const finalReport = buildSetupReport(cwd, actionsTaken, {
     engine: requestedEngine,
-    probedAgy: Boolean(options["probe-agy"])
+    probedAgy: Boolean(options["probe-agy"]),
+    probedGemini: Boolean(options["probe-gemini"])
   });
   outputResult(options.json ? finalReport : renderSetupReport(finalReport), options.json);
 }
