@@ -830,9 +830,13 @@ export function getSessionRuntimeStatus(options = {}) {
   // It has to *ask* rather than guess. Choosing on binary presence alone reported
   // "gemini CLI (per-command)" under `GEMINI_ENGINE=agy` with an expired gemini
   // credential — naming the one engine that could not have run. detectEngine is
-  // the resolver the next command itself uses, so the answer comes from there;
-  // the availability probes already done here are fed back into it so asking
-  // costs no extra process spawns.
+  // the resolver the next command itself uses, so the answer comes from there.
+  //
+  // The two `--version` probes above are fed back into it, so asking adds no
+  // engine probe. It is not free: detectEngine still resolves the AGY executable
+  // path, which is one `where`/`which` lookup. Feeding that in too would mean
+  // handing a fabricated absolute path to the check whose whole job is to prove
+  // the spawn target is a real executable, so it pays the lookup instead.
   const {
     requestedEngine = null,
     env = process.env,
@@ -846,7 +850,10 @@ export function getSessionRuntimeStatus(options = {}) {
 
   let selected = null;
   try {
-    selected = detectEngineFn(requestedEngine || env[ENGINE_ENV] || null, {
+    // "auto" rather than null: detectEngine falls back to `process.env` for a
+    // null request, which would ignore an injected env that deliberately has no
+    // GEMINI_ENGINE and report the ambient machine's routing instead.
+    selected = detectEngineFn(requestedEngine || env[ENGINE_ENV] || "auto", {
       binaryAvailableImpl: (binary) => (/agy/i.test(String(binary)) ? agy : gemini)
     }).engine;
   } catch {

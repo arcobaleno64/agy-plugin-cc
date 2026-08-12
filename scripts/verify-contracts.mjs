@@ -114,6 +114,35 @@ function main() {
     }
   }
 
+  // 5. No command places a token beside its `"$ARGUMENTS"` expansion.
+  //
+  // `$ARGUMENTS` expands to one shell word, so `cmd --background "$ARGUMENTS"`
+  // hands the runtime a two-element argv whose second element is a whole flag
+  // string. lib/args.mjs only splits that string when it is the entire argv —
+  // deliberately, because in a longer argv it cannot be told apart from prompt
+  // text — so every flag inside it is read as one positional and dropped.
+  // `/gemini:review --base HEAD~1 --scope branch` reported "nothing to review"
+  // over a 2045-line diff that way. A command folds its own flags into the same
+  // quoted string instead: `review "$ARGUMENTS --background"`.
+  for (const command of REQUIRED_COMMANDS) {
+    const file = path.join(root, "plugins", PLUGIN_NAME, "commands", `${command}.md`);
+    if (!fs.existsSync(file)) continue;
+    const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
+    lines.forEach((line, index) => {
+      if (!line.includes('"$ARGUMENTS"') || !line.includes(".mjs")) return;
+      const [, afterScript = ""] = line.split(/\.mjs"?/);
+      const between = afterScript.slice(0, afterScript.indexOf('"$ARGUMENTS"'));
+      // The subcommand name is the one bare token allowed before the expansion.
+      const extra = between.split(/\s+/).filter(Boolean).slice(1);
+      if (extra.length > 0) {
+        errors.push(
+          `plugins/${PLUGIN_NAME}/commands/${command}.md:${index + 1} passes ${extra.join(" ")} beside "$ARGUMENTS". ` +
+            `Fold those flags into the quoted expansion instead (e.g. "$ARGUMENTS --background"), or the runtime discards every flag the user typed.`
+        );
+      }
+    });
+  }
+
   if (errors.length > 0) {
     console.error(`Contract verification failed:\n- ${errors.join("\n- ")}`);
     process.exitCode = 1;

@@ -275,3 +275,27 @@ test("no engine at all still reports plainly", () => {
   assert.equal(status.available, false);
   assert.equal(status.label, "no engine available");
 });
+
+test("the label matches the engine the real resolver picks, not a stub", () => {
+  // The other three tests stub detectEngineFn, so nothing would catch the shim
+  // that feeds the probes back in — it identifies engines by binary substring and
+  // has to return binaryAvailable's {available, detail} shape. This drives the
+  // real detectEngine over stubbed availability to pin that contract.
+  const ready = getSessionRuntimeStatus({
+    requestedEngine: "gemini",
+    env: {},
+    geminiAvailabilityFn: AVAILABLE_GEMINI,
+    agyAvailabilityFn: AVAILABLE_AGY
+  });
+  assert.equal(ready.selected, "gemini");
+  assert.equal(ready.label, "gemini CLI (per-command)");
+
+  const missing = getSessionRuntimeStatus({
+    requestedEngine: "gemini",
+    env: {},
+    geminiAvailabilityFn: () => ({ available: false, detail: null }),
+    agyAvailabilityFn: AVAILABLE_AGY
+  });
+  assert.equal(missing.selected, null, "a requested engine that is not installed cannot be the runtime");
+  assert.equal(missing.label, "installed, but no engine is ready");
+});

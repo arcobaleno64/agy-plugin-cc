@@ -74,28 +74,22 @@ export function parseArgs(argv, config = {}) {
 }
 
 // A slash command expands `$ARGUMENTS` into one shell word, so a whole flag
-// string can arrive as a single argv element. Splitting that is what makes
+// string arrives as a single argv element. Splitting that is what makes
 // `/gemini:review --base X` work at all.
 //
-// The single-element case is not the only one: several commands pass a flag of
-// their own *beside* the expansion — `review --background "$ARGUMENTS"`,
-// `setup --json "$ARGUMENTS"` — so argv has two elements and the flags inside
-// the second were silently discarded. `--base HEAD~1 --scope branch` became one
-// positional that review does not accept, and the review reported "nothing to
-// review" in a second while a 26-file diff sat unread; `setup --json` reported
-// on the engine from the environment rather than the requested one.
+// It stays limited to the single-element case on purpose. In a longer argv a
+// dash-leading multi-word token is ambiguous — `"--base HEAD~1 --wait"` and a
+// task prompt like `"--fix the retry loop"` are the same string — and guessing
+// gets it wrong in both directions: splitting prose lifted `--engine agy` out of
+// a sentence and rerouted the run, while a `--` inside the split text turned on
+// parseArgs passthrough and swallowed every real flag after it.
 //
-// A token that starts with a dash *and* contains whitespace cannot be a single
-// flag, so it is treated as a nested flag string wherever it appears. Free-text
-// positionals (a task prompt, a review focus) do not start with a dash and are
-// left alone; text that genuinely does can be protected with `--`, whose
-// passthrough is honoured here as well as in parseArgs.
-function isNestedFlagString(token) {
-  if (typeof token !== "string") return false;
-  const trimmed = token.trim();
-  return trimmed.startsWith("-") && /\s/.test(trimmed);
-}
-
+// So the invariant lives with the callers instead: a command must never place a
+// token beside its `"$ARGUMENTS"` expansion, and folds its own flags into the
+// same quoted string (`review "$ARGUMENTS --background"`). Getting that wrong is
+// what discarded `--base HEAD~1 --scope branch` and made a 26-file review answer
+// "nothing to review" in a second, so `scripts/verify-contracts.mjs` now fails
+// the build if any command markdown reintroduces the two-token shape.
 export function normalizeArgv(argv) {
   if (argv.length === 1) {
     const [raw] = argv;
@@ -104,26 +98,7 @@ export function normalizeArgv(argv) {
     }
     return splitRawArgumentString(raw);
   }
-
-  const normalized = [];
-  let passthrough = false;
-  for (const token of argv) {
-    if (passthrough) {
-      normalized.push(token);
-      continue;
-    }
-    if (token === "--") {
-      passthrough = true;
-      normalized.push(token);
-      continue;
-    }
-    if (isNestedFlagString(token)) {
-      normalized.push(...splitRawArgumentString(token));
-      continue;
-    }
-    normalized.push(token);
-  }
-  return normalized;
+  return argv;
 }
 
 export function splitRawArgumentString(raw) {

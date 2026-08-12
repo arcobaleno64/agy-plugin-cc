@@ -156,15 +156,22 @@ test("transfer is a deterministic runner that calls scripts/transfer.mjs", () =>
 // --- Shell-safety: $ARGUMENTS must always be quoted when handed to the companion ---
 // Unquoted $ARGUMENTS lets the shell word-split, glob, or command-substitute the
 // user's raw slash-command text before the companion's parser/validation runs.
+// The property is that the expansion sits inside a double-quoted span, not that
+// the line contains the exact token `"$ARGUMENTS"`: commands now fold their own
+// flags into that same span (`review "$ARGUMENTS --background"`) because a token
+// placed beside the expansion made it a second argv element whose flags were
+// dropped. Deleting every quoted span and looking for a survivor tests the
+// property directly, and still fails on a bare `$ARGUMENTS`.
 test("every command quotes $ARGUMENTS in its companion invocation", () => {
   const files = fs.readdirSync(COMMANDS_DIR).filter((f) => f.endsWith(".md"));
   for (const file of files) {
     for (const line of readCommand(file).split(/\r?\n/)) {
       if (line.includes(".mjs") && line.includes("$ARGUMENTS")) {
-        assert.match(
-          line,
-          /"\$ARGUMENTS"/,
-          `${file}: $ARGUMENTS must be quoted as "$ARGUMENTS" to avoid shell word-splitting/injection — got: ${line.trim()}`
+        const outsideQuotes = line.replace(/"[^"]*"/g, "");
+        assert.doesNotMatch(
+          outsideQuotes,
+          /\$ARGUMENTS/,
+          `${file}: $ARGUMENTS must sit inside a double-quoted span to avoid shell word-splitting/injection — got: ${line.trim()}`
         );
       }
     }

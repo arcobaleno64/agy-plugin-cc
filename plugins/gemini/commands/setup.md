@@ -4,10 +4,13 @@ argument-hint: '[--engine <agy|gemini>] [--probe-agy] [--enable-review-gate|--di
 allowed-tools: Bash(node:*), Bash(npm:*), Bash(curl:*), AskUserQuestion
 ---
 
-Run:
+Run this exactly as written — `--json` belongs inside the quoted expansion. A
+token placed beside `"$ARGUMENTS"` makes the expansion a second argv element,
+and every flag inside it is then read as one positional and ignored, which is how
+`/gemini:setup --engine gemini` came back reporting a different engine:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" setup --json "$ARGUMENTS"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" setup "--json $ARGUMENTS"
 ```
 
 Gemini CLI and AGY are first-class supported engines. Each is a conditional
@@ -35,7 +38,7 @@ npm install -g @google/gemini-cli
 - Then rerun:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" setup --json "$ARGUMENTS"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" setup "--json $ARGUMENTS"
 ```
 
 When `requestedEngine` is `agy` and AGY is unavailable
@@ -54,7 +57,7 @@ curl -fsSL https://antigravity.google/cli/install.sh | bash
 - Then rerun:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" setup --json "$ARGUMENTS"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" setup "--json $ARGUMENTS"
 ```
 
 Do not ask about installation when:
@@ -76,7 +79,7 @@ not "not signed in". When the user asks whether AGY is ready, or when they are
 about to act on a `partial` verdict, rerun with `--probe-agy`:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" setup --json --probe-agy "$ARGUMENTS"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" setup "--json --probe-agy $ARGUMENTS"
 ```
 
 It asks AGY a read-only question the account has to answer, so it verifies the

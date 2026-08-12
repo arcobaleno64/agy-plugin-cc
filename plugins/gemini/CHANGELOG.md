@@ -5,25 +5,35 @@
 Found by using the plugin on its own repository. All three were reproduced
 before being changed, and one of them turned out not to be a defect at all.
 
-**A flag string passed beside another flag was discarded.** `commands/review.md`
-and `commands/setup.md` invoke the runtime as `review --background "$ARGUMENTS"`
-and `setup --json "$ARGUMENTS"`, so argv had two elements — and `normalizeArgv`
-split the raw argument string only when argv had exactly one. Everything inside
-the second element was swallowed as a positional the command does not accept:
-`/gemini:review --base HEAD~1 --scope branch` answered "Nothing to review" in one
-second over a 26-file, 2045-line diff, and `/gemini:setup --engine gemini`
-reported on the engine from the environment instead. A token that starts with a
-dash and contains whitespace cannot be a single flag, so it is now split wherever
-it appears; free text is untouched, and `--` still protects text that needs it.
+**The flags you typed were discarded when a command added one of its own.**
+`$ARGUMENTS` expands to a single shell word, so `review --background "$ARGUMENTS"`
+and `setup --json "$ARGUMENTS"` handed the runtime a two-element argv whose second
+element was an entire flag string. Only a single-element argv is split, so that
+string stayed one positional the command does not accept: `/gemini:review --base
+HEAD~1 --scope branch` answered "Nothing to review" in one second over a 26-file,
+2045-line diff, and `/gemini:setup --engine gemini` reported on the engine from
+the environment instead.
+
+Commands now fold their own flags into the same quoted expansion
+(`review "$ARGUMENTS --background"`), and `npm run verify-contracts` fails the
+build if any command reintroduces the two-token shape. Splitting dash-leading
+tokens anywhere in argv was tried first and reverted: in a longer argv such a
+token is indistinguishable from prompt text, and guessing broke real input both
+ways — `--engine agy` was lifted out of a sentence and rerouted the run, and a
+`--` inside prompt text turned on passthrough and ate every flag after it. Tests
+now pin those cases so the heuristic cannot come back.
 
 **The session runtime named an engine that could not have run.** The label chose
 gemini whenever the gemini binary existed — `getSessionRuntimeStatus` took no
 engine or environment argument at all, and `job-control` passed one that was
 silently dropped. Under `GEMINI_ENGINE=agy` with an expired gemini credential,
 `/gemini:setup --json` reported `gemini CLI (per-command)`. It now asks
-`detectEngine`, the resolver the next command itself uses, reusing the
-availability probes already taken so the answer costs no extra process spawns,
-and reports the resolved engine in a new `sessionRuntime.selected` field.
+`detectEngine`, the resolver the next command itself uses, and reports the answer
+in a new `sessionRuntime.selected` field. The engine probes already taken are fed
+back into it, so asking adds no `--version` call — `/gemini:setup` reuses the ones
+its readiness fields are built from, which also stops one payload from describing
+two different machines. Resolving the AGY executable path still costs one
+`where`/`which` lookup.
 
 **No change to review budget allocation.** A review of this repository reported
 `allocateBudget` dropping smaller files while funding larger ones, and
