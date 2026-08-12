@@ -81,26 +81,34 @@ test("hasGeminiCredentials treats an API key as a credential", (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gemini-auth-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
+  // GEMINI_HOME is still read from the real process env (geminiHomeDir), so the
+  // empty fixture directory has to go there.
   const prevHome = process.env.GEMINI_HOME;
-  const prevKey = process.env.GEMINI_API_KEY;
   process.env.GEMINI_HOME = dir; // no oauth_creds.json here
   t.after(() => {
     if (prevHome === undefined) delete process.env.GEMINI_HOME; else process.env.GEMINI_HOME = prevHome;
-    if (prevKey === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = prevKey;
   });
 
-  // The keychain probe would otherwise consult the real keychain of whatever
-  // machine runs this, which decides the assertion instead of the fixture.
-  const noKeychain = { env: { GEMINI_COMPANION_DISABLE_KEYCHAIN: "1" } };
+  // `options.env` is the environment this call consults, for the API key as well
+  // as the keychain opt-out. It used to be read by the keychain path alone, so
+  // this test set the key on the real process env and passed an env holding only
+  // the opt-out; under one consistent meaning the key belongs in the same object.
+  // The opt-out stays because the keychain probe would otherwise consult whatever
+  // machine runs this, and decide the assertion instead of the fixture.
+  const noKeychain = { GEMINI_COMPANION_DISABLE_KEYCHAIN: "1" };
 
-  delete process.env.GEMINI_API_KEY;
-  assert.equal(hasGeminiCredentials(noKeychain), false);
+  assert.equal(hasGeminiCredentials({ env: { ...noKeychain } }), false);
 
-  process.env.GEMINI_API_KEY = "  ";
-  assert.equal(hasGeminiCredentials(noKeychain), false, "whitespace is not a credential");
+  assert.equal(
+    hasGeminiCredentials({ env: { ...noKeychain, GEMINI_API_KEY: "  " } }),
+    false,
+    "whitespace is not a credential"
+  );
 
-  process.env.GEMINI_API_KEY = "AIza-test-key";
-  assert.equal(hasGeminiCredentials(noKeychain), true);
+  assert.equal(hasGeminiCredentials({ env: { ...noKeychain, GEMINI_API_KEY: "AIza-test-key" } }), true);
+  // GOOGLE_API_KEY is the documented alternative and must not be forgotten when
+  // the lookup moves to an injected environment.
+  assert.equal(hasGeminiCredentials({ env: { ...noKeychain, GOOGLE_API_KEY: "AIza-test-key" } }), true);
 });
 
 // --- keychain probe ---

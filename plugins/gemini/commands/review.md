@@ -53,7 +53,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" review "$ARGUMENTS"
 
 Background flow:
 - Run the companion with its own `--background` flag in the FOREGROUND (the companion detaches its own worker and returns immediately).
-- `--background` goes INSIDE the quoted expansion, not beside it. A token placed next to `"$ARGUMENTS"` makes the expansion a second argv element, and the flags inside it are then read as one positional this command does not accept — which is how `--base` and `--scope` were silently discarded:
+- `--background` goes INSIDE the quoted argument string below, not beside it. A token placed next to that quoted string makes it a second argv element, and the flags inside it are then read as one positional this command does not accept — which is how `--base` and `--scope` were silently discarded. Copy the line as written:
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" review "$ARGUMENTS --background"
 ```

@@ -60,6 +60,7 @@ import {
   getGeminiLoginStatus,
   getAgyLoginStatus,
   probeAgyLogin,
+  probeGeminiLogin,
   getGeminiPlanTier,
   hasGeminiCredentials,
   getSessionRuntimeStatus,
@@ -104,7 +105,7 @@ function printUsage() {
   console.log(
     [
       "Usage:",
-      "  node scripts/gemini-companion.mjs setup [--json] [--probe-agy] [--enable-review-gate|--disable-review-gate]",
+      "  node scripts/gemini-companion.mjs setup [--json] [--probe-agy] [--probe-gemini] [--enable-review-gate|--disable-review-gate]",
       "  node scripts/gemini-companion.mjs adversarial-review [--wait|--background] [--deep] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--effort <level>] [--engine agy|gemini|auto] [--engines gemini,agy] [--timeout <seconds>] [focus text]",
       "  node scripts/gemini-companion.mjs review [--wait|--background] [--deep] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--effort <level>] [--engine agy|gemini|auto] [--timeout <seconds>]",
       "  node scripts/gemini-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--model <model>] [--effort <low|medium|high>] [--engine agy|gemini|auto] [--timeout <seconds>] [prompt]",
@@ -166,8 +167,16 @@ function parseCommandInput(argv, config = {}) {
   const normalized = normalizeArgv(argv);
   const leading = describeLeadingFlag(normalized, config);
   if (leading?.unknown) {
+    // Whitespace inside a single flag did not come from anyone's keyboard. A slash
+    // command expands into one quoted word, so a double-quoted value *inside* that
+    // word closes the quoting early and the shell splits the flag apart:
+    // `--base "my branch"` arrives as `--base my` plus `branch ...`. Telling that
+    // user to prefix `--` is useless advice — the fix is single quotes, which
+    // survive to the runtime's own splitter (lib/args.mjs).
     throw new Error(
-      `Unknown option "${leading.unknown}". Run \`node scripts/gemini-companion.mjs help\` for usage. If it is prompt text, put \`--\` before it.`
+      /\s/.test(leading.unknown.trim())
+        ? `Unknown option "${leading.unknown}". A double-quoted value closes the slash command's own quoting early, so the shell split this flag apart. Use single quotes instead, e.g. \`--base 'my branch'\`.`
+        : `Unknown option "${leading.unknown}". Run \`node scripts/gemini-companion.mjs help\` for usage. If it is prompt text, put \`--\` before it.`
     );
   }
 
@@ -222,11 +231,66 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
   // installed, and pass locally while failing on any runner that does not.
   const agyAvailabilityFn = options.agyAvailabilityFn ?? getAgyAvailability;
   const agyStatus = agyAvailabilityFn();
-  const geminiAuth = getGeminiLoginStatus(cwd);
-  // `geminiAuth` reports the OAuth *file* only. Readiness must use the full
-  // credential check auto-routing uses — env keys and the OS keychain included —
-  // or setup reports "not authenticated" for a user whose next command works.
-  const geminiCredentialed = hasGeminiCredentials();
+  // Readiness is computed for the engine the user actually selected (via
+  // `--engine` or GEMINI_ENGINE). Resolved here, above the auth seams, because
+  // the gemini probe below spends a turn and must not spend it for an engine this
+  // run does not report on.
+  const requestedEngine = String(options.engine ?? "").trim().toLowerCase();
+  // Validate against the same set the runtime resolver accepts (detectEngine).
+  // An unrecognized engine must fail the preflight rather than inheriting Gemini
+  // readiness — otherwise the next command resolves the same value and throws.
+  const engineKnown =
+    requestedEngine === "" || requestedEngine === "auto" || requestedEngine === "gemini" || requestedEngine === "agy";
+  const agySelected = requestedEngine === "agy";
+  // Injected for the same reason as every other input here: read straight from
+  // process.env, the readiness assertions below only hold on a machine with no
+  // GEMINI_API_KEY exported, so they passed locally and failed on any runner (or
+  // developer) that had one.
+  const env = options.env ?? process.env;
+  const geminiApiKeyInEnv = Boolean(
+    String(env.GEMINI_API_KEY ?? "").trim() || String(env.GOOGLE_API_KEY ?? "").trim()
+  );
+  // Same seam as AGY below: unprobed, this reads the OAuth file; `--probe-gemini`
+  // asks the API instead. Unlike `--probe-agy` that is not free, so nothing here
+  // probes unless the caller asked — and not even then when `--engine agy` is
+  // selected, because AGY readiness ignores `geminiAuth` entirely and every
+  // gemini-derived next step below is guarded by `!agySelected`. Billing a turn
+  // for an answer this run then discards is the one cost this flag must not have.
+  const probeGemini = Boolean(options.probedGemini) && !agySelected;
+  // Derived from the gate rather than restating its condition: as two independent
+  // expressions they could disagree, and the failure mode of that disagreement is
+  // a report saying "not run" for a probe that ran and billed.
+  const geminiProbeSkippedForAgy = Boolean(options.probedGemini) && !probeGemini;
+  const geminiLoginStatusFn =
+    options.geminiLoginStatusFn ?? (probeGemini ? probeGeminiLogin : getGeminiLoginStatus);
+  const geminiAuth = geminiLoginStatusFn(cwd);
+  // Which credential applied, and whether the OAuth file says it is stale, are
+  // questions about the *file* — and under `--probe-gemini` `geminiAuth` is the
+  // probe result, where `loggedIn: true` means "the API answered", not "the file
+  // is valid". Reading the probe there named `oauth-file` for precisely the
+  // 0.53.1 case the probe exists to serve: file deleted, credential in the
+  // keychain. The extra read only happens when probing, and it is free and local.
+  //
+  // Keyed on "did this run probe", not on `geminiAuth.verifiable`: an inconclusive
+  // probe reports `verifiable: false`, exactly like a file check, so that field
+  // cannot tell the two apart — and reading it there let a timed-out probe erase
+  // the expired file underneath it.
+  const geminiFileStatusFn = options.geminiFileStatusFn ?? getGeminiLoginStatus;
+  const geminiFileAuth = probeGemini ? geminiFileStatusFn(cwd) : geminiAuth;
+  // `geminiAuth` reports the OAuth *file* only (unless probed). Readiness must use
+  // the full credential check auto-routing uses — env keys and the OS keychain
+  // included — or setup reports "not authenticated" for a user whose next command
+  // works.
+  // Injected for the same reason as the availability probes: without a seam the
+  // readiness assertions only hold on a machine that happens to have a gemini
+  // credential in its OS keychain, and the interesting cases here are about a
+  // credential that resolves but does not work. Forcing it with GEMINI_API_KEY
+  // instead would change the answer — an env key deliberately outranks the file.
+  // Handed the same env as everything else here: an injected key must count as a
+  // credential, or the report names `env-api-key` as the source while reporting
+  // that no credential resolved.
+  const geminiCredentialedFn = options.geminiCredentialedFn ?? (() => hasGeminiCredentials({ env }));
+  const geminiCredentialed = geminiCredentialedFn();
   // Same injection seam as detectEngine/runGeminiTurn: the readiness mapping is
   // the part worth testing, and it should not require a real AGY to reach.
   const agyLoginStatusFn =
@@ -235,20 +299,34 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
   const geminiPlanTier = getGeminiPlanTier();
   const config = getConfig(workspaceRoot) ?? {};
 
-  // Readiness is computed for the engine the user actually selected (via
-  // `--engine` or GEMINI_ENGINE). The default/gemini path mirrors upstream: the
-  // auto-preferred engine must be installed AND authenticated. Explicit `--engine agy`
-  // must NOT inherit Gemini's ready state — it depends on the AGY binary (whose
-  // auth cannot be verified non-interactively), so AGY-present is "partial" and
-  // AGY-missing is "not-ready".
-  const requestedEngine = String(options.engine ?? "").trim().toLowerCase();
-  // Validate against the same set the runtime resolver accepts (detectEngine).
-  // An unrecognized engine must fail the preflight rather than inheriting Gemini
-  // readiness — otherwise the next command resolves the same value and throws.
-  const engineKnown =
-    requestedEngine === "" || requestedEngine === "auto" || requestedEngine === "gemini" || requestedEngine === "agy";
-  const agySelected = requestedEngine === "agy";
-  const geminiReady = geminiStatus.available && geminiCredentialed;
+  // The default/gemini path mirrors upstream: the auto-preferred engine must be
+  // installed AND authenticated. Explicit `--engine agy` must NOT inherit Gemini's
+  // ready state — it depends on the AGY binary (whose auth cannot be verified
+  // non-interactively), so AGY-present is "partial" and AGY-missing is
+  // "not-ready". (`requestedEngine` / `agySelected` are resolved above, before the
+  // auth seams, so the paid probe can be gated on them.)
+  //
+  // A credential that resolves is not a credential that works, and this is the one
+  // case where we hold proof of the difference: `state: "expired"` means the OAuth
+  // file is present and says so. `/gemini:setup --engine gemini` used to answer
+  // `ready` with no next steps for an account that returns API_KEY_INVALID on
+  // every request, because the keychain still had a (stale) entry and outvoted the
+  // file. Positive evidence of staleness now blocks the `ready` claim.
+  //
+  // Only `expired` — not `missing`. 0.53.1 migrates OAuth into the keychain and
+  // deletes the file, so a healthy install also has no file; treating that as
+  // evidence would recreate the false "not authenticated" that the keychain check
+  // was added to fix. A probe that verified the credential outranks the file —
+  // but only a *verified* one: an inconclusive probe used to erase the file
+  // evidence too, because the probe result replaced it wholesale.
+  const geminiProbeVerified = geminiAuth.state === "verified" && geminiAuth.verifiable === true;
+  const geminiStaleFileEvidence =
+    !geminiApiKeyInEnv && !geminiProbeVerified && geminiFileAuth.state === "expired";
+  // A probe that came back rejected is the strongest evidence available, and it
+  // outranks a resolvable keychain entry — the same rule AGY already follows.
+  const geminiProbedLoggedOut = geminiAuth.state === "logged-out" && geminiAuth.verifiable === true;
+  const geminiReady =
+    geminiStatus.available && geminiCredentialed && !geminiStaleFileEvidence && !geminiProbedLoggedOut;
   const agyAvailable = agyStatus.available;
   // `geminiReady: true` beside `geminiAuth.loggedIn: false` reads as a
   // contradiction and was reported as one. Both are correct and they answer
@@ -261,15 +339,13 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
   // Resolved in the order hasGeminiCredentials uses, which is the order the CLI
   // itself uses: an env API key wins over the OAuth file, which wins over the
   // keychain. Reporting the file whenever it happens to be valid would name the
-  // wrong source for an API-key user.
-  const geminiApiKeyInEnv = Boolean(
-    String(process.env.GEMINI_API_KEY ?? "").trim() || String(process.env.GOOGLE_API_KEY ?? "").trim()
-  );
+  // wrong source for an API-key user. (`geminiApiKeyInEnv` is resolved above, from
+  // the injected env, alongside the other readiness inputs.)
   const geminiCredentialSource = !geminiStatus.available
     ? "engine-unavailable"
     : geminiApiKeyInEnv
       ? "env-api-key"
-      : geminiAuth.loggedIn
+      : geminiFileAuth.loggedIn
         ? "oauth-file"
         : geminiCredentialed
           ? "os-keychain"
@@ -301,9 +377,15 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
             : "partial"
         : geminiReady
           ? "ready"
-          : agyAvailable
-            ? "partial"
-            : "not-ready";
+          : // An explicitly selected gemini whose probe came back rejected is
+            // not-ready, not partial: the same "a verified negative is worse than
+            // unknown" rule as AGY. Under `auto` it stays partial, because auto
+            // routes to an available AGY when gemini's credential does not work.
+            requestedEngine === "gemini" && geminiProbedLoggedOut
+            ? "not-ready"
+            : agyAvailable
+              ? "partial"
+              : "not-ready";
 
   const nextSteps = [];
   if (!engineKnown) {
@@ -340,6 +422,40 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
   }
   if (!agySelected && geminiStatus.available && !geminiCredentialed) {
     nextSteps.push("Run `gemini` once to authenticate, or set GEMINI_API_KEY.");
+  }
+  // Both of the gemini "resolvable but does not work" cases. Without these the
+  // report was silent: `readyState` said `ready` and `nextSteps` was empty while
+  // `geminiAuth.detail` said the token had expired days earlier.
+  // Quotes the *file* status, and only offers the probe when one has not already
+  // answered. Reading `geminiAuth` here produced "the OAuth file says it is stale:
+  // Gemini CLI rejected the probe…" followed by advice to run the probe that had
+  // just run — the same confusion of the two sources as the source naming above.
+  // A verified-rejected probe is strictly stronger evidence and its own step names
+  // the identical fix, so it stands alone rather than being said twice.
+  if (!agySelected && geminiStaleFileEvidence && !geminiProbedLoggedOut) {
+    const probeOffer = probeGemini
+      ? ""
+      : " If a keychain credential is meant to be in use instead, `setup --probe-gemini` checks it against the API — that one spends a turn when the credential works, unlike `--probe-agy`.";
+    nextSteps.push(
+      `Gemini CLI has a stored credential, but the OAuth file says it is stale: ${geminiFileAuth.detail}${probeOffer}`
+    );
+  }
+  if (!agySelected && geminiProbedLoggedOut) {
+    nextSteps.push(geminiAuth.detail);
+  }
+  // A probe that could not decide still costs money, and this was the one place
+  // the flag could hide a spend: `unknown` pushed nothing, so the report read as
+  // if no probe had run. The AGY branch above already discloses its own
+  // inconclusive probe; its detail says whether the request may have been billed.
+  if (!agySelected && probeGemini && geminiAuth.state === "unknown") {
+    nextSteps.push(geminiAuth.detail);
+  }
+  // Skipping the probe is the right call (its answer would be discarded), but a
+  // silently ignored flag is how a user concludes the credential was checked.
+  if (geminiProbeSkippedForAgy) {
+    nextSteps.push(
+      "`--probe-gemini` was not run: `--engine agy` was selected, so the Gemini credential is not what this report describes, and the probe spends a turn. Drop `--engine agy` to check it."
+    );
   }
   if (!agySelected && !geminiStatus.available && agyAvailable) {
     nextSteps.push(
@@ -384,6 +500,10 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
     // happens to be installed on the machine running the test.
     sessionRuntime: getSessionRuntimeStatus({
       requestedEngine,
+      // Same env the readiness fields were computed from, for the same reason the
+      // availability probes are handed over: one payload must not describe an
+      // injected environment in one field and the ambient machine in another.
+      env,
       geminiAvailabilityFn: () => geminiStatus,
       agyAvailabilityFn: () => agyStatus
     }),
@@ -401,7 +521,7 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
 function handleSetup(argv) {
   const { options } = parseCommandInput(argv, {
     valueOptions: ["cwd", "engine"],
-    booleanOptions: ["json", "enable-review-gate", "disable-review-gate", "probe-agy"]
+    booleanOptions: ["json", "enable-review-gate", "disable-review-gate", "probe-agy", "probe-gemini"]
   });
 
   const cwd = resolveCommandCwd(options);
@@ -421,7 +541,8 @@ function handleSetup(argv) {
 
   const finalReport = buildSetupReport(cwd, actionsTaken, {
     engine: requestedEngine,
-    probedAgy: Boolean(options["probe-agy"])
+    probedAgy: Boolean(options["probe-agy"]),
+    probedGemini: Boolean(options["probe-gemini"])
   });
   outputResult(options.json ? finalReport : renderSetupReport(finalReport), options.json);
 }

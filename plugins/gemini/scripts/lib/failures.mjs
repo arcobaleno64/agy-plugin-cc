@@ -194,7 +194,18 @@ export function classifyCliFailure(input = {}) {
   if (data.promptTooLong || data.promptNul || /prompt .*too long|context length|token limit|NUL byte|positional prompt/i.test(structuredText)) {
     return normalizeFailure("prompt-too-long", data);
   }
-  if (/oauth|unauth|authenticat|login required|invalid api key|permission denied|\b401\b|\b403\b/i.test(structuredText)) {
+  // `api key not valid` and `API_KEY_INVALID` are Google's actual wording, and
+  // they are not word-order variants of `invalid api key` — a live 400 from
+  // generativelanguage.googleapis.com fell through to `unknown`, whose next step
+  // ("retry with a narrower prompt") can never fix a rejected credential.
+  // Deliberately not matched: `INVALID_ARGUMENT` and `\b400\b`. Both also cover
+  // malformed requests, and a bad `--model` id returns exactly that status — auth
+  // is tested before the model check below, so either one would swallow it.
+  if (
+    /oauth|unauth|authenticat|login required|invalid api key|api key not valid|API_KEY_INVALID|permission denied|\b401\b|\b403\b/i.test(
+      structuredText
+    )
+  ) {
     return normalizeFailure("auth", data);
   }
   if (/quota|billing|RESOURCE_EXHAUSTED/i.test(structuredText)) {

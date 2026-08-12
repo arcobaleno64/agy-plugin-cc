@@ -195,3 +195,47 @@ test("every command that relays model output marks it as untrusted data", () => 
     );
   }
 });
+
+// "Copy the line as written:" is load-bearing — it is what stops the model from
+// paraphrasing an invocation whose quoting matters. A later bullet was inserted
+// between that sentence and its fenced command, leaving the instruction pointing
+// at prose and the fence reading as part of the warning above it.
+test("a copy-this-line instruction is immediately followed by the line", () => {
+  for (const file of fs.readdirSync(COMMANDS_DIR).filter((name) => name.endsWith(".md"))) {
+    const lines = readCommand(file).split(/\r?\n/);
+    lines.forEach((line, index) => {
+      if (!/Copy the line as written:\s*$/.test(line)) return;
+      assert.match(
+        lines[index + 1] ?? "",
+        /^```/,
+        `${file}:${index + 1} points at the next line, which is not a fenced command`
+      );
+    });
+  }
+});
+
+// argument-hint is the only place a flag is discoverable from the slash command,
+// so a flag the companion advertises in its own usage must appear there too.
+// `--probe-gemini` shipped invisible: printUsage and the body were updated, the
+// hint was not.
+test("setup's argument-hint lists the flags its usage advertises", () => {
+  const companion = fs.readFileSync(
+    path.join(ROOT, "plugins", "gemini", "scripts", "gemini-companion.mjs"),
+    "utf8"
+  );
+  const usageLine = companion
+    .split(/\r?\n/)
+    .find((line) => line.includes("gemini-companion.mjs setup ["));
+  assert.ok(usageLine, "printUsage must still document the setup subcommand");
+
+  const hint = readCommand("setup.md")
+    .split(/\r?\n/)
+    .find((line) => line.startsWith("argument-hint:"));
+  assert.ok(hint, "setup.md must declare an argument-hint");
+
+  for (const flag of usageLine.match(/--[a-z][a-z-]+/g) ?? []) {
+    // `--json` is supplied by the command file itself, never by the user.
+    if (flag === "--json") continue;
+    assert.ok(hint.includes(flag), `argument-hint omits ${flag}, so it is undiscoverable`);
+  }
+});

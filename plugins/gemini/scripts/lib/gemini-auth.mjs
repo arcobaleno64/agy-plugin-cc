@@ -121,21 +121,51 @@ function geminiHomeDir() {
   return process.env.GEMINI_HOME ?? path.join(os.homedir(), ".gemini");
 }
 
+// `state` distinguishes the three ways `loggedIn: false` happens, because they
+// are not equally informative and readiness has to tell them apart:
+//
+//   missing    — no file. Proves nothing: 0.53.1 migrates the file into the
+//                keychain and deletes it, so a working install looks like this.
+//   expired    — the file is there and says the token is stale. This is positive
+//                evidence, and the only reason `/gemini:setup --engine gemini`
+//                could have known not to report `ready` for an account that
+//                answers API_KEY_INVALID on every request.
+//   unreadable — present but not parseable. Unknown, not evidence.
+//
+// `verifiable: false` on every branch: this reads a file, it never asks the API.
+// The shape matches probeAgyLogin/probeGeminiLogin so the readiness table can
+// consume either without caring which produced it. `loggedIn` and `detail` are
+// unchanged — render.mjs and hasGeminiCredentials read only those.
 export function getGeminiLoginStatus() {
   const credFile = path.join(geminiHomeDir(), "oauth_creds.json");
   if (!fs.existsSync(credFile)) {
-    return { loggedIn: false, detail: `No credentials at ${credFile}. Run \`gemini\` to authenticate.` };
+    return {
+      loggedIn: false,
+      state: "missing",
+      verifiable: false,
+      detail: `No credentials at ${credFile}. Run \`gemini\` to authenticate.`
+    };
   }
   try {
     const creds = JSON.parse(fs.readFileSync(credFile, "utf8"));
     const expiry = creds?.expiry_date ?? creds?.expiry ?? creds?.token?.expiry_date;
     if (expiry && Date.now() > Number(expiry)) {
-      return { loggedIn: false, detail: `OAuth token expired at ${new Date(Number(expiry)).toISOString()}. Run \`gemini\` to re-authenticate.` };
+      return {
+        loggedIn: false,
+        state: "expired",
+        verifiable: false,
+        detail: `OAuth token expired at ${new Date(Number(expiry)).toISOString()}. Run \`gemini\` to re-authenticate.`
+      };
     }
   } catch {
-    return { loggedIn: false, detail: `Cannot read credentials at ${credFile}. Run \`gemini\` to authenticate.` };
+    return {
+      loggedIn: false,
+      state: "unreadable",
+      verifiable: false,
+      detail: `Cannot read credentials at ${credFile}. Run \`gemini\` to authenticate.`
+    };
   }
-  return { loggedIn: true, detail: `OAuth credentials found at ${credFile}` };
+  return { loggedIn: true, state: "valid", verifiable: false, detail: `OAuth credentials found at ${credFile}` };
 }
 
 // Personal (free) Gemini plans lose CLI access on 2026-06-18; Gemini Code Assist
@@ -179,7 +209,14 @@ export function getGeminiPlanTier() {
 // to prevent. Affected users (headless Linux, WSL, or GEMINI_FORCE_FILE_STORAGE)
 // can still select the engine explicitly with `--engine gemini`.
 export function hasGeminiCredentials(options = {}) {
-  if (String(process.env.GEMINI_API_KEY ?? "").trim() || String(process.env.GOOGLE_API_KEY ?? "").trim()) {
+  // `env` is injectable so a caller that computes the rest of its answer from an
+  // injected environment gets one consistent answer. Without it, buildSetupReport
+  // could read an injected key for the credential *source* while this function
+  // read the real environment for whether a credential exists at all — which is
+  // how a setup test passed locally off an unrelated keychain entry and failed on
+  // a runner that had none.
+  const env = options.env ?? process.env;
+  if (String(env.GEMINI_API_KEY ?? "").trim() || String(env.GOOGLE_API_KEY ?? "").trim()) {
     return true;
   }
   if (getGeminiLoginStatus().loggedIn) return true;

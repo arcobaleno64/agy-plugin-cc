@@ -1,12 +1,12 @@
 ---
 description: Check whether Gemini CLI / AGY is ready and optionally toggle the stop-time review gate
-argument-hint: '[--engine <agy|gemini>] [--probe-agy] [--enable-review-gate|--disable-review-gate]'
+argument-hint: '[--engine <agy|gemini>] [--probe-agy] [--probe-gemini] [--enable-review-gate|--disable-review-gate]'
 allowed-tools: Bash(node:*), Bash(npm:*), Bash(curl:*), AskUserQuestion
 ---
 
-Run this exactly as written — `--json` belongs inside the quoted expansion. A
-token placed beside `"$ARGUMENTS"` makes the expansion a second argv element,
-and every flag inside it is then read as one positional and ignored, which is how
+Run this exactly as written — `--json` belongs inside the quoted argument string.
+A token placed beside that quoted string makes it a second argv element, and every
+flag inside it is then read as one positional and ignored, which is how
 `/gemini:setup --engine gemini` came back reporting a different engine:
 
 ```bash
@@ -88,13 +88,40 @@ declines and says so). A verified AGY then reports `readyState: "ready"`; a prob
 that comes back `logged-out` reports `not-ready`, and the fix is to run `agy`
 once interactively.
 
+There is a matching `--probe-gemini`, and **it is not free**. Gemini CLI has no
+question the account answers without generating, so the probe makes a real
+request: on a credential that no longer works it costs nothing (the API refuses it
+before generating), but on a working credential it spends a turn. Do not offer it
+by reflex the way `--probe-agy` can be offered — suggest it only when the report
+says a stored gemini credential cannot be trusted, or when the user asks whether
+gemini really works:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" setup "--json --probe-gemini $ARGUMENTS"
+```
+
+Without it, gemini readiness is read off disk, which can only prove staleness, not
+health: a present-but-expired `oauth_creds.json` now blocks the `ready` claim and
+reports `partial`, while a credential living only in the OS keychain cannot be
+judged at all (0.53.1 migrates the file into the keychain and deletes it). A probe
+that comes back `logged-out` reports `not-ready` for an explicitly requested
+`--engine gemini`, and stays `partial` under `auto` when AGY is installed, because
+auto routes to AGY when gemini's credential does not work.
+
 Output rules:
 - Present the final setup output to the user.
 - `geminiReady` and `geminiAuth.loggedIn` answer different questions and can
-  disagree: `geminiAuth` inspects the OAuth file alone, while readiness uses the
-  full credential resolution (env API key, that file, then the OS keychain).
-  `geminiCredentialSource` names the one that actually applied — quote it rather
-  than reporting the pair as a contradiction.
+  disagree: without `--probe-gemini`, `geminiAuth` inspects the OAuth file alone,
+  while readiness uses the full credential resolution (env API key, that file,
+  then the OS keychain). `geminiCredentialSource` names the one that actually
+  applied — quote it rather than reporting the pair as a contradiction.
+- Under `--probe-gemini`, `geminiAuth` is the probe's answer instead, so
+  `loggedIn: true` there means the API accepted a request — not that the OAuth
+  file is valid. `geminiCredentialSource` still names the file/keychain/env
+  source, so the two remain safe to quote together.
+- `--probe-gemini` is not run when `--engine agy` is selected, and `nextSteps`
+  says so: AGY readiness does not consult the Gemini credential, and the probe
+  costs a turn.
 - If installation was skipped, present the original setup output.
 - If Gemini is installed but not authenticated, preserve the guidance to run `!gemini` once to complete OAuth authentication. The plugin authenticates by running `gemini`; there is no separate login subcommand.
 - If the setup output (`nextSteps` / `geminiPlanTier`) includes a 2026-06-18 EOL heads-up, surface it: personal-plan Gemini CLI free access ends then. After that date, either upgrade to Gemini Code Assist Standard/Enterprise to keep the gemini engine, or use `--engine agy` (the plugin recovers AGY responses from its on-disk transcript because `agy --print` does not pipe output — upstream google-gemini/gemini-cli#27466).
