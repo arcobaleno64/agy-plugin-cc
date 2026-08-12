@@ -175,9 +175,14 @@ test("the report names the credential that satisfied gemini readiness", () => {
   // Injected rather than assigned onto process.env: mutating the real env made
   // this test order-dependent with anything else that reads it, and it is the same
   // seam that keeps the readiness assertions below off the runner's environment.
+  //
+  // The keychain opt-out travels with it so the injected key is the *only* thing
+  // that can satisfy `geminiReady`. Without it this passed on a developer machine
+  // off an unrelated keychain entry while failing on CI, which had none — the
+  // wrong-reason pass that hides whether the env is read at all.
   const report = buildSetupReport(makeTempDir(), [], {
     engine: "gemini",
-    env: { GEMINI_API_KEY: "test-key" },
+    env: { GEMINI_API_KEY: "test-key", GEMINI_COMPANION_DISABLE_KEYCHAIN: "1" },
     geminiAvailabilityFn: () => ({ available: true, version: "0.53.1" }),
     agyLoginStatusFn: () => agyStatus("unknown")
   });

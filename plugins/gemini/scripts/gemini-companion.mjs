@@ -286,7 +286,10 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
   // credential in its OS keychain, and the interesting cases here are about a
   // credential that resolves but does not work. Forcing it with GEMINI_API_KEY
   // instead would change the answer — an env key deliberately outranks the file.
-  const geminiCredentialedFn = options.geminiCredentialedFn ?? hasGeminiCredentials;
+  // Handed the same env as everything else here: an injected key must count as a
+  // credential, or the report names `env-api-key` as the source while reporting
+  // that no credential resolved.
+  const geminiCredentialedFn = options.geminiCredentialedFn ?? (() => hasGeminiCredentials({ env }));
   const geminiCredentialed = geminiCredentialedFn();
   // Same injection seam as detectEngine/runGeminiTurn: the readiness mapping is
   // the part worth testing, and it should not require a real AGY to reach.

@@ -209,7 +209,14 @@ export function getGeminiPlanTier() {
 // to prevent. Affected users (headless Linux, WSL, or GEMINI_FORCE_FILE_STORAGE)
 // can still select the engine explicitly with `--engine gemini`.
 export function hasGeminiCredentials(options = {}) {
-  if (String(process.env.GEMINI_API_KEY ?? "").trim() || String(process.env.GOOGLE_API_KEY ?? "").trim()) {
+  // `env` is injectable so a caller that computes the rest of its answer from an
+  // injected environment gets one consistent answer. Without it, buildSetupReport
+  // could read an injected key for the credential *source* while this function
+  // read the real environment for whether a credential exists at all — which is
+  // how a setup test passed locally off an unrelated keychain entry and failed on
+  // a runner that had none.
+  const env = options.env ?? process.env;
+  if (String(env.GEMINI_API_KEY ?? "").trim() || String(env.GOOGLE_API_KEY ?? "").trim()) {
     return true;
   }
   if (getGeminiLoginStatus().loggedIn) return true;
