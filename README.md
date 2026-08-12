@@ -21,7 +21,7 @@ Compared with AGY-only, multi-host plugins, this project keeps the Gemini CLI pa
 - Pragmatic and adversarial code review over the current diff or branch.
 - Background task delegation for longer-running companion-agent work.
 - Gemini model aliases, graceful model fallback, and transient review retry.
-- Version-gated AGY prompt transport: native JSON envelope on 1.1.8+, transcript recovery below it.
+- Version-gated AGY result retrieval: native JSON envelope on 1.1.8+, transcript recovery below it.
 - Safer stdin prompt delivery on Gemini and AGY 1.1.2 or newer.
 
 | Need | Use this plugin when... |
