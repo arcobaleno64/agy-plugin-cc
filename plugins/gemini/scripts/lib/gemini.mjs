@@ -834,10 +834,21 @@ export function probeAgyLogin({ runCommandFn = runCommand, detectEngineFn = dete
 // It exists because the file check cannot see the case that matters most: once
 // gemini 0.53.1 migrates OAuth into the keychain and deletes oauth_creds.json,
 // an invalid keychain credential is indistinguishable from a good one on disk.
-export const GEMINI_PROBE_TIMEOUT_MS = 30_000;
+// A one-word prompt answers in seconds, so this ceiling is not about the model —
+// it is about not being the reason the answer is inconclusive. At 30s a healthy
+// but slow credential (cold start, slow network) was SIGTERM-killed mid-request,
+// which bills the turn and *still* reports `unknown`: the user pays and learns
+// nothing. A real turn gets DEFAULT_SPAWN_TIMEOUT_MS (600s); the probe does not
+// need that much, but it needs enough that a timeout means something is wrong.
+export const GEMINI_PROBE_TIMEOUT_MS = 120_000;
 const GEMINI_PROBE_PROMPT = "ok";
 
-export function probeGeminiLogin({ runCommandFn = runCommand, detectEngineFn = detectEngine } = {}) {
+// `cwd` is positional to match the seam it is installed into
+// (`geminiLoginStatusFn(cwd)`, shared with getGeminiLoginStatus). It used to be
+// swallowed by the options destructuring, which silently ran the probe in the
+// process cwd — so a workspace `.gemini/settings.json` (auth type, model) did
+// not apply and the probe could disagree with the very turn it predicts.
+export function probeGeminiLogin(cwd = undefined, { runCommandFn = runCommand, detectEngineFn = detectEngine } = {}) {
   let engineInfo;
   try {
     engineInfo = detectEngineFn("gemini");
@@ -851,6 +862,7 @@ export function probeGeminiLogin({ runCommandFn = runCommand, detectEngineFn = d
   const args = buildCliArgs("gemini", { prompt: GEMINI_PROBE_PROMPT, useStdin: true, outputJson: true });
   const result = runCommandFn(engineInfo.binary, args, {
     input: GEMINI_PROBE_PROMPT,
+    cwd,
     timeout: GEMINI_PROBE_TIMEOUT_MS,
     maxBuffer: MAX_BUFFER
   });
@@ -864,14 +876,25 @@ export function probeGeminiLogin({ runCommandFn = runCommand, detectEngineFn = d
     };
   }
 
-  const reason = String(result.stderr ?? "").trim();
+  // The probe asks for `--output-format json`, and in that mode gemini can carry
+  // the error in a stdout envelope (`{ error: { message } }`) instead of on
+  // stderr — see isModelNotFoundError above. classifyCliFailure only folds stdout
+  // into its comparison text when `structured: true`, so without this the probe
+  // would answer `unknown` for exactly the rejected credential it exists to
+  // detect. Measured on 0.54.4 the auth error arrives on stderr, so this is the
+  // envelope path held open, not the path in use.
+  const envelope = tryParseJsonFromText(stripAnsi(result.stdout ?? ""));
+  const rawEnvelopeError = typeof envelope?.error === "string" ? envelope.error : envelope?.error?.message;
+  const envelopeError = String(rawEnvelopeError ?? "").trim();
+  const reason = envelopeError || String(result.stderr ?? "").trim();
   const failure = classifyCliFailure({
     engine: "gemini",
     status: result.status,
     signal: result.signal,
     error: result.error,
     stdout: result.stdout,
-    stderr: result.stderr
+    stderr: result.stderr,
+    structuredError: envelopeError
   });
   if (failure.category === "auth") {
     return {
@@ -882,11 +905,14 @@ export function probeGeminiLogin({ runCommandFn = runCommand, detectEngineFn = d
     };
   }
   // As with AGY: a probe that failed for another reason is not proof of a logout.
+  // Unlike the auth branch, this one cannot promise the request was free — a
+  // timeout in particular means it was in flight when we killed it. Say so: the
+  // rest of this flag's contract is that its cost is never a surprise.
   return {
     loggedIn: false,
     state: "unknown",
     verifiable: false,
-    detail: `Gemini CLI ${version} did not complete the probe (${failure.category}), so its authentication state is still unknown.${reason ? ` (${shortenProbeReason(reason)})` : ""}`
+    detail: `Gemini CLI ${version} did not complete the probe (${failure.category}), so its authentication state is still unknown. The request may have reached the API, so it may have spent a turn.${reason ? ` (${shortenProbeReason(reason)})` : ""}`
   };
 }
 

@@ -59,10 +59,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" adversarial-review "$A
 Background flow:
 - Run the companion with its own `--background` flag in the FOREGROUND (the companion detaches its own worker and returns immediately).
 - `--background` goes INSIDE the quoted argument string below, not beside it. A token placed next to that quoted string makes it a second argv element, and the flags inside it are then read as focus text instead of flags. Copy the line as written:
-- If the user's focus text contains double quotes, they close that quoting early and the shell splits the line: `--background` lands inside the focus text and the review runs in the foreground. Ask the user for focus text without double quotes (single quotes are safe) rather than trying to escape it.
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" adversarial-review "$ARGUMENTS --background"
 ```
+- If the user's focus text contains double quotes, they close that quoting early and the shell splits the line: `--background` lands inside the focus text and the review runs in the foreground. Ask the user for focus text without double quotes (single quotes are safe) rather than trying to escape it.
 - This enqueues the review, spawns a detached `review-worker`, and returns a job id right away. The result persists even if this Claude session is interrupted.
 - Do not use `run_in_background: true` and do not call `BashOutput` — the companion already detached; this call returns immediately.
 - Relay the returned job id: "Gemini adversarial review started in the background as `<job-id>`. Check `/gemini:status <job-id>` for progress and `/gemini:result <job-id>` when it finishes."

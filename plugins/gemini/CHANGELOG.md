@@ -51,6 +51,61 @@ Also fixed: three command-markdown sentences added in 0.17.1 contained a literal
 `$ARGUMENTS`, which is substituted along with everything else — at runtime they
 read as instructions about the user's own arguments.
 
+### Review of the above, before release
+
+A code review of this release found eight further defects in it, six of them in
+the probe added here. All were reproduced before being changed.
+
+**`--probe-gemini` spent a turn it then threw away.** Nothing gated the probe on
+the selected engine, while AGY readiness never consults `geminiAuth` and every
+gemini-derived next step is guarded on the same condition — so
+`setup --engine agy --probe-gemini` billed a request whose answer was discarded.
+It is now skipped there, and `nextSteps` says it was skipped: a flag that silently
+does nothing is how a user concludes the credential was checked.
+
+**The probe result impersonated the OAuth file.** Under `--probe-gemini`,
+`geminiAuth` is the probe's answer, where `loggedIn: true` means "the API accepted
+a request" — not "the file is valid". Reading it for `geminiCredentialSource`
+reported `oauth-file` for precisely the case the probe exists to serve (0.53.1
+deleted the file; the credential is in the keychain), and the stale-file next step
+quoted the probe: "the OAuth file says it is stale: Gemini CLI rejected the
+probe…", then advised running the probe that had just run. Source naming and file
+evidence now read a separate, free file check. An inconclusive probe no longer
+erases that evidence either — it used to replace it wholesale, so an expired file
+plus a timed-out probe read as `ready`.
+
+**An inconclusive probe disclosed nothing.** `unknown` pushed no next step, so a
+user who had just paid for a request read a report that looked like no probe had
+run. It now surfaces the probe's own detail, which states that the request may
+have reached the API and may therefore have been billed. The timeout also rose
+from 30s to 120s: at 30s a healthy-but-slow credential was killed mid-request,
+which bills the turn and still answers `unknown`.
+
+**The probe could not see an error in the JSON envelope.** It requests
+`--output-format json`, and in that mode gemini can carry the error in a stdout
+envelope rather than on stderr, where `classifyCliFailure` does not look unless
+told the output is structured. Measured on 0.54.4 the auth error arrives on
+stderr, so this was latent rather than live; the envelope path is now handled the
+way `probeAgyLogin` already handled it.
+
+**The probe ignored the caller's directory.** The `cwd` handed to it by the
+readiness seam was swallowed by an options destructure, so it ran in the process
+cwd — a workspace `.gemini/settings.json` did not apply, and the probe could
+disagree with the very turn it predicts.
+
+**Readiness read `process.env` directly**, unlike every other input, so the new
+readiness tests asserted correctly only on a machine with no `GEMINI_API_KEY`
+exported: `GEMINI_API_KEY=x npm test` failed. The environment is now injected like
+the rest, and `sessionRuntime` is computed from the same one so a single payload
+cannot describe two environments.
+
+Two documentation defects: `setup`'s `argument-hint` never listed
+`--probe-gemini`, leaving it undiscoverable from the slash command, and a bullet
+inserted between "Copy the line as written:" and its fenced command left that
+instruction pointing at prose. Both now have guards — `argument-hint` must list
+every flag the companion's own usage advertises, and a copy-this-line instruction
+must be followed immediately by the line.
+
 ## 0.17.1 — 2026-08-12 — The flags you typed now reach the engine
 
 Found by using the plugin on its own repository. All three were reproduced
