@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.17.1 — 2026-08-12 — The flags you typed now reach the engine
+
+Found by using the plugin on its own repository. All three were reproduced
+before being changed, and one of them turned out not to be a defect at all.
+
+**A flag string passed beside another flag was discarded.** `commands/review.md`
+and `commands/setup.md` invoke the runtime as `review --background "$ARGUMENTS"`
+and `setup --json "$ARGUMENTS"`, so argv had two elements — and `normalizeArgv`
+split the raw argument string only when argv had exactly one. Everything inside
+the second element was swallowed as a positional the command does not accept:
+`/gemini:review --base HEAD~1 --scope branch` answered "Nothing to review" in one
+second over a 26-file, 2045-line diff, and `/gemini:setup --engine gemini`
+reported on the engine from the environment instead. A token that starts with a
+dash and contains whitespace cannot be a single flag, so it is now split wherever
+it appears; free text is untouched, and `--` still protects text that needs it.
+
+**The session runtime named an engine that could not have run.** The label chose
+gemini whenever the gemini binary existed — `getSessionRuntimeStatus` took no
+engine or environment argument at all, and `job-control` passed one that was
+silently dropped. Under `GEMINI_ENGINE=agy` with an expired gemini credential,
+`/gemini:setup --json` reported `gemini CLI (per-command)`. It now asks
+`detectEngine`, the resolver the next command itself uses, reusing the
+availability probes already taken so the answer costs no extra process spawns,
+and reports the resolved engine in a new `sessionRuntime.selected` field.
+
+**No change to review budget allocation.** A review of this repository reported
+`allocateBudget` dropping smaller files while funding larger ones, and
+recommended holding the skipped file's share back. Measured, that recommendation
+reviews nothing at all: the held-back share keeps every later share under the
+400-character minimum, so 1200 files of 500 characters against the 400,000-char
+budget go from 1000 files reviewed and the budget fully spent to zero files
+reviewed — the "every file was dropped" failure the budgeting exists to prevent.
+The behaviour is deliberate and stays; the comment claiming it "funds whole small
+files ahead of fragments of large ones" was the part that was wrong, and tests
+now pin the tradeoff so the plausible fix cannot be applied silently.
+
 ## 0.17.0 — 2026-08-11 — Stop losing work that was already paid for
 
 Seven defects reported from two days of heavy background use, reproduced before

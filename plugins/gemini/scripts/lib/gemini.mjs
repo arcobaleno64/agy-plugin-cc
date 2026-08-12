@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 
-import { buildCliArgs, detectEngine, formatAgyTimeout, mapEffortToModel, normalizeAgyEffort, normalizeAgyRequestedModel, normalizeRequestedModel, supportsAgyModelSelection, supportsAgyReadOnlySlashCommands, supportsAgyStdinPrompt, supportsAgyStructuredOutput } from "./engine.mjs";
+import { buildCliArgs, detectEngine, ENGINE_ENV, formatAgyTimeout, mapEffortToModel, normalizeAgyEffort, normalizeAgyRequestedModel, normalizeRequestedModel, supportsAgyModelSelection, supportsAgyReadOnlySlashCommands, supportsAgyStdinPrompt, supportsAgyStructuredOutput } from "./engine.mjs";
 import { classifyCliFailure } from "./failures.mjs";
 import { binaryAvailable, runCommand } from "./process.mjs";
 import { resolveAgyBrainRoot, listConvDirs, recoverAgyResponse } from "./agy-transcript.mjs";
@@ -822,17 +822,47 @@ export function probeAgyLogin({ runCommandFn = runCommand, detectEngineFn = dete
   };
 }
 
-export function getSessionRuntimeStatus() {
+export function getSessionRuntimeStatus(options = {}) {
   // Unlike the Codex app-server (a shared persistent runtime), the Gemini plugin
   // invokes the CLI directly per command, so the runtime label describes which
   // engine the next command would use rather than a shared session endpoint.
-  const gemini = getGeminiAvailability();
-  const agy = getAgyAvailability();
+  //
+  // It has to *ask* rather than guess. Choosing on binary presence alone reported
+  // "gemini CLI (per-command)" under `GEMINI_ENGINE=agy` with an expired gemini
+  // credential — naming the one engine that could not have run. detectEngine is
+  // the resolver the next command itself uses, so the answer comes from there;
+  // the availability probes already done here are fed back into it so asking
+  // costs no extra process spawns.
+  const {
+    requestedEngine = null,
+    env = process.env,
+    geminiAvailabilityFn = getGeminiAvailability,
+    agyAvailabilityFn = getAgyAvailability,
+    detectEngineFn = detectEngine
+  } = options;
+  const gemini = geminiAvailabilityFn();
+  const agy = agyAvailabilityFn();
   const available = gemini.available || agy.available;
-  const label = gemini.available
-    ? "gemini CLI (per-command)"
-    : agy.available
-      ? "agy (per-command)"
-      : "no engine available";
-  return { mode: "direct", gemini, agy, available, label };
+
+  let selected = null;
+  try {
+    selected = detectEngineFn(requestedEngine || env[ENGINE_ENV] || null, {
+      binaryAvailableImpl: (binary) => (/agy/i.test(String(binary)) ? agy : gemini)
+    }).engine;
+  } catch {
+    // Every failure here is already reported in full by the setup readiness
+    // fields (missing binary, unusable credential, unknown engine name). The
+    // label only has to stop claiming an engine that would not run.
+    selected = null;
+  }
+
+  const label =
+    selected === "gemini"
+      ? "gemini CLI (per-command)"
+      : selected === "agy"
+        ? "agy (per-command)"
+        : available
+          ? "installed, but no engine is ready"
+          : "no engine available";
+  return { mode: "direct", gemini, agy, available, selected, label };
 }

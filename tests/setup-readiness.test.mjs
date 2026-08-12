@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { buildSetupReport } from "../plugins/gemini/scripts/gemini-companion.mjs";
-import { probeAgyLogin } from "../plugins/gemini/scripts/lib/gemini.mjs";
+import { getSessionRuntimeStatus, probeAgyLogin } from "../plugins/gemini/scripts/lib/gemini.mjs";
 import { makeTempDir } from "./helpers.mjs";
 
 // ---------------------------------------------------------------------------
@@ -191,4 +191,87 @@ test("the credential source says so plainly when there is no engine", () => {
   });
 
   assert.equal(report.geminiCredentialSource, "engine-unavailable");
+});
+
+// ---------------------------------------------------------------------------
+// getSessionRuntimeStatus
+//
+// The defect this answers, found by running the plugin against its own repo:
+// the label picked gemini whenever the gemini *binary* existed, ignoring the
+// requested engine entirely — the function took no env or engine argument at
+// all, and job-control passed one that was silently dropped. With
+// GEMINI_ENGINE=agy and an expired gemini credential, `/gemini:setup --json`
+// reported "gemini CLI (per-command)": the one engine that could not have run.
+// The label now comes from detectEngine, the resolver the next command uses.
+// ---------------------------------------------------------------------------
+
+const AVAILABLE_GEMINI = () => ({ available: true, detail: "0.54.4" });
+const AVAILABLE_AGY = () => ({ available: true, detail: "1.1.12" });
+
+function recordingDetectEngine(engine) {
+  const calls = [];
+  const fn = (requested) => {
+    calls.push(requested);
+    return { engine, binary: engine, version: "test" };
+  };
+  fn.calls = calls;
+  return fn;
+}
+
+test("the runtime label follows GEMINI_ENGINE, not whichever binary exists", () => {
+  const detectEngineFn = recordingDetectEngine("agy");
+  const status = getSessionRuntimeStatus({
+    env: { GEMINI_ENGINE: "agy" },
+    geminiAvailabilityFn: AVAILABLE_GEMINI,
+    agyAvailabilityFn: AVAILABLE_AGY,
+    detectEngineFn
+  });
+
+  assert.deepEqual(detectEngineFn.calls, ["agy"], "the requested engine must reach the resolver");
+  assert.equal(status.selected, "agy");
+  assert.equal(status.label, "agy (per-command)");
+});
+
+test("an explicit --engine outranks the environment", () => {
+  const detectEngineFn = recordingDetectEngine("gemini");
+  const status = getSessionRuntimeStatus({
+    requestedEngine: "gemini",
+    env: { GEMINI_ENGINE: "agy" },
+    geminiAvailabilityFn: AVAILABLE_GEMINI,
+    agyAvailabilityFn: AVAILABLE_AGY,
+    detectEngineFn
+  });
+
+  assert.deepEqual(detectEngineFn.calls, ["gemini"]);
+  assert.equal(status.label, "gemini CLI (per-command)");
+});
+
+test("an installed but unusable engine is not named as the runtime", () => {
+  // detectEngine throws for "installed with no usable credential and no AGY".
+  const status = getSessionRuntimeStatus({
+    env: {},
+    geminiAvailabilityFn: AVAILABLE_GEMINI,
+    agyAvailabilityFn: () => ({ available: false, detail: null }),
+    detectEngineFn: () => {
+      throw new Error("Gemini CLI is installed but has no usable credential");
+    }
+  });
+
+  assert.equal(status.available, true, "the binary is still installed");
+  assert.equal(status.selected, null);
+  assert.equal(status.label, "installed, but no engine is ready");
+});
+
+test("no engine at all still reports plainly", () => {
+  const status = getSessionRuntimeStatus({
+    env: {},
+    geminiAvailabilityFn: () => ({ available: false, detail: null }),
+    agyAvailabilityFn: () => ({ available: false, detail: null }),
+    detectEngineFn: () => {
+      throw new Error("No Gemini or AGY engine found.");
+    }
+  });
+
+  assert.equal(status.available, false);
+  assert.equal(status.label, "no engine available");
 });

@@ -73,6 +73,29 @@ export function parseArgs(argv, config = {}) {
   return { options, positionals };
 }
 
+// A slash command expands `$ARGUMENTS` into one shell word, so a whole flag
+// string can arrive as a single argv element. Splitting that is what makes
+// `/gemini:review --base X` work at all.
+//
+// The single-element case is not the only one: several commands pass a flag of
+// their own *beside* the expansion — `review --background "$ARGUMENTS"`,
+// `setup --json "$ARGUMENTS"` — so argv has two elements and the flags inside
+// the second were silently discarded. `--base HEAD~1 --scope branch` became one
+// positional that review does not accept, and the review reported "nothing to
+// review" in a second while a 26-file diff sat unread; `setup --json` reported
+// on the engine from the environment rather than the requested one.
+//
+// A token that starts with a dash *and* contains whitespace cannot be a single
+// flag, so it is treated as a nested flag string wherever it appears. Free-text
+// positionals (a task prompt, a review focus) do not start with a dash and are
+// left alone; text that genuinely does can be protected with `--`, whose
+// passthrough is honoured here as well as in parseArgs.
+function isNestedFlagString(token) {
+  if (typeof token !== "string") return false;
+  const trimmed = token.trim();
+  return trimmed.startsWith("-") && /\s/.test(trimmed);
+}
+
 export function normalizeArgv(argv) {
   if (argv.length === 1) {
     const [raw] = argv;
@@ -81,7 +104,26 @@ export function normalizeArgv(argv) {
     }
     return splitRawArgumentString(raw);
   }
-  return argv;
+
+  const normalized = [];
+  let passthrough = false;
+  for (const token of argv) {
+    if (passthrough) {
+      normalized.push(token);
+      continue;
+    }
+    if (token === "--") {
+      passthrough = true;
+      normalized.push(token);
+      continue;
+    }
+    if (isNestedFlagString(token)) {
+      normalized.push(...splitRawArgumentString(token));
+      continue;
+    }
+    normalized.push(token);
+  }
+  return normalized;
 }
 
 export function splitRawArgumentString(raw) {

@@ -378,7 +378,7 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
     geminiAuth,
     agy: agyStatus,
     agyAuth,
-    sessionRuntime: getSessionRuntimeStatus(),
+    sessionRuntime: getSessionRuntimeStatus({ requestedEngine }),
     reviewGateEnabled: config.stopReviewGateEnabled ?? false,
     modelAliases: {
       total: modelAliasCount,

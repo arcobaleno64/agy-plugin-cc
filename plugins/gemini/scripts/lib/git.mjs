@@ -178,11 +178,27 @@ function formatSection(title, body) {
 
 // Give every file a fair share of `budget`, letting files that need less than
 // their share release the remainder to the ones that need more. Walking the
-// files smallest-first makes one pass equivalent to repeated redistribution, and
-// funds whole small files ahead of fragments of large ones.
+// files smallest-first funds whole small files before large ones have to be cut
+// down, and lets one pass stand in for repeated redistribution.
+//
+// What it does NOT promise: that a file is never dropped while a larger one is
+// kept. A file whose fair share falls under MIN_REVIEWABLE_FILE_CHARS gets
+// nothing — a 200-character window onto a file is not a review — and the share
+// it did not spend then raises the share of every file after it, which are the
+// larger ones. So `[500, 600]` against 700 allocates `[0, 600]`, and
+// `[500, 5000]` against 700 allocates `[0, 700]`: a whole small file makes way
+// for a fragment of a large one.
+//
+// That is deliberate, because the alternative is worse. Holding the skipped
+// file's share back (not decrementing `unfunded`) keeps every later share below
+// the minimum too, so nothing clears the bar: 1200 files of 500 characters
+// against the 400,000 budget go from 1000 files reviewed and the budget fully
+// spent, to zero files reviewed and nothing sent — the "every file was dropped"
+// failure this budgeting exists to prevent. Coverage wins over ordering, and
+// whatever is dropped is named to the reviewer by `truncationNotice`.
 //
 // Returns one allocation per input size, in the input's order.
-function allocateBudget(sizes, budget) {
+export function allocateBudget(sizes, budget) {
   const allocation = new Array(sizes.length).fill(0);
   const ascending = sizes.map((size, index) => ({ index, size })).sort((left, right) => left.size - right.size);
 
