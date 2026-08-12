@@ -1,5 +1,3 @@
-
-
 # Gemini / Antigravity Companion for Claude Code
 
 > Use Gemini CLI or Antigravity CLI (`agy`) inside Claude Code for task delegation, pragmatic code review, and adversarial review.
