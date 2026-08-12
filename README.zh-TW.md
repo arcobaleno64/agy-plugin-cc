@@ -194,6 +194,15 @@
 
 印出 Node、Gemini CLI 與 AGY 的可用性及認證狀態。
 
+| 旗標 | 說明 |
+|---|---|
+| `--engine <agy\|gemini>` | 回報該引擎的就緒狀態，而非 auto 路由的預設引擎 |
+| `--probe-agy` | 以唯讀問題驗證 AGY 登入狀態。**免費**——`/quota` 由帳號作答，不會起 turn（需 AGY 1.1.11+；更舊版本會拒絕，setup 會明說） |
+| `--probe-gemini` | 發出一次真實請求以驗證已儲存的 Gemini 憑證。**不免費**——憑證已失效時不花錢（API 在生成前就拒絕），但憑證有效時會花掉一次 turn。在 `--engine agy` 下會被跳過，並在 `nextSteps` 說明 |
+| `--enable-review-gate` / `--disable-review-gate` | 切換停止時的審查閘門（見 [Review Gate（可選）](#review-gate可選)） |
+
+未加 probe 時，Gemini 的就緒狀態是從磁碟判讀的，而那只能證明過期：`oauth_creds.json` 存在且已過期會回報 `partial`；只存在於 OS keychain 的憑證則完全無法判斷（gemini CLI 0.53.1 會把該檔遷入 keychain 並刪除）。`geminiCredentialSource` 會指出實際滿足檢查的是哪一個憑證來源。
+
 ### `/gemini:status [工作-ID]`
 
 列出作用中與近期的背景工作。傳入工作 ID 以查看單一工作。

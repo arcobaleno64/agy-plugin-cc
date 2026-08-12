@@ -185,7 +185,18 @@ test("setup warns personal-plan users about the 2026-06-18 gemini CLI EOL", () =
   assert.equal(result.status, 0, result.stderr);
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.geminiPlanTier.tier, "personal");
-  assert.ok(payload.nextSteps.some((step) => /2026-06-18/.test(step)), "expected a 2026-06-18 EOL heads-up");
+  const eol = payload.nextSteps.find((step) => /2026-06-18/.test(step));
+  assert.ok(eol, "expected a 2026-06-18 EOL heads-up");
+  // The date is in the past, so the warning describes a state the user is already
+  // in. It read "free CLI access ends 2026-06-18" for two months afterwards,
+  // telling personal-plan users a deadline was still ahead of them — matching the
+  // date alone did not notice, so pin the tense.
+  assert.match(eol, /ended 2026-06-18/, "the EOL is past; the warning must not promise a future deadline");
+  assert.doesNotMatch(eol, /ends 2026-06-18/);
+  // Same sentence carried a second stale claim: that AGY responses come from the
+  // on-disk transcript. That has been the fallback for older AGY only since 1.1.8,
+  // where the native JSON envelope is the source of truth.
+  assert.match(eol, /native JSON envelope/, "the AGY route must not be described as transcript-only");
 });
 
 test("setup does not show the EOL warning for a non-personal (enterprise) plan", () => {

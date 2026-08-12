@@ -463,11 +463,14 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
     );
   }
 
-  // Personal (free) plan EOL: warn that gemini CLI free access ends 2026-06-18.
+  // Personal (free) plan EOL: gemini CLI free access *ended* 2026-06-18. Past
+  // tense on purpose — this read "ends 2026-06-18" for two months after the date,
+  // telling a personal-plan user a deadline was still ahead of them while the same
+  // repository's other references had already been corrected to "ended".
   // Enterprise / Code Assist tiers are unaffected; an unknown tier stays silent.
   if (geminiPlanTier.tier === "personal") {
     nextSteps.push(
-      "Heads-up: Gemini personal-plan free CLI access ends 2026-06-18. To keep the gemini engine after that, upgrade to Gemini Code Assist Standard/Enterprise; otherwise route through AGY (`--engine agy`) — the plugin reads AGY responses from its on-disk transcript because `agy --print` does not pipe output (upstream google-gemini/gemini-cli#27466)."
+      "Heads-up: Gemini personal-plan free CLI access ended 2026-06-18. To keep the gemini engine, upgrade to Gemini Code Assist Standard/Enterprise; otherwise route through AGY (`--engine agy`), which returns its response in a native JSON envelope on AGY 1.1.8+ (older AGY falls back to reading its on-disk transcript, because `agy --print` did not pipe output — upstream google-gemini/gemini-cli#27466)."
     );
   }
 
