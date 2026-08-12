@@ -159,9 +159,19 @@ function checkChangelogEntry(root, expectedVersion) {
   const file = path.join(root, CHANGELOG_FILE);
   if (!fs.existsSync(file)) return null;
   const headings = fs.readFileSync(file, "utf8").split(/\r?\n/).filter((line) => line.startsWith("## "));
-  // Matches `## 0.17.3 — 2026-08-12 — title` and any other suffix, but requires the
-  // version to be the first token so `## 0.17.30` does not satisfy `0.17.3`.
-  const found = headings.some((line) => new RegExp(`^##\\s+v?${expectedVersion.replace(/\./g, "\\.")}(\\s|$)`).test(line));
+  // Token comparison, not a constructed regex. `## 0.17.3 — 2026-08-12 — title`
+  // splits to ["##", "0.17.3", …], so the version is element 1 and an exact match
+  // rejects `## 0.17.30` for free.
+  //
+  // The first version of this built `new RegExp(...)` from the version string and
+  // escaped only dots. CodeQL was right about both halves of that: the escaping was
+  // incomplete (backslashes survived) and the pattern came from a command-line
+  // argument. Hardening the escape would have kept a regex nobody needed — the
+  // question here was only ever "is this token equal to that one".
+  const found = headings.some((line) => {
+    const token = line.split(/\s+/)[1];
+    return token === expectedVersion || token === `v${expectedVersion}`;
+  });
   if (found) return null;
   return `${CHANGELOG_FILE}: no \`## ${expectedVersion}\` entry. The manifests agree, so nothing else would have caught this — a release with no changelog entry tells the user nothing about what changed.`;
 }
