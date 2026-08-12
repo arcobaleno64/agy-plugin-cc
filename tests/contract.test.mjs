@@ -128,3 +128,46 @@ test("bump-version updates every manifest and --check detects drift", () => {
   assert.notEqual(checked.status, 0);
   assert.match(checked.stderr, /out of sync/i);
 });
+
+// A release whose manifests all agree and whose changelog says nothing about the
+// version passes every other gate: the four manifests are mechanically consistent,
+// contracts verify, and the release workflow's tag assertion compares the tag to
+// package.json — which was bumped. The one artifact that tells a user what changed
+// was the only one nothing checked. Surfaced by a code review of the v0.17.3
+// release commit, which did have its entry.
+test("--check fails when the changelog has no entry for the version", () => {
+  const root = makeFixture("1.2.3");
+  const changelog = path.join(root, "plugins", "gemini", "CHANGELOG.md");
+  fs.mkdirSync(path.dirname(changelog), { recursive: true });
+  fs.writeFileSync(changelog, "# Changelog\n\n## 1.2.2 — 2026-01-01 — something else\n");
+
+  const missing = run("node", [BUMP, "--root", root, "--check"], { cwd: ROOT });
+  assert.notEqual(missing.status, 0, "a release with no changelog entry must not pass");
+  assert.match(missing.stderr, /no `## 1\.2\.3` entry/);
+
+  fs.appendFileSync(changelog, "\n## 1.2.3 — 2026-01-02 — the entry\n");
+  const present = run("node", [BUMP, "--root", root, "--check"], { cwd: ROOT });
+  assert.equal(present.status, 0, present.stderr);
+  assert.match(present.stdout, /changelog has an entry/);
+});
+
+// A near-miss must not satisfy it: `## 1.2.30` starts with the same characters as
+// 1.2.3, and a prefix match would have accepted the wrong release's entry.
+test("--check does not accept a longer version as the entry", () => {
+  const root = makeFixture("1.2.3");
+  const changelog = path.join(root, "plugins", "gemini", "CHANGELOG.md");
+  fs.mkdirSync(path.dirname(changelog), { recursive: true });
+  fs.writeFileSync(changelog, "# Changelog\n\n## 1.2.30 — 2026-01-01 — a different release\n");
+
+  const result = run("node", [BUMP, "--root", root, "--check"], { cwd: ROOT });
+  assert.notEqual(result.status, 0);
+});
+
+// The fixtures do not ship a changelog, and a missing file is not a version
+// metadata problem — the existing bump-version test would otherwise start failing
+// for a reason unrelated to what it pins.
+test("--check stays silent about a changelog that does not exist", () => {
+  const root = makeFixture("1.2.3");
+  const result = run("node", [BUMP, "--root", root, "--check"], { cwd: ROOT });
+  assert.equal(result.status, 0, result.stderr);
+});
