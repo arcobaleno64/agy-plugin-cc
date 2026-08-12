@@ -1,5 +1,76 @@
 # Changelog
 
+## 0.17.3 — 2026-08-12 — Say what it costs, say what it deleted, say who chose
+
+Three things the plugin did to users without telling them. None was a crash, which
+is why they survived: every one of them looked like normal operation.
+
+**`--probe-gemini` could spend a turn without asking.** `setup.md` already required
+`AskUserQuestion` before installing an npm package, while the flag that makes a
+real billed request was governed only by prose asking the model for restraint —
+including one line ("or when the user asks whether gemini really works") that reads
+as licence to spend a turn answering a question someone merely said out loud.
+It is now a hard rule: unless the user typed the flag, ask once and do not run it
+if they decline. The decline option comes first, because the free disk check has
+already produced a usable report, and the cost is stated in the option the user
+clicks rather than only in the explanation around it.
+
+**Evicting a finished job deleted a paid result in silence.** The store is capped
+at 50, and `writeJobFile` discarded the list of what it removed — so a 51st job
+took the oldest result and its log with nothing in the output. It now names them:
+
+    [gemini-companion] Warning: the job store is capped at 50, so making room for
+    <id> removed 1 finished job(s) and their logs: <id>. Those results can no
+    longer be retrieved with `/gemini:result`.
+
+It deliberately does not say those results were uncollected. Nothing records
+whether `/gemini:result` ever read a job, so that would be a guess presented as
+fact; a test pins the absence of that wording. Queued and running jobs remain
+un-evictable. Both READMEs now state the consequence, not just the cap.
+
+**`Nothing to review` answered a question the user might not have asked.** With
+neither `--base` nor `--scope` given, the scope is chosen from whether the tree
+happens to be dirty — so a misunderstood request and a genuinely clean repository
+printed the same line. The Target line now distinguishes them:
+`branch diff against master (inferred — no --base or --scope given)`. An explicit
+request gets no annotation. Nothing new is computed: `resolveReviewTarget` has
+always returned `explicit`, and it already travelled in the JSON payload — only the
+line humans read left it out.
+
+A `--explain` flag was considered and rejected for that last one. It would put the
+burden on the user to know it exists and to re-run at the moment something has
+already gone wrong, and a second resolution path can drift from the real one.
+
+### Documentation that had stopped being true
+
+- **The probe flags were undocumented.** `--probe-agy` and `--probe-gemini`
+  appeared zero times in either README; `/gemini:setup` had no flag table at all,
+  which is how a flag that spends quota stayed invisible. Both READMEs now carry
+  one, including the AGY 1.1.11 floor `--probe-agy` needs — a version neither
+  README mentioned anywhere.
+- **The personal-plan EOL warning promised a future deadline that had passed.** It
+  read "free CLI access ends 2026-06-18" two months afterwards, while the same
+  repository's other references already said "ended". The same sentence also
+  claimed AGY responses come from the on-disk transcript; that has been the
+  fallback for AGY below 1.1.8 only, since v0.11.0. Both are pinned by tests now,
+  because matching the date alone never noticed either.
+- **Two documents said the plugin cannot do things it does.** `README.zh-TW.md`
+  still carried the pre-feature paragraph telling readers AGY model selection was
+  unmanaged and to use `--engine gemini` instead — advice to abandon a working
+  feature. `MODEL_COMPARISON.md` and `known-diffs.md` described the AGY route as
+  transcript recovery. The dated probe records are kept and marked superseded
+  rather than overwritten: deleting them would lose *when* the behavior changed,
+  which is what those documents exist to answer.
+- Verified against **AGY 1.1.12** on the way through: all six version gates in
+  `engine.mjs` still hold, so none moved.
+
+### Repository
+
+`CONTRIBUTING.md` (bilingual) and a `change_proposal` issue template, so the issue
+that CONTRIBUTING asks for before a code change has a form behind it. New guards:
+`argument-hint` must list every flag the companion's own usage advertises, and a
+"Copy the line as written:" instruction must be followed immediately by the line.
+
 ## 0.17.2 — 2026-08-12 — `ready` now means the engine answers
 
 Everything here sits behind `--engine gemini`, which only started reaching the
