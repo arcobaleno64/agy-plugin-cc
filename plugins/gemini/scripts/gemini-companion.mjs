@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { parseArgs, normalizeArgv } from "./lib/args.mjs";
 import { detectEngine, ENGINE_ENV, normalizeAgyEffort, normalizeAgyRequestedModel, normalizeRequestedModel, supportsAgyModelSelection, VALID_EFFORT_LEVELS } from "./lib/engine.mjs";
-import { collectReviewContext, ensureGitRepository, resolveReviewTarget } from "./lib/git.mjs";
+import { collectReviewContext, describeReviewTarget, ensureGitRepository, resolveReviewTarget } from "./lib/git.mjs";
 import { readStdinIfPiped } from "./lib/fs.mjs";
 import { binaryAvailable, terminateProcessTree } from "./lib/process.mjs";
 import { loadPromptTemplate, interpolateTemplate } from "./lib/prompts.mjs";
@@ -678,6 +678,10 @@ async function executeReviewRun(request) {
   // persist a vacuous approve that only surfaces at /gemini:result.
   if (context.isEmpty) {
     const targetLabel = context.target?.label ?? "the requested scope";
+    // The message keeps the plain label — it is also the job summary, read in
+    // listings — while the Target line below carries the provenance, which is what
+    // separates "the repository really is clean" from "that is not the scope I
+    // meant".
     const message = `Nothing to review — ${targetLabel} has no changes.`;
     return {
       exitStatus: 0,
@@ -691,7 +695,7 @@ async function executeReviewRun(request) {
         gemini: null,
         result: null
       },
-      rendered: `# Gemini ${reviewName}\n\nTarget: ${targetLabel}\n\n${message}\n`,
+      rendered: `# Gemini ${reviewName}\n\nTarget: ${describeReviewTarget(context.target)}\n\n${message}\n`,
       summary: message,
       jobTitle: `Gemini ${reviewName}`,
       jobClass: "review",
@@ -734,12 +738,16 @@ async function executeReviewRun(request) {
     payload,
     rendered: fallbackBanner + renderTruncationBanner(truncation) + renderReviewResult(parsed, {
       reviewLabel: reviewName,
-      targetLabel: context.target?.label ?? "",
+      targetLabel: describeReviewTarget(context.target),
       reasoningSummary: result.reasoningSummary
     }),
     summary: parsed.parsed?.summary ?? parsed.parseError ?? "Review completed.",
     jobTitle: `Gemini ${reviewName}`,
     jobClass: "review",
+    // Stays the plain label: this one is stored on the job record and shown inline
+    // in job listings, where an existing consumer may already be printing it inside
+    // a sentence. The provenance goes in the rendered Target line above, which is
+    // the place a reader looks when the scope surprised them.
     targetLabel: context.target?.label ?? "",
     ...(result.status !== 0 && result.failure ? { failure: result.failure } : {})
   };

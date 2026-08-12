@@ -3,7 +3,7 @@ import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { allocateBudget, assembleReviewContent, collectReviewContext, formatUntrackedFile, getWorkingTreeState, resolveReviewTarget } from "../plugins/gemini/scripts/lib/git.mjs";
+import { allocateBudget, assembleReviewContent, collectReviewContext, describeReviewTarget, formatUntrackedFile, getWorkingTreeState, resolveReviewTarget } from "../plugins/gemini/scripts/lib/git.mjs";
 import { initGitRepo, makeTempDir, run, writeExecutable } from "./helpers.mjs";
 
 function commitInitial(cwd) {
@@ -465,4 +465,37 @@ test("the truncation notice is bounded by the number of files it names", () => {
     assembled.content.length <= 400_000,
     `the payload must respect the cap, got ${assembled.content.length} characters`
   );
+});
+
+// `Nothing to review — working tree diff has no changes` is a correct answer to a
+// question the user may not have asked: with neither --base nor --scope given, the
+// scope was chosen here from whether the tree happened to be dirty. The label said
+// what was reviewed but never who chose it, so a misunderstood request and a clean
+// repository looked identical.
+test("describeReviewTarget marks a scope the plugin chose, and stays quiet when the user chose", () => {
+  const inferred = describeReviewTarget({ label: "working tree diff", explicit: false });
+  assert.match(inferred, /working tree diff/);
+  assert.match(inferred, /inferred/, "a scope the plugin picked must say so");
+  assert.match(inferred, /--base|--scope/, "it must name what the user can pass to choose");
+
+  const chosen = describeReviewTarget({ label: "branch diff against main", explicit: true });
+  assert.equal(chosen, "branch diff against main", "an explicit request needs no explanation");
+});
+
+test("describeReviewTarget survives a target it cannot read", () => {
+  assert.equal(describeReviewTarget(null), "the requested scope");
+  assert.equal(describeReviewTarget({}), "the requested scope");
+});
+
+// End to end through the real resolver: an auto scope on a dirty tree is inferred,
+// and passing --base makes the same repository explicit.
+test("an auto scope is reported as inferred, and --base is not", () => {
+  const cwd = makeTempDir();
+  initGitRepo(cwd);
+  commitInitial(cwd);
+  fs.writeFileSync(path.join(cwd, "app.js"), "console.log('v2');\n");
+
+  assert.match(describeReviewTarget(resolveReviewTarget(cwd, {})), /inferred/);
+  assert.doesNotMatch(describeReviewTarget(resolveReviewTarget(cwd, { base: "HEAD~1" })), /inferred/);
+  assert.doesNotMatch(describeReviewTarget(resolveReviewTarget(cwd, { scope: "working-tree" })), /inferred/);
 });

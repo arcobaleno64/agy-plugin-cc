@@ -172,6 +172,21 @@ export function resolveReviewTarget(cwd, options = {}) {
   };
 }
 
+// The label alone answers "what was reviewed" but not "who chose it", and those
+// are different questions when the answer is surprising. `Nothing to review —
+// working tree diff has no changes` is a correct answer to a question the user may
+// not have asked: with neither --base nor --scope given, the scope was picked here,
+// from whether the tree happened to be dirty. Naming that is how a reader tells a
+// clean repository from a misunderstood request, without re-running anything.
+//
+// `explicit` is already computed by resolveReviewTarget and already travels in the
+// JSON payload; only the line humans read left it out.
+export function describeReviewTarget(target) {
+  const label = target?.label ?? "the requested scope";
+  if (!target || target.explicit !== false) return label;
+  return `${label} (inferred — no \`--base\` or \`--scope\` given)`;
+}
+
 function formatSection(title, body) {
   return [`## ${title}`, "", body.trim() ? body.trim() : "(none)", ""].join("\n");
 }
