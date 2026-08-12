@@ -144,6 +144,28 @@ function checkVersions(root, expectedVersion) {
   return mismatches;
 }
 
+const CHANGELOG_FILE = `plugins/${PLUGIN_NAME}/CHANGELOG.md`;
+
+// A release whose manifests all agree and whose changelog says nothing about the
+// version passes every other gate in this repository: the four manifests are
+// mechanically consistent, contracts verify, and the tag assertion in the release
+// workflow compares the tag to package.json — which was bumped. The one artifact
+// that tells a user what changed is the only one nothing checks.
+//
+// Only enforced when the file exists. A missing changelog is not a version-metadata
+// problem (the bump-version fixtures do not ship one), and a guard that a caller
+// can satisfy by deleting the file it guards is not worth the branch.
+function checkChangelogEntry(root, expectedVersion) {
+  const file = path.join(root, CHANGELOG_FILE);
+  if (!fs.existsSync(file)) return null;
+  const headings = fs.readFileSync(file, "utf8").split(/\r?\n/).filter((line) => line.startsWith("## "));
+  // Matches `## 0.17.3 — 2026-08-12 — title` and any other suffix, but requires the
+  // version to be the first token so `## 0.17.30` does not satisfy `0.17.3`.
+  const found = headings.some((line) => new RegExp(`^##\\s+v?${expectedVersion.replace(/\./g, "\\.")}(\\s|$)`).test(line));
+  if (found) return null;
+  return `${CHANGELOG_FILE}: no \`## ${expectedVersion}\` entry. The manifests agree, so nothing else would have caught this — a release with no changelog entry tells the user nothing about what changed.`;
+}
+
 function bumpVersion(root, version) {
   const changedFiles = [];
   for (const target of TARGETS) {
@@ -178,7 +200,11 @@ function main() {
     if (mismatches.length > 0) {
       throw new Error(`Version metadata is out of sync:\n${mismatches.join("\n")}`);
     }
-    console.log(`All version metadata matches ${version}.`);
+    const missingEntry = checkChangelogEntry(options.root, version);
+    if (missingEntry) {
+      throw new Error(missingEntry);
+    }
+    console.log(`All version metadata matches ${version}, and the changelog has an entry for it.`);
     return;
   }
 
