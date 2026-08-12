@@ -330,7 +330,7 @@ Claude Code
 
 Background mode spawns a detached worker child process (`task-worker` for `/gemini:rescue`, `review-worker` for `/gemini:review` and `/gemini:adversarial-review`) and returns a job ID immediately. State is polled via `/gemini:status`, so a background result survives even if the Claude session is interrupted.
 
-Job state is written to Claude Code's per-plugin data directory — `$CLAUDE_PLUGIN_DATA/state/<workspace>-<hash>/`, holding `state.json` and one `.json` plus `.log` per job, most recent 50 kept. Outside Claude Code, where that variable is unset, it falls back to `<system temp>/gemini-companion/<workspace>-<hash>/`; the OS eventually cleans that, so a job left running across a temp sweep can disappear. Set `GEMINI_COMPANION_DATA` to pin the location yourself.
+Job state is written to Claude Code's per-plugin data directory — `$CLAUDE_PLUGIN_DATA/state/<workspace>-<hash>/`, holding `state.json` and one `.json` plus `.log` per job, most recent 50 kept. **A 51st job deletes the oldest finished one**, and its result is then gone — `/gemini:result` cannot retrieve it, whether or not you ever read it. The plugin prints a warning naming what it removed, so this is never silent; a queued or running job is never evicted. Outside Claude Code, where that variable is unset, it falls back to `<system temp>/gemini-companion/<workspace>-<hash>/`; the OS eventually cleans that, so a job left running across a temp sweep can disappear. Set `GEMINI_COMPANION_DATA` to pin the location yourself.
 
 The workspace-local `.omc/` directory is a separate thing: it holds `/gemini:transfer` snapshots only, not job state.
 
