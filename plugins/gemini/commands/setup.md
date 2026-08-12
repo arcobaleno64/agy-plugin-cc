@@ -91,10 +91,23 @@ once interactively.
 There is a matching `--probe-gemini`, and **it is not free**. Gemini CLI has no
 question the account answers without generating, so the probe makes a real
 request: on a credential that no longer works it costs nothing (the API refuses it
-before generating), but on a working credential it spends a turn. Do not offer it
-by reflex the way `--probe-agy` can be offered — suggest it only when the report
-says a stored gemini credential cannot be trusted, or when the user asks whether
-gemini really works:
+before generating), but on a working credential it spends a turn.
+
+**Hard rule: unless the user typed `--probe-gemini` themselves, use
+`AskUserQuestion` exactly once before running it, and do not run it if they
+decline.** This command already asks before installing an npm package; spending
+the user's quota is the more expensive of the two and must not be the one decision
+made for them. "Does gemini actually work?" is a reason to *offer* the probe, not
+a licence to spend a turn answering it.
+
+- Put the decline option first — the free file check has already run, so declining
+  still leaves a usable report.
+- Say the cost in the option itself, not only in the question:
+  - `Skip the probe (keep the free disk check)`
+  - `Probe now — spends one turn if the credential works`
+- If the user typed the flag, they have already chosen; run it without asking.
+
+Then, and only then:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" setup "--json --probe-gemini $ARGUMENTS"
