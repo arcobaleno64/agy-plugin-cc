@@ -378,7 +378,15 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
     geminiAuth,
     agy: agyStatus,
     agyAuth,
-    sessionRuntime: getSessionRuntimeStatus(),
+    // Hand over the probes this report already took. Re-probing would spend two
+    // more spawns and let one payload disagree with itself: the readiness fields
+    // would describe the injected engines while sessionRuntime described whatever
+    // happens to be installed on the machine running the test.
+    sessionRuntime: getSessionRuntimeStatus({
+      requestedEngine,
+      geminiAvailabilityFn: () => geminiStatus,
+      agyAvailabilityFn: () => agyStatus
+    }),
     reviewGateEnabled: config.stopReviewGateEnabled ?? false,
     modelAliases: {
       total: modelAliasCount,

@@ -3,7 +3,7 @@ import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { assembleReviewContent, collectReviewContext, formatUntrackedFile, getWorkingTreeState, resolveReviewTarget } from "../plugins/gemini/scripts/lib/git.mjs";
+import { allocateBudget, assembleReviewContent, collectReviewContext, formatUntrackedFile, getWorkingTreeState, resolveReviewTarget } from "../plugins/gemini/scripts/lib/git.mjs";
 import { initGitRepo, makeTempDir, run, writeExecutable } from "./helpers.mjs";
 
 function commitInitial(cwd) {
@@ -348,6 +348,46 @@ test("a diff larger than the default spawn buffer is budgeted, not crashed on", 
 
   assert.ok(context.content.includes("MARKER_TRACKED"), "the tracked code change was lost");
   assert.equal(context.truncatedFiles.includes("data/questions.json"), true);
+});
+
+// allocateBudget, directly. A review of this repository reported the ordering
+// below as a defect — "smaller files sorted earlier are omitted while larger
+// files sorted later receive budget" — and recommended holding the skipped
+// file's share back. Measured, that recommendation reviews nothing at all: the
+// held-back share keeps every later share under the 400-character minimum, so
+// `[500, 600]`/700 and 1200 files of 500 against the real 400,000 budget both
+// allocate zero to every file. These cases pin the tradeoff so the "obvious fix"
+// cannot be applied silently.
+test("a file whose fair share is unusably small is dropped, not given a sliver", () => {
+  // The smaller file is omitted and the larger one is funded whole. Ugly, and
+  // the alternative is [0, 0].
+  assert.deepEqual(allocateBudget([500, 600], 700), [0, 600]);
+  // A whole small file makes way for a fragment of a large one, same reason.
+  assert.deepEqual(allocateBudget([500, 5000], 700), [0, 700]);
+});
+
+test("a thousand-file change spends the whole budget instead of dropping everything", () => {
+  const allocation = allocateBudget(Array(1200).fill(500), 400_000);
+  const funded = allocation.filter((chars) => chars > 0);
+
+  assert.equal(funded.length, 1000, "files that clear the minimum must still be reviewed");
+  assert.ok(
+    funded.every((chars) => chars >= 400),
+    "no file may receive a sub-minimum sliver"
+  );
+  assert.equal(
+    allocation.reduce((total, chars) => total + chars, 0),
+    400_000,
+    "the budget must be spent, not held back by files that could not clear the minimum"
+  );
+});
+
+test("files that fit are untouched and the budget is not overspent", () => {
+  assert.deepEqual(allocateBudget([100, 200, 300], 400_000), [100, 200, 300]);
+  // Equal files split evenly rather than being served in order.
+  assert.deepEqual(allocateBudget([5000, 5000, 5000], 6000), [2000, 2000, 2000]);
+  // A negative budget (oversized overhead) clamps to zero rather than throwing.
+  assert.deepEqual(allocateBudget([100, 200], -50), [0, 0]);
 });
 
 // Several large files must share the budget rather than be served in order.

@@ -73,6 +73,23 @@ export function parseArgs(argv, config = {}) {
   return { options, positionals };
 }
 
+// A slash command expands `$ARGUMENTS` into one shell word, so a whole flag
+// string arrives as a single argv element. Splitting that is what makes
+// `/gemini:review --base X` work at all.
+//
+// It stays limited to the single-element case on purpose. In a longer argv a
+// dash-leading multi-word token is ambiguous — `"--base HEAD~1 --wait"` and a
+// task prompt like `"--fix the retry loop"` are the same string — and guessing
+// gets it wrong in both directions: splitting prose lifted `--engine agy` out of
+// a sentence and rerouted the run, while a `--` inside the split text turned on
+// parseArgs passthrough and swallowed every real flag after it.
+//
+// So the invariant lives with the callers instead: a command must never place a
+// token beside its `"$ARGUMENTS"` expansion, and folds its own flags into the
+// same quoted string (`review "$ARGUMENTS --background"`). Getting that wrong is
+// what discarded `--base HEAD~1 --scope branch` and made a 26-file review answer
+// "nothing to review" in a second, so `scripts/verify-contracts.mjs` now fails
+// the build if any command markdown reintroduces the two-token shape.
 export function normalizeArgv(argv) {
   if (argv.length === 1) {
     const [raw] = argv;

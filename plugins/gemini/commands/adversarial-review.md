@@ -57,9 +57,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" adversarial-review "$A
 - If the helper reports that Gemini/AGY is missing or unauthenticated, stop and tell the user to run `/gemini:setup`.
 
 Background flow:
-- Run the companion with its own `--background` flag in the FOREGROUND (the companion detaches its own worker and returns immediately):
+- Run the companion with its own `--background` flag in the FOREGROUND (the companion detaches its own worker and returns immediately).
+- `--background` goes INSIDE the quoted expansion, not beside it. A token placed next to `"$ARGUMENTS"` makes the expansion a second argv element, and the flags inside it are then read as focus text instead of flags:
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" adversarial-review --background "$ARGUMENTS"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" adversarial-review "$ARGUMENTS --background"
 ```
 - This enqueues the review, spawns a detached `review-worker`, and returns a job id right away. The result persists even if this Claude session is interrupted.
 - Do not use `run_in_background: true` and do not call `BashOutput` — the companion already detached; this call returns immediately.
