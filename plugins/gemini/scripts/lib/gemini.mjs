@@ -179,7 +179,9 @@ function readAgyEnvelope(rawStdout) {
   // A terminal status plus a payload slot is what identifies the envelope.
   // Do not require a specific status value: only SUCCESS and ERROR have been
   // observed, and whether that vocabulary is closed is an open question with
-  // upstream (antigravity-cli#546). Treat anything other than SUCCESS as failure.
+  // upstream (antigravity-cli#778 — #546 asked for the envelope itself and was
+  // closed once it shipped; the undocumented error contract was split out).
+  // Treat anything other than SUCCESS as failure.
   if (typeof parsed.status !== "string" || !parsed.status) return null;
   if (!("response" in parsed) && !("error" in parsed)) return null;
   // conversation_id is "" on the observed ERROR envelope and may be absent

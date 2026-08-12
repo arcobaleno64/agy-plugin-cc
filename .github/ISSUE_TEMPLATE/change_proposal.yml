@@ -1,0 +1,86 @@
+name: Change proposal
+description: A code change you would like made, or would like to make yourself.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `CONTRIBUTING.md` asks for this before a code change, so the approach can
+        be agreed before anyone writes it. Documentation fixes need none of this —
+        open a pull request directly.
+
+        If the plugin is doing something wrong rather than missing something, the
+        bug report template asks better questions.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >
+        What you were trying to do, and where the plugin stopped being enough.
+        Describe the situation, not the fix — the fix is the next field, and they
+        are worth keeping apart.
+      placeholder: |
+        Reviewing a 40-file branch, I want the findings grouped by file, because
+        reading them in severity order means jumping around the diff.
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: What you observed
+      description: >
+        What you ran and what came back. A proposal grounded in one real run is
+        worth more than one grounded in what the code looks like it does — and if
+        the behavior turns out to already exist, this is the field that shows it.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+      description: >
+        The change itself. A flag, a field, a different default — as concrete as
+        you can make it, including what it would be called.
+      placeholder: |
+        `/gemini:review --group-by file`, defaulting to the current severity order.
+    validations:
+      required: true
+
+  - type: textarea
+    id: blast-radius
+    attributes:
+      label: What existing behavior would change
+      description: >
+        Output someone could already be depending on: JSON field names or order,
+        exit codes, log and error text, an existing flag's default. "Nothing —
+        it is additive" is a complete answer, and saying so explicitly is the
+        point of the question.
+      placeholder: "Nothing — new flag, existing default unchanged."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: who-implements
+    attributes:
+      label: Who would implement it
+      description: Either answer is fine. It changes what the reply should contain.
+      options:
+        - I would like to implement it myself
+        - I am proposing it for someone else to pick up
+        - Not sure yet
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried or considered instead
+      description: >
+        Existing flags, a wrapper script, doing it by hand. If one of them almost
+        worked, why it did not is usually the most useful part of the proposal.
+    validations:
+      required: false
