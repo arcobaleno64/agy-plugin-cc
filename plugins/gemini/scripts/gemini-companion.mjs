@@ -1169,16 +1169,33 @@ export function dispatchBackgroundTask(request, { spawnFn = spawn, detectEngineF
   return enqueueBackgroundJob(cwd, job, storedRequest, "task-worker", { spawnFn }).payload;
 }
 
+function resolveFocusText(focusFile, positionals) {
+  const inline = positionals.join(" ").trim();
+  if (!focusFile) return inline;
+  if (inline) {
+    throw new Error("Pass review focus either as --focus-file or as positional text, not both.");
+  }
+  try {
+    return fs.readFileSync(focusFile, "utf8").trim();
+  } catch (error) {
+    throw new Error(`Could not read --focus-file "${focusFile}": ${error.message}`);
+  }
+}
+
 async function handleReviewCommand(argv, { reviewName, templateName, supportsFocus, supportsEngines = false }) {
   const { options, positionals } = parseCommandInput(argv, {
-    valueOptions: ["base", "scope", "model", "effort", "engine", "cwd", "timeout", ...(supportsEngines ? ["engines"] : [])],
+    valueOptions: ["base", "scope", "model", "effort", "engine", "cwd", "timeout", "focus-file", ...(supportsEngines ? ["engines"] : [])],
     booleanOptions: ["json", "wait", "background", "deep"],
     aliasMap: { m: "model" }
   });
 
   const cwd = resolveCommandCwd(options);
   const workspaceRoot = resolveCommandWorkspace(options);
-  const focusText = supportsFocus ? positionals.join(" ").trim() : "";
+  // Focus is free text, and free text must not travel through a shell: a slash
+  // command that interpolated it into its command string had `$(…)` evaluated
+  // before this process started. `--focus-file` lets the caller write it with a
+  // file-writing tool instead, so it never appears on a command line.
+  const focusText = supportsFocus ? resolveFocusText(options["focus-file"], positionals) : "";
   validateEffortLevel(options.effort);
   const timeoutSeconds = parseTimeoutSeconds(options.timeout);
 

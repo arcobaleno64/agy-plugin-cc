@@ -11,6 +11,14 @@ The final user-visible response must be Gemini's output verbatim.
 Raw user request:
 $ARGUMENTS
 
+The argument text above is passed to the subagent as a prompt, not to a shell,
+and it must stay that way: `$ARGUMENTS` is substituted into this file as text,
+so it must never reach a shell — a shell would evaluate `$(…)`, backticks, `;`
+and `|` inside it. Measured on the job commands: `$(echo INJECTED)` was executed
+before Node ever started. If this command ever needs to call the companion
+directly, assemble that call from checked, literal flags rather than from this
+text.
+
 Execution mode:
 
 - If the request includes `--background`, run the `gemini:gemini-rescue` subagent in the background.

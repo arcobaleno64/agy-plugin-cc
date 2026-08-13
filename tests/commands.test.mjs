@@ -147,36 +147,24 @@ test("setup authenticates by running gemini, not a nonexistent `gemini login`", 
 test("transfer is a deterministic runner that calls scripts/transfer.mjs", () => {
   const source = readCommand("transfer.md");
   assert.match(source, /disable-model-invocation:\s*true/);
-  assert.match(source, /allowed-tools:\s*Bash\(node:\*\)/);
-  assert.match(source, /scripts\/transfer\.mjs"?\s+"\$ARGUMENTS"/);
+  assert.match(source, /allowed-tools:\s*Bash\(node:\*\), Write/);
+  // Instructions are free text and now travel in a file, never on a command
+  // line. The command no longer pre-executes anything, because a pre-execution
+  // block cannot avoid interpolating them.
+  assert.match(source, /scripts\/transfer\.mjs"?\s+--instructions-file/);
+  assert.doesNotMatch(source, /^!`/m, "transfer must not pre-execute with user text");
   // The generated launch commands are user-pasted, never executed by Claude.
   assert.match(source, /Do not run the generated commands/i);
 });
 
-// --- Shell-safety: $ARGUMENTS must always be quoted when handed to the companion ---
-// Unquoted $ARGUMENTS lets the shell word-split, glob, or command-substitute the
-// user's raw slash-command text before the companion's parser/validation runs.
-// The property is that the expansion sits inside a double-quoted span, not that
-// the line contains the exact token `"$ARGUMENTS"`: commands now fold their own
-// flags into that same span (`review "$ARGUMENTS --background"`) because a token
-// placed beside the expansion made it a second argv element whose flags were
-// dropped. Deleting every quoted span and looking for a survivor tests the
-// property directly, and still fails on a bare `$ARGUMENTS`.
-test("every command quotes $ARGUMENTS in its companion invocation", () => {
-  const files = fs.readdirSync(COMMANDS_DIR).filter((f) => f.endsWith(".md"));
-  for (const file of files) {
-    for (const line of readCommand(file).split(/\r?\n/)) {
-      if (line.includes(".mjs") && line.includes("$ARGUMENTS")) {
-        const outsideQuotes = line.replace(/"[^"]*"/g, "");
-        assert.doesNotMatch(
-          outsideQuotes,
-          /\$ARGUMENTS/,
-          `${file}: $ARGUMENTS must sit inside a double-quoted span to avoid shell word-splitting/injection — got: ${line.trim()}`
-        );
-      }
-    }
-  }
-});
+// --- Shell-safety ---------------------------------------------------------
+// This file used to require only that $ARGUMENTS sat inside a double-quoted
+// span, reasoning that quoting stops word-splitting and globbing. It does --
+// but it does NOT stop command substitution, which the old comment named as
+// the threat. Measured: `/gemini:status $(echo INJECTED)` ran the substitution
+// and handed `INJECTED` to the companion as a job id. Quoting was never the
+// property worth pinning; keeping the text out of the command is, and that is
+// enforced in tests/command-injection.test.mjs.
 
 // docs/THREAT-MODEL.md 7.3 — commands that relay delegated model output must
 // tell the parent agent to treat it as data. The verbatim rule alone is what
