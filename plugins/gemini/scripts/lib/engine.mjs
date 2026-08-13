@@ -124,6 +124,23 @@ export function supportsAgyStructuredOutput(version) {
   return agyVersionAtLeast(version, 1, 8);
 }
 
+// `--output-format stream-json` emits one JSON object per line as the turn
+// happens, instead of a single envelope at the end. That is the difference
+// between a timed-out run reporting nothing and one reporting how far it got —
+// and, when the timeout lands while the answer is being written, keeping that
+// part of it.
+//
+// Gated at 1.1.12 because that is the version it was measured on: `--help`
+// lists stream-json among --output-format's values there, and a real turn was
+// captured to confirm the event shape. `--output-format` itself arrived in
+// 1.1.8, but which of its values existed when is not something this repository
+// can check, and the existing convention here is to fail closed rather than
+// assume an upstream capability. A version below this keeps plain json, which
+// still works.
+export function supportsAgyStreamJson(version) {
+  return agyVersionAtLeast(version, 1, 12);
+}
+
 // AGY 1.1.11 answers the read-only slash commands (`/usage`, `/quota`,
 // `/credits`, `/model`, `/effort`, `/skills`) in print mode without starting an
 // agent turn, spending quota, or leaving a conversation behind. That is what
@@ -284,7 +301,10 @@ export function buildCliArgs(engine, options = {}) {
     if (agyModel) args.push("--model", agyModel);
     if (agyEffort) args.push("--effort", agyEffort);
     if (outputJson && supportsAgyStructuredOutput(agyVersion)) {
-      args.push("--output-format", "json");
+      // stream-json is a superset of what json returns: the same terminal
+      // envelope arrives as the final event, preceded by the progress that
+      // makes a cut-off run legible. See supportsAgyStreamJson for the gate.
+      args.push("--output-format", supportsAgyStreamJson(agyVersion) ? "stream-json" : "json");
     }
     // No --dangerously-skip-permissions. AGY's headless print mode auto-approves
     // file edits and shell commands with or without it — measured on 1.1.10,

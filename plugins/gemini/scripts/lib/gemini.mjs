@@ -7,6 +7,7 @@ import { buildCliArgs, detectEngine, ENGINE_ENV, formatAgyTimeout, mapEffortToMo
 import { classifyCliFailure } from "./failures.mjs";
 import { binaryAvailable, runCommand } from "./process.mjs";
 import { resolveAgyBrainRoot, listConvDirs, recoverAgyResponse } from "./agy-transcript.mjs";
+import { readAgyStream } from "./agy-stream.mjs";
 
 const DEFAULT_SPAWN_TIMEOUT_MS = 600_000; // 10 minutes (gemini)
 // AGY's `agy --print` does not stream its response over a pipe in non-interactive
@@ -174,7 +175,13 @@ export function tryParseJsonFromText(text) {
 // and only an empty one — now falls back to the recovery the pre-1.1.8 path
 // already performs. See resolveAgyStructuredResult.
 function readAgyEnvelope(rawStdout) {
-  const parsed = tryParseJsonFromText(rawStdout);
+  return readAgyEnvelopeObject(tryParseJsonFromText(rawStdout));
+}
+
+// The same validation, applied to an already-parsed object. stream-json delivers
+// the envelope as the payload of its final event rather than as the whole of
+// stdout, and it has to clear exactly the same bar before being trusted.
+function readAgyEnvelopeObject(parsed) {
   if (!parsed || typeof parsed !== "object") return null;
   // A terminal status plus a payload slot is what identifies the envelope.
   // Do not require a specific status value: only SUCCESS and ERROR have been
@@ -192,8 +199,26 @@ function readAgyEnvelope(rawStdout) {
 
 // Shared by the task and review paths: turns the envelope into the neutral pieces
 // both need. The caller decides what to do with `text`.
+// A timed-out run used to report only that it timed out. Under stream-json the
+// events say how far it got, and whether any of the answer survived — both of
+// which change what the user does next, so they belong in the summary they
+// actually read rather than in a field nothing renders.
+function annotateFailureWithProgress(failure, structured) {
+  if (!failure || typeof failure.summary !== "string") return failure;
+  const notes = [];
+  if (structured.progressLabel) notes.push(`reached ${structured.progressLabel}`);
+  if (structured.salvagedText) notes.push("partial output preserved");
+  if (notes.length === 0) return failure;
+  return { ...failure, summary: `${failure.summary} (${notes.join("; ")})` };
+}
+
 function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, engineInfo, brainRoot = null, conversationsBefore = null }) {
-  const envelope = readAgyEnvelope(rawStdout);
+  // stream-json (1.1.12+) and plain json (1.1.8+) are both possible here, and
+  // which one arrived is decided by what was actually printed rather than by the
+  // version, so an engine that ignores the flag still parses.
+  const stream = readAgyStream(rawStdout);
+  const streamed = stream.looksLikeStream();
+  const envelope = streamed ? readAgyEnvelopeObject(stream.envelope()) : readAgyEnvelope(rawStdout);
   const failedExit = exitCode === 0 ? 1 : exitCode;
 
   if (!envelope) {
@@ -250,12 +275,30 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
     };
   }
 
-  const text = typeof envelope.response === "string" ? envelope.response.trim() : "";
-  const succeeded = envelope.status === "SUCCESS" && Boolean(text);
+  const envelopeText = typeof envelope.response === "string" ? envelope.response.trim() : "";
+
+  // An envelope with no response is what AGY's own print timeout produces:
+  // {"status":"ERROR","response":"","error":"timeout waiting for response"}.
+  // Under stream-json the deltas already received are the only surviving copy of
+  // whatever had been written, so they are used rather than reporting nothing.
+  // They never override a real response — only fill a gap the envelope left.
+  const salvaged = envelopeText ? "" : stream.partialText().trim();
+  const text = envelopeText || salvaged;
+
+  // Success still requires the envelope's own response. Salvaged text is partial
+  // by definition; calling it success would let a cut-off run pass for a
+  // complete one.
+  const succeeded = envelope.status === "SUCCESS" && Boolean(envelopeText);
 
   return {
     text,
-    threadId: typeof envelope.conversation_id === "string" && envelope.conversation_id ? envelope.conversation_id : null,
+    // What the caller needs to say "this is partial, and here is how far it
+    // got" instead of "it timed out". Null when nothing was salvaged.
+    salvagedText: salvaged || null,
+    progressLabel: streamed && !succeeded ? stream.progressLabel() : null,
+    threadId:
+      (typeof envelope.conversation_id === "string" && envelope.conversation_id ? envelope.conversation_id : null) ??
+      stream.state.conversationId,
     exitCode: succeeded ? 0 : failedExit,
     failure: succeeded
       ? null
@@ -394,7 +437,7 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
   if (agyStructured) {
     const structured = resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, engineInfo, brainRoot: agyBrainRoot, conversationsBefore: agyBefore });
     exitCode = structured.exitCode;
-    recoveryFailure = structured.failure;
+    recoveryFailure = annotateFailureWithProgress(structured.failure, structured);
     threadId = structured.threadId;
     if (structured.text) finalMessage = structured.text;
   } else if (engineInfo.engine === "agy") {
@@ -582,7 +625,7 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
   if (agyStructured) {
     const structured = resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, engineInfo, brainRoot: agyBrainRoot, conversationsBefore: agyBefore });
     exitCode = structured.exitCode;
-    recoveryFailure = structured.failure;
+    recoveryFailure = annotateFailureWithProgress(structured.failure, structured);
     if (structured.text) {
       reviewText = structured.text;
       reviewJson = tryParseJsonFromText(reviewText);
