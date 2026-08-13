@@ -251,3 +251,51 @@ test("hasGeminiCredentials accepts a keychain entry with no env key and no OAuth
     false
   );
 });
+
+// --- the probe tool really is where each platform says it is ----------------
+// Adding macOS to the CI matrix proves the darwin branch does not crash. It
+// does not prove the branch is right: resolution is fail-closed, so a wrong
+// path yields null, the probe reports "no credential", and almost everything
+// still passes. These three assert the resolution itself, each on the only
+// platform that can answer, using the real filesystem rather than a stub.
+
+function resolvedProbeCommand(platform) {
+  const calls = [];
+  keychainEntryExists(API_KEY_ENTRY, {
+    platform,
+    // Real fs.existsSync on purpose: that is the thing under test.
+    spawnImpl: (command) => {
+      calls.push(command);
+      return { status: 1 };
+    },
+    env: process.env
+  });
+  return calls;
+}
+
+test("on Windows the probe resolves cmdkey to a real absolute path", { skip: process.platform !== "win32" }, () => {
+  const calls = resolvedProbeCommand("win32");
+  assert.equal(calls.length, 1, "resolution must have produced a tool to spawn");
+  assert.ok(path.isAbsolute(calls[0]), `expected an absolute path, got ${calls[0]}`);
+  assert.ok(fs.existsSync(calls[0]), `resolved path must exist: ${calls[0]}`);
+  // Separators normalised first: writing a character class for both of them is
+  // three layers of escaping deep and was wrong twice before this comment.
+  assert.match(calls[0].split("\\").join("/"), /System32\/cmdkey\.exe$/i);
+});
+
+test("on macOS the probe resolves security to a real absolute path", { skip: process.platform !== "darwin" }, () => {
+  const calls = resolvedProbeCommand("darwin");
+  assert.equal(calls.length, 1, "resolution must have produced a tool to spawn");
+  assert.ok(fs.existsSync(calls[0]), `resolved path must exist: ${calls[0]}`);
+  assert.match(calls[0], /\/security$/);
+});
+
+test("on Linux secret-tool resolves when installed, and fails closed when not", { skip: process.platform !== "linux" }, () => {
+  const calls = resolvedProbeCommand("linux");
+  // secret-tool is not on every Linux image, and its absence must read as "no
+  // credential" rather than as an error — so both outcomes are correct here,
+  // and what is asserted is that they are the only two.
+  if (calls.length === 0) return;
+  assert.ok(fs.existsSync(calls[0]), `resolved path must exist: ${calls[0]}`);
+  assert.match(calls[0], /\/secret-tool$/);
+});
