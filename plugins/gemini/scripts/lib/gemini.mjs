@@ -7,6 +7,7 @@ import { buildCliArgs, detectEngine, ENGINE_ENV, formatAgyTimeout, mapEffortToMo
 import { classifyCliFailure } from "./failures.mjs";
 import { binaryAvailable, runCommand } from "./process.mjs";
 import { resolveAgyBrainRoot, listConvDirs, recoverAgyResponse } from "./agy-transcript.mjs";
+import { describeReadOnlyWrites, detectWrites, snapshotWorkspace } from "./readonly-guard.mjs";
 
 const DEFAULT_SPAWN_TIMEOUT_MS = 600_000; // 10 minutes (gemini)
 // AGY's `agy --print` does not stream its response over a pipe in non-interactive
@@ -346,6 +347,11 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
 
   onProgress?.({ message: `Starting ${engineInfo.engine} turn...`, phase: "running" });
 
+  // A turn dispatched without --write is documented as read-only, but no engine
+  // enforces that (see readonly-guard.mjs). Snapshot first so a write can at
+  // least be named afterwards.
+  const readOnlyBefore = write ? null : snapshotWorkspace(cwd);
+
   const result = runCommandFn(engineInfo.binary, args, {
     cwd,
     input: useStdin ? prompt : undefined,
@@ -453,6 +459,15 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
       })
     : null);
 
+  // Only report when there is something to report: a clean read-only turn says
+  // nothing, so the warning keeps its meaning when it does appear.
+  const readOnlyWrites = write ? null : detectWrites(readOnlyBefore, cwd);
+  const readOnlyNotice = describeReadOnlyWrites(readOnlyWrites);
+  if (readOnlyNotice) {
+    process.stderr.write(`[gemini-companion] ${readOnlyNotice}
+`);
+  }
+
   onProgress?.({ message: exitCode === 0 ? "Turn completed." : "Turn failed.", phase: exitCode === 0 ? "done" : "failed" });
 
   return {
@@ -464,6 +479,7 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
     engine: engineInfo.engine,
     stderr: rawStderr,
     modelFallback: modelFallbackNote,
+    ...(readOnlyNotice ? { readOnlyNotice, readOnlyWrites: readOnlyWrites.written } : {}),
     ...(failure ? { failure } : {})
   };
 }

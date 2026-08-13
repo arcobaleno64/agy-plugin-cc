@@ -796,8 +796,17 @@ async function executeTaskRun(request) {
     rawOutput,
     touchedFiles: result.touchedFiles,
     reasoningSummary: result.reasoningSummary,
+    ...(result.readOnlyNotice ? { readOnlyNotice: result.readOnlyNotice, readOnlyWrites: result.readOnlyWrites } : {}),
     ...(failure ? { failure } : {})
   };
+
+  // A read-only turn that wrote is the one thing here the user cannot afford to
+  // scroll past, so it goes above the output rather than into the log alone.
+  const renderedWithNotice = result.readOnlyNotice
+    ? `> ⚠️ ${result.readOnlyNotice}
+
+${rendered}`
+    : rendered;
 
   return {
     exitStatus: result.status,
@@ -805,7 +814,7 @@ async function executeTaskRun(request) {
     turnId: null,
     engine: result.engine ?? null,
     payload,
-    rendered,
+    rendered: renderedWithNotice,
     summary: firstMeaningfulLine(rawOutput, firstMeaningfulLine(failureMessage, `${taskMetadata.title} finished.`)),
     jobTitle: taskMetadata.title,
     jobClass: "task",

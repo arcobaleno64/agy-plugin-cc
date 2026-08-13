@@ -58,8 +58,8 @@ test("the rescue subagent does not default to a write-capable run", () => {
   assert.match(source, /--write/, "the flag must still be documented for the subagent");
   assert.match(
     source,
-    /Read-only is the default/i,
-    "the subagent must be told read-only is the default"
+    /Read-only is the \*\*default intent, not an enforced boundary\*\*/i,
+    "the subagent must be told read-only is the default AND that nothing enforces it — AGY has no read-only mode, so promising a boundary here would be false"
   );
   assert.doesNotMatch(
     source,
