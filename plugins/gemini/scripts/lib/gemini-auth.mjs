@@ -57,9 +57,9 @@ function keychainProbeDisabled(env) {
 // executed. PATH order is still PATH order, though, and these probes run on
 // every engine detection. Returning null when the tool cannot be located is the
 // safe outcome — the caller already treats a failed probe as "no credential".
-function absoluteProbeTool(platform, name, existsImpl = fs.existsSync) {
+function absoluteProbeTool(platform, name, existsImpl = fs.existsSync, env = process.env) {
   if (platform === "win32") {
-    const root = process.env.SystemRoot || process.env.SYSTEMROOT;
+    const root = env.SystemRoot || env.SYSTEMROOT;
     if (!root) return null;
     const full = path.join(root, "System32", `${name}.exe`);
     return existsImpl(full) ? full : null;
@@ -74,26 +74,26 @@ function absoluteProbeTool(platform, name, existsImpl = fs.existsSync) {
   return null;
 }
 
-function keychainProbeCommand(entry, platform, existsImpl) {
+function keychainProbeCommand(entry, platform, existsImpl, env) {
   const target = `${entry.service}/${entry.account}`;
   if (platform === "win32") {
     // A single-target query. `cmdkey /list` would enumerate every credential on
     // the machine, which is more of the user's data than this question needs.
-    const cmdkey = absoluteProbeTool(platform, "cmdkey", existsImpl);
+    const cmdkey = absoluteProbeTool(platform, "cmdkey", existsImpl, env);
     if (!cmdkey) return null;
     return { command: cmdkey, args: [`/list:${target}`], readStdout: true };
   }
   if (platform === "darwin") {
     // No -w: without it the tool reports attributes and exits 0/44, and never
     // prints the password.
-    const security = absoluteProbeTool(platform, "security", existsImpl);
+    const security = absoluteProbeTool(platform, "security", existsImpl, env);
     if (!security) return null;
     return { command: security, args: ["find-generic-password", "-s", entry.service, "-a", entry.account], readStdout: false };
   }
   if (platform === "linux") {
     // keytar stores libsecret items under the default Generic schema with these
     // two attributes. `search` rather than `lookup`, which prints the secret.
-    const secretTool = absoluteProbeTool(platform, "secret-tool", existsImpl);
+    const secretTool = absoluteProbeTool(platform, "secret-tool", existsImpl, env);
     if (!secretTool) return null;
     return { command: secretTool, args: ["search", "service", entry.service, "account", entry.account], readStdout: false };
   }
@@ -120,7 +120,7 @@ function cmdkeyOutputHasEntry(stdout, entry) {
 export function keychainEntryExists(entry, options = {}) {
   const { platform = process.platform, spawnImpl = spawnSync, env = process.env } = options;
   if (keychainProbeDisabled(env)) return false;
-  const spec = keychainProbeCommand(entry, platform, options.existsImpl ?? fs.existsSync);
+  const spec = keychainProbeCommand(entry, platform, options.existsImpl ?? fs.existsSync, env);
   if (!spec) return false;
   try {
     const result = spawnImpl(spec.command, spec.args, {

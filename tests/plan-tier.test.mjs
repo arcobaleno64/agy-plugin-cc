@@ -135,11 +135,11 @@ test("cmdkey output is read for presence, not exit status, and survives a locali
   const spawnWith = (stdout, status = 0) => () => ({ status, stdout });
 
   assert.equal(
-    keychainEntryExists(API_KEY_ENTRY, { platform: "win32", spawnImpl: spawnWith(WIN_HIT), env: {} }),
+    keychainEntryExists(API_KEY_ENTRY, { platform: "win32", spawnImpl: spawnWith(WIN_HIT), env: { SystemRoot: "C:\Windows" }, existsImpl: () => true }),
     true
   );
   assert.equal(
-    keychainEntryExists(API_KEY_ENTRY, { platform: "win32", spawnImpl: spawnWith(WIN_MISS), env: {} }),
+    keychainEntryExists(API_KEY_ENTRY, { platform: "win32", spawnImpl: spawnWith(WIN_MISS), env: { SystemRoot: "C:\Windows" }, existsImpl: () => true }),
     false,
     "cmdkey exits 0 for a missing target, so status alone would report a false hit"
   );
@@ -151,7 +151,7 @@ test("cmdkey output is read for presence, not exit status, and survives a locali
     Buffer.from("\r\n    gemini-cli-api-key/default-api-key\r\n    default-api-key\r\n", "latin1")
   ]);
   assert.equal(
-    keychainEntryExists(API_KEY_ENTRY, { platform: "win32", spawnImpl: spawnWith(cp950Hit), env: {} }),
+    keychainEntryExists(API_KEY_ENTRY, { platform: "win32", spawnImpl: spawnWith(cp950Hit), env: { SystemRoot: "C:\Windows" }, existsImpl: () => true }),
     true
   );
 });
