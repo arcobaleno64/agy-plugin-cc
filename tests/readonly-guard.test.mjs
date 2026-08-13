@@ -83,3 +83,89 @@ test("describeReadOnlyWrites tolerates a missing detection", () => {
   assert.equal(describeReadOnlyWrites(null), null);
   assert.equal(describeReadOnlyWrites(undefined), null);
 });
+
+// --- touchedFiles is a measurement, not a guess -----------------------------
+// It used to be a regex for filename-shaped tokens in the model's reply. That
+// reported files merely mentioned — including ones absent from the workspace —
+// and missed files changed without being named. Both directions wrong, with no
+// render path and no test, which is why it survived.
+
+import { runGeminiTurn } from "../plugins/gemini/scripts/lib/gemini.mjs";
+
+function agyEngine() {
+  return () => ({ engine: "agy", binary: "/fake/agy.exe", version: "1.1.10" });
+}
+
+function envelope(response) {
+  return `${JSON.stringify({ conversation_id: "c1", status: "SUCCESS", response, num_turns: 1 })}\n`;
+}
+
+test("a file the reply merely names is not reported as touched", async () => {
+  const repo = tempRepo();
+  const result = await runGeminiTurn(
+    repo,
+    { prompt: "p", write: false, engine: "agy" },
+    {
+      detectEngineFn: agyEngine(),
+      // The reply talks about files without changing anything.
+      runCommandFn: () => ({
+        status: 0,
+        stdout: envelope("I read src/index.mjs and package.json and hooks/hooks.json."),
+        stderr: ""
+      })
+    }
+  );
+  assert.deepEqual(result.touchedFiles, [], "naming a file is not touching it");
+  assert.equal(result.readOnlyNotice ?? null, null);
+});
+
+test("a file changed during the turn is reported even if the reply never names it", async () => {
+  const repo = tempRepo();
+  const result = await runGeminiTurn(
+    repo,
+    { prompt: "p", write: true, engine: "agy" },
+    {
+      detectEngineFn: agyEngine(),
+      runCommandFn: () => {
+        // Stand in for the delegated engine writing to the workspace.
+        fs.writeFileSync(path.join(repo, "quietly-changed.txt"), "x", "utf8");
+        return { status: 0, stdout: envelope("Done."), stderr: "" };
+      }
+    }
+  );
+  assert.deepEqual(result.touchedFiles, ["quietly-changed.txt"]);
+});
+
+test("a write turn reports what it changed without a read-only warning", async () => {
+  const repo = tempRepo();
+  const result = await runGeminiTurn(
+    repo,
+    { prompt: "p", write: true, engine: "agy" },
+    {
+      detectEngineFn: agyEngine(),
+      runCommandFn: () => {
+        fs.writeFileSync(path.join(repo, "asked-for.txt"), "x", "utf8");
+        return { status: 0, stdout: envelope("Done."), stderr: "" };
+      }
+    }
+  );
+  assert.deepEqual(result.touchedFiles, ["asked-for.txt"]);
+  assert.equal(result.readOnlyNotice ?? null, null, "the user asked for edits; that is not a warning");
+});
+
+test("a read-only turn that writes reports it in both places", async () => {
+  const repo = tempRepo();
+  const result = await runGeminiTurn(
+    repo,
+    { prompt: "p", write: false, engine: "agy" },
+    {
+      detectEngineFn: agyEngine(),
+      runCommandFn: () => {
+        fs.writeFileSync(path.join(repo, "should-not-exist.txt"), "x", "utf8");
+        return { status: 0, stdout: envelope("Done."), stderr: "" };
+      }
+    }
+  );
+  assert.deepEqual(result.touchedFiles, ["should-not-exist.txt"]);
+  assert.match(result.readOnlyNotice, /should-not-exist\.txt/);
+});

@@ -163,21 +163,19 @@ test("macOS and Linux probes read presence from exit status and never request th
     return { status: 0 };
   };
 
-  assert.equal(keychainEntryExists(API_KEY_ENTRY, { platform: "darwin", spawnImpl, env: {} }), true);
-  assert.equal(keychainEntryExists(API_KEY_ENTRY, { platform: "linux", spawnImpl, env: {} }), true);
+  assert.equal(keychainEntryExists(API_KEY_ENTRY, { platform: "darwin", spawnImpl, env: {}, existsImpl: () => true }), true);
+  assert.equal(keychainEntryExists(API_KEY_ENTRY, { platform: "linux", spawnImpl, env: {}, existsImpl: () => true }), true);
   assert.equal(
-    keychainEntryExists(API_KEY_ENTRY, { platform: "darwin", spawnImpl: () => ({ status: 44 }), env: {} }),
+    keychainEntryExists(API_KEY_ENTRY, { platform: "darwin", spawnImpl: () => ({ status: 44 }), env: {}, existsImpl: () => true }),
     false
   );
 
-  assert.deepEqual(calls[0], {
-    command: "security",
-    args: ["find-generic-password", "-s", "gemini-cli-api-key", "-a", "default-api-key"]
-  });
-  assert.deepEqual(calls[1], {
-    command: "secret-tool",
-    args: ["search", "service", "gemini-cli-api-key", "account", "default-api-key"]
-  });
+  // Absolute, not a bare name: a bare name is resolved through PATH, and these
+  // probes run on every engine detection.
+  assert.ok(calls[0].command.endsWith("/security"), `expected an absolute security path, got ${calls[0].command}`);
+  assert.deepEqual(calls[0].args, ["find-generic-password", "-s", "gemini-cli-api-key", "-a", "default-api-key"]);
+  assert.ok(calls[1].command.endsWith("/secret-tool"), `expected an absolute secret-tool path, got ${calls[1].command}`);
+  assert.deepEqual(calls[1].args, ["search", "service", "gemini-cli-api-key", "account", "default-api-key"]);
   // `security -w` and `secret-tool lookup` both print the credential. Neither
   // may appear: this check needs presence, and the value is not its business.
   assert.ok(!calls[0].args.includes("-w"));
@@ -229,6 +227,9 @@ test("hasGeminiCredentials accepts a keychain entry with no env key and no OAuth
   const options = {
     platform: "darwin",
     env: {},
+    // Simulating darwin on a Windows runner: say the probe tool is where it
+    // would be, since the probe now requires an absolute path to it.
+    existsImpl: () => true,
     spawnImpl: () => {
       probes += 1;
       return { status: 0 };

@@ -75,11 +75,6 @@ function stripAnsi(str) {
   return String(str ?? "").replace(/\x1B\[[0-9;]*[mGKHF]/g, "");
 }
 
-function extractTouchedFiles(text) {
-  const matches = text.match(/\b[\w./\\-]+\.(ts|tsx|js|jsx|mjs|cjs|py|go|rs|java|kt|rb|php|cs|cpp|c|h|json|yaml|yml|toml|md|sh|bash)\b/g);
-  if (!matches) return [];
-  return [...new Set(matches)];
-}
 
 // CLI noise that must never surface as model "reasoning": Node deprecation
 // warnings, terminal-capability notices, and ripgrep fallbacks. Filtered BEFORE
@@ -347,10 +342,10 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
 
   onProgress?.({ message: `Starting ${engineInfo.engine} turn...`, phase: "running" });
 
-  // A turn dispatched without --write is documented as read-only, but no engine
-  // enforces that (see readonly-guard.mjs). Snapshot first so a write can at
-  // least be named afterwards.
-  const readOnlyBefore = write ? null : snapshotWorkspace(cwd);
+  // Snapshot before the turn, whatever mode it is in. A read-only turn needs it
+  // because nothing enforces read-only (see readonly-guard.mjs); a write turn
+  // needs it to report which files it actually changed.
+  const workspaceBefore = snapshotWorkspace(cwd);
 
   const result = runCommandFn(engineInfo.binary, args, {
     cwd,
@@ -446,7 +441,14 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
     exitCode = 1;
   }
 
-  const touchedFiles = extractTouchedFiles(finalMessage);
+  // `touchedFiles` used to be a regex for filename-shaped tokens in the model's
+  // reply, which is not the same question. It reported files that were merely
+  // mentioned — including paths that did not exist in the workspace — and
+  // missed files that were changed without being named. Both directions were
+  // wrong, and nothing rendered or tested it, so it stayed wrong. It is now the
+  // set of paths that actually changed in the working tree during this turn.
+  const workspaceChanges = detectWrites(workspaceBefore, cwd);
+  const touchedFiles = workspaceChanges.written;
   const failure = recoveryFailure ?? (exitCode !== 0 || !finalMessage
     ? classifyCliFailure({
         engine: engineInfo.engine,
@@ -461,8 +463,7 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
 
   // Only report when there is something to report: a clean read-only turn says
   // nothing, so the warning keeps its meaning when it does appear.
-  const readOnlyWrites = write ? null : detectWrites(readOnlyBefore, cwd);
-  const readOnlyNotice = describeReadOnlyWrites(readOnlyWrites);
+  const readOnlyNotice = write ? null : describeReadOnlyWrites(workspaceChanges);
   if (readOnlyNotice) {
     process.stderr.write(`[gemini-companion] ${readOnlyNotice}
 `);
@@ -479,7 +480,7 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
     engine: engineInfo.engine,
     stderr: rawStderr,
     modelFallback: modelFallbackNote,
-    ...(readOnlyNotice ? { readOnlyNotice, readOnlyWrites: readOnlyWrites.written } : {}),
+    ...(readOnlyNotice ? { readOnlyNotice, readOnlyWrites: workspaceChanges.written } : {}),
     ...(failure ? { failure } : {})
   };
 }
