@@ -247,16 +247,7 @@
 
 ### 僅限斜線命令（明列缺口）
 
-以下尚未進入 MCP 介面。列出來是為了讓缺口可見，而不是等人踩到：
-
-| 不可用 | 改用 |
-|---|---|
-| `/gemini:setup`（含 probe 旗標） | 斜線命令或 CLI——這本質上是互動式的 |
-| `/gemini:transfer` | 斜線命令；它會寫入工作區內的快照，且需要模型自行撰寫 instructions 檔 |
-| `--timeout <秒>` | 未開放；MCP 工作採各引擎的預設值 |
-| `--resume-last` / `--resume` | 未開放；每次 `gemini_rescue` 都是全新的 turn |
-| `--engines gemini,agy`（雙引擎審查） | 斜線命令或 CLI |
-| [Review Gate](#review-gate可選) | 由 `/gemini:setup` 設定，之後對整個 session 生效 |
+列出來是為了讓缺口可見，而不是等人踩到：`/gemini:setup` 與其 probe 旗標（本質上是互動式的）、`/gemini:transfer`（會寫入工作區內的快照，且需要模型自行撰寫 instructions 檔）、`--timeout`、`--resume-last`、`--engines gemini,agy` 都不在這個介面上——請改用斜線命令或 CLI。MCP 工作採各引擎的預設 timeout，且每次 `gemini_rescue` 都是全新的 turn。[Review Gate](#review-gate可選) 由 `/gemini:setup` 設定，之後對整個 session 生效，與工作由哪個介面排入無關。
 
 ---
 

@@ -249,16 +249,7 @@ The plugin also ships an MCP server (`.mcp.json` → `scripts/gemini-mcp.mjs`), 
 
 ### Slash-only, by omission
 
-Not yet on the MCP surface. Listed so a gap is visible rather than discovered:
-
-| Not available | Use instead |
-|---|---|
-| `/gemini:setup` (and the probe flags) | The slash command or the CLI — this is interactive by design |
-| `/gemini:transfer` | The slash command; it writes a workspace-local snapshot and needs the model to author the instructions file |
-| `--timeout <seconds>` | Not exposed; MCP jobs take the per-engine default |
-| `--resume-last` / `--resume` | Not exposed; every `gemini_rescue` starts a fresh turn |
-| `--engines gemini,agy` (dual-engine review) | The slash command or the CLI |
-| The [Review Gate](#review-gate-optional) | Configured through `/gemini:setup`, then applies to the whole session |
+Listed so the gap is visible rather than discovered: `/gemini:setup` and its probe flags (interactive by design), `/gemini:transfer` (it writes a workspace-local snapshot and needs the model to author the instructions file), `--timeout`, `--resume-last`, and `--engines gemini,agy` are not on this surface — use the slash command or the CLI. MCP jobs take the per-engine default timeout, and every `gemini_rescue` starts a fresh turn. The [Review Gate](#review-gate-optional) is configured through `/gemini:setup` and then applies to the whole session, whichever surface queued the job.
 
 ---
 
