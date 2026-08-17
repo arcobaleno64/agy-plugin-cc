@@ -296,6 +296,14 @@ export function buildCliArgs(engine, options = {}) {
     // command may reach (network, .git), not where anything may write. A run
     // with --sandbox wrote outside the workspace through both the edit tool and
     // a shell command. See docs/THREAT-MODEL.md 7.2.
+    //
+    // --mode plan is not used either, and could not be while --disable-slash-commands
+    // is: AGY turns plan mode off whenever slash-command expansion is off, and says
+    // so on stderr — "warning: --mode plan has no effect while slash command
+    // expansion is disabled" (measured on 1.1.13, 2026-08-17; readable only from
+    // 1.1.12, which stopped swallowing startup diagnostics into the log file).
+    // Dropping the opt-out to gain it would buy no boundary anyway: plan mode
+    // refuses the edit tool and lets a shell command write the same file, exit 0.
     // Both branches below do the same job: tell AGY where "here" is. Without
     // either, a turn reports its cwd as ~/.gemini/antigravity-cli/scratch and
     // every relative path — read or write — lands there instead of in the

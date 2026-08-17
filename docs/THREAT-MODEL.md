@@ -98,6 +98,23 @@ The plugin's function is to take content it did not author and hand it to an age
 
 **Residual, unchanged.** Nothing constrains where any AGY run may reach — runs 1 and 3 wrote outside the workspace, the correction above shows an unoriented run doing the same, and no flag on either engine prevents it. `--write` remains meaningful as the opt-in that says "edits are expected", and it is what the subagent and MCP defaults key off. It is not a sandbox. The real fix remains an engine-side path boundary.
 
+**Measured on AGY 1.1.13, 2026-08-17.** Six headless runs against a disposable git repository, prompt on stdin, `--output-format json`, matching how the plugin invokes the engine. AGY 1.1.12 fixed `--mode` being ignored in headless `-p` runs, which is what made `--mode plan` worth testing against conclusion 4 above. It does not survive the test.
+
+| `--mode plan` | `--disable-slash-commands` | Orientation | Action | Outcome |
+|---|---|---|---|---|
+| — | yes | `--add-dir` | edit tool → in workspace | wrote |
+| yes | yes | `--add-dir` | edit tool → in workspace | wrote |
+| yes | — | `--add-dir` | edit tool → in workspace | refused, asked for plan approval |
+| yes | — | `--add-dir` | edit tool → in workspace (repeat) | refused, reproduced |
+| yes | — | `--add-dir` | **shell command → in workspace** | **wrote, exit 0** |
+| yes | — | `--new-project` | edit tool → in workspace | refused, asked for plan approval |
+
+1. **Plan mode gates the edit tools; it does not gate the terminal.** Run 5 asked for `cmd /c echo … > probe-4.txt` and got it, with plan mode active, exit 0, and the file on disk. Runs 3, 4 and 6 refused the same write through the edit tool. That makes `--mode plan` a tool policy, not a write boundary — the same shape as `--sandbox` in the table above, and for the same reason it cannot be relied on: a prompt injection that asks for a shell command is not covered by it.
+2. **`--mode plan` is mutually exclusive with `--disable-slash-commands`.** Run 2 wrote the file and AGY said why on stderr: `warning: --mode plan has no effect while slash command expansion is disabled`. The plugin passes `--disable-slash-commands` on every AGY spawn from 1.1.9 up, because the prompt is raw user text at position 0 and a task beginning with `/` would otherwise be executed as an AGY command. Adopting plan mode means giving that up — to gain a policy run 5 already walked through. That warning is readable at all only because AGY 1.1.12 stopped swallowing startup diagnostics into the log file; below it, this combination failed silently.
+3. **Orientation does not change plan mode.** `--add-dir` and `--new-project` produced identical edit-tool refusals (runs 3 and 6), consistent with the orientation table above: these flags say where "here" is, and nothing else.
+
+Conclusion 4 above therefore stands unchanged on 1.1.13: **AGY still has no read-only mode.** `--mode plan` is tested and not adopted. The after-the-fact workspace comparison the review and task paths run (`lib/readonly-guard.mjs`, v0.18.0) remains the honest answer — it reports what a turn wrote, because nothing available prevents it from writing.
+
 **Measured on gemini CLI 0.53.1, 2026-08-05**, against the same disposable repository and the same stdin transport, on a temporary API key. The gemini engine behaves the *opposite* way to AGY, so nothing above transfers between them.
 
 | `--yolo` | other flags | Action | Outcome |
