@@ -654,10 +654,11 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
         noOutput: !reviewText
       });
     } else {
+      // No "match is not certain" warning here either: an ambiguous recovery now
+      // returns no response at all, so reaching this branch means the
+      // conversation was identified. What remains is truncation, which the
+      // exitCode below already reports. See the task path for the full reasoning.
       recoveryFailure = rec.failure ?? null;
-      if (!rec.confident) {
-        process.stderr.write(`[gemini-companion] Warning: AGY transcript match is not certain (${rec.reason}). Verify the review corresponds to this run.\n`);
-      }
       reviewText = String(rec.response).trim();
       reviewJson = tryParseJsonFromText(reviewText);
       reasoningSummary = rec.thinking ?? reasoningSummary;
