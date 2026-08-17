@@ -135,11 +135,11 @@ test("cmdkey output is read for presence, not exit status, and survives a locali
   const spawnWith = (stdout, status = 0) => () => ({ status, stdout });
 
   assert.equal(
-    keychainEntryExists(API_KEY_ENTRY, { platform: "win32", spawnImpl: spawnWith(WIN_HIT), env: {} }),
+    keychainEntryExists(API_KEY_ENTRY, { platform: "win32", spawnImpl: spawnWith(WIN_HIT), env: { SystemRoot: "C:\Windows" }, existsImpl: () => true }),
     true
   );
   assert.equal(
-    keychainEntryExists(API_KEY_ENTRY, { platform: "win32", spawnImpl: spawnWith(WIN_MISS), env: {} }),
+    keychainEntryExists(API_KEY_ENTRY, { platform: "win32", spawnImpl: spawnWith(WIN_MISS), env: { SystemRoot: "C:\Windows" }, existsImpl: () => true }),
     false,
     "cmdkey exits 0 for a missing target, so status alone would report a false hit"
   );
@@ -151,7 +151,7 @@ test("cmdkey output is read for presence, not exit status, and survives a locali
     Buffer.from("\r\n    gemini-cli-api-key/default-api-key\r\n    default-api-key\r\n", "latin1")
   ]);
   assert.equal(
-    keychainEntryExists(API_KEY_ENTRY, { platform: "win32", spawnImpl: spawnWith(cp950Hit), env: {} }),
+    keychainEntryExists(API_KEY_ENTRY, { platform: "win32", spawnImpl: spawnWith(cp950Hit), env: { SystemRoot: "C:\Windows" }, existsImpl: () => true }),
     true
   );
 });
@@ -163,21 +163,19 @@ test("macOS and Linux probes read presence from exit status and never request th
     return { status: 0 };
   };
 
-  assert.equal(keychainEntryExists(API_KEY_ENTRY, { platform: "darwin", spawnImpl, env: {} }), true);
-  assert.equal(keychainEntryExists(API_KEY_ENTRY, { platform: "linux", spawnImpl, env: {} }), true);
+  assert.equal(keychainEntryExists(API_KEY_ENTRY, { platform: "darwin", spawnImpl, env: {}, existsImpl: () => true }), true);
+  assert.equal(keychainEntryExists(API_KEY_ENTRY, { platform: "linux", spawnImpl, env: {}, existsImpl: () => true }), true);
   assert.equal(
-    keychainEntryExists(API_KEY_ENTRY, { platform: "darwin", spawnImpl: () => ({ status: 44 }), env: {} }),
+    keychainEntryExists(API_KEY_ENTRY, { platform: "darwin", spawnImpl: () => ({ status: 44 }), env: {}, existsImpl: () => true }),
     false
   );
 
-  assert.deepEqual(calls[0], {
-    command: "security",
-    args: ["find-generic-password", "-s", "gemini-cli-api-key", "-a", "default-api-key"]
-  });
-  assert.deepEqual(calls[1], {
-    command: "secret-tool",
-    args: ["search", "service", "gemini-cli-api-key", "account", "default-api-key"]
-  });
+  // Absolute, not a bare name: a bare name is resolved through PATH, and these
+  // probes run on every engine detection.
+  assert.ok(calls[0].command.endsWith("/security"), `expected an absolute security path, got ${calls[0].command}`);
+  assert.deepEqual(calls[0].args, ["find-generic-password", "-s", "gemini-cli-api-key", "-a", "default-api-key"]);
+  assert.ok(calls[1].command.endsWith("/secret-tool"), `expected an absolute secret-tool path, got ${calls[1].command}`);
+  assert.deepEqual(calls[1].args, ["search", "service", "gemini-cli-api-key", "account", "default-api-key"]);
   // `security -w` and `secret-tool lookup` both print the credential. Neither
   // may appear: this check needs presence, and the value is not its business.
   assert.ok(!calls[0].args.includes("-w"));
@@ -229,6 +227,9 @@ test("hasGeminiCredentials accepts a keychain entry with no env key and no OAuth
   const options = {
     platform: "darwin",
     env: {},
+    // Simulating darwin on a Windows runner: say the probe tool is where it
+    // would be, since the probe now requires an absolute path to it.
+    existsImpl: () => true,
     spawnImpl: () => {
       probes += 1;
       return { status: 0 };
@@ -249,4 +250,52 @@ test("hasGeminiCredentials accepts a keychain entry with no env key and no OAuth
     hasGeminiCredentials({ ...options, env: { GEMINI_COMPANION_DISABLE_KEYCHAIN: "1" } }),
     false
   );
+});
+
+// --- the probe tool really is where each platform says it is ----------------
+// Adding macOS to the CI matrix proves the darwin branch does not crash. It
+// does not prove the branch is right: resolution is fail-closed, so a wrong
+// path yields null, the probe reports "no credential", and almost everything
+// still passes. These three assert the resolution itself, each on the only
+// platform that can answer, using the real filesystem rather than a stub.
+
+function resolvedProbeCommand(platform) {
+  const calls = [];
+  keychainEntryExists(API_KEY_ENTRY, {
+    platform,
+    // Real fs.existsSync on purpose: that is the thing under test.
+    spawnImpl: (command) => {
+      calls.push(command);
+      return { status: 1 };
+    },
+    env: process.env
+  });
+  return calls;
+}
+
+test("on Windows the probe resolves cmdkey to a real absolute path", { skip: process.platform !== "win32" }, () => {
+  const calls = resolvedProbeCommand("win32");
+  assert.equal(calls.length, 1, "resolution must have produced a tool to spawn");
+  assert.ok(path.isAbsolute(calls[0]), `expected an absolute path, got ${calls[0]}`);
+  assert.ok(fs.existsSync(calls[0]), `resolved path must exist: ${calls[0]}`);
+  // Separators normalised first: writing a character class for both of them is
+  // three layers of escaping deep and was wrong twice before this comment.
+  assert.match(calls[0].split("\\").join("/"), /System32\/cmdkey\.exe$/i);
+});
+
+test("on macOS the probe resolves security to a real absolute path", { skip: process.platform !== "darwin" }, () => {
+  const calls = resolvedProbeCommand("darwin");
+  assert.equal(calls.length, 1, "resolution must have produced a tool to spawn");
+  assert.ok(fs.existsSync(calls[0]), `resolved path must exist: ${calls[0]}`);
+  assert.match(calls[0], /\/security$/);
+});
+
+test("on Linux secret-tool resolves when installed, and fails closed when not", { skip: process.platform !== "linux" }, () => {
+  const calls = resolvedProbeCommand("linux");
+  // secret-tool is not on every Linux image, and its absence must read as "no
+  // credential" rather than as an error — so both outcomes are correct here,
+  // and what is asserted is that they are the only two.
+  if (calls.length === 0) return;
+  assert.ok(fs.existsSync(calls[0]), `resolved path must exist: ${calls[0]}`);
+  assert.match(calls[0], /\/secret-tool$/);
 });

@@ -31,7 +31,8 @@ Forwarding rules:
 - If the user asks for `pro` or `deep`, map that to `--model pro`.
 - If the user asks for a concrete model name such as `gemini-2.5-pro`, pass it through with `--model`.
 - Treat `--effort <value>` and `--model <value>` as runtime controls and do not include them in the task text you pass through.
-- Do NOT add `--write` unless the user asked for edits. Read-only is the default. Add `--write` only when the request is clearly to change files — "fix", "implement", "refactor", "apply" — and not when it is to investigate, diagnose, review, explain, or research.
+- Do NOT add `--write` unless the user asked for edits. Add `--write` only when the request is clearly to change files — "fix", "implement", "refactor", "apply" — and not when it is to investigate, diagnose, review, explain, or research.
+- Read-only is the **default intent, not an enforced boundary**. On AGY there is no read-only mode: `--write` selects how the workspace is oriented, not what the engine may do, and headless print mode auto-approves edits and shell commands either way (measured — see `docs/THREAT-MODEL.md` 7.2). A run dispatched without `--write` therefore still compares the workspace before and after and reports anything it wrote. Say so if that notice appears; do not present a modified workspace as an untouched one.
 - Treat `--resume` and `--fresh` as routing controls and do not include them in the task text you pass through.
 - `--resume` means add `--resume-last`.
 - `--fresh` means do not add `--resume-last`.

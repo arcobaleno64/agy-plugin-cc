@@ -47,7 +47,7 @@ export const TOOLS = [
   tool(
     "gemini_rescue",
     "Delegate a task to Gemini or AGY",
-    "Queue a Gemini/AGY rescue task through the existing companion runtime. With `write: true` the delegated CLI may edit files anywhere it can reach; it is not confined to the workspace.",
+    "Queue a Gemini/AGY rescue task through the existing companion runtime. With `write: true` the delegated CLI may edit files anywhere it can reach; it is not confined to the workspace. `write: false` is an intent, not a sandbox: AGY has no read-only mode, so a delegated turn can still edit files, and the run reports afterwards what it wrote. `workspace` may be any existing directory, so pass one the user meant.",
     // Not read-only, because `write: true` hands the delegated agent the
     // filesystem with no path boundary (docs/THREAT-MODEL.md 7.2). Not
     // idempotent: every call queues a new job.

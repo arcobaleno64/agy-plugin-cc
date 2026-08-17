@@ -210,10 +210,38 @@ test("agy write turn adds --new-project so files land in cwd, not agy's scratch 
   assert.ok(!args.includes("--continue"));
 });
 
-test("agy resumed write turn uses --continue instead of --new-project", () => {
-  const args = buildCliArgs("agy", { prompt: "hello", write: true, resumeLast: true });
-  assert.ok(args.includes("--continue"));
+test("agy resumed write turn pins the conversation instead of taking --new-project", () => {
+  const args = buildCliArgs("agy", { prompt: "hello", write: true, resumeLast: true, resumeThreadId: "conv-abc" });
+  const at = args.indexOf("--conversation");
+  assert.ok(at !== -1, "the resolved thread must be named");
+  assert.equal(args[at + 1], "conv-abc");
   assert.ok(!args.includes("--new-project"));
+});
+
+// `--continue` means "the most recent conversation" in AGY's own store, which
+// need not be the thread the caller resolved from this session's tracked jobs —
+// a bare `agy` run in another terminal is enough to change what it points at.
+// The resumed conversation then brings its own workspace, so a write turn writes
+// into that project. It is one word, so it is pinned here rather than trusted to
+// stay gone.
+test("no agy turn resumes with --continue", () => {
+  for (const options of [
+    { prompt: "hello", resumeLast: true, resumeThreadId: "conv-abc" },
+    { prompt: "hello", write: true, resumeLast: true, resumeThreadId: "conv-abc" },
+    { prompt: "hello", write: true, resumeLast: true, resumeThreadId: "conv-abc", agyVersion: "1.1.12" }
+  ]) {
+    assert.ok(!buildCliArgs("agy", options).includes("--continue"), `--continue returned for ${JSON.stringify(options)}`);
+  }
+});
+
+// Without an id there is nothing to pin, and the only remaining shape is the one
+// that resumes someone else's conversation. Refusing is the fail-closed choice:
+// the caller asked to continue a specific thread, not whatever ran last.
+test("agy refuses to resume without a conversation id", () => {
+  assert.throws(
+    () => buildCliArgs("agy", { prompt: "hello", write: true, resumeLast: true }),
+    /Cannot resume an AGY conversation without its id/
+  );
 });
 
 test("agy read-only turn does not bind the session to cwd", () => {
@@ -240,8 +268,8 @@ test("agy write turn keeps --new-project and does not also add --add-dir", () =>
 });
 
 test("agy resumed turn keeps its original workspace rather than being re-oriented", () => {
-  const args = buildCliArgs("agy", { prompt: "hello", resumeLast: true, workspaceDir: "C:/repo", agyVersion: "1.1.10" });
-  assert.ok(args.includes("--continue"));
+  const args = buildCliArgs("agy", { prompt: "hello", resumeLast: true, resumeThreadId: "conv-abc", workspaceDir: "C:/repo", agyVersion: "1.1.10" });
+  assert.ok(args.includes("--conversation"));
   assert.ok(!args.includes("--add-dir"));
   assert.ok(!args.includes("--new-project"));
 });
@@ -279,7 +307,7 @@ test("no agy turn passes --dangerously-skip-permissions", () => {
   for (const options of [
     { prompt: "hello" },
     { prompt: "hello", write: true },
-    { prompt: "hello", write: true, resumeLast: true },
+    { prompt: "hello", write: true, resumeLast: true, resumeThreadId: "conv-abc" },
     { prompt: "hello", write: true, useStdin: true, agyVersion: "1.1.10" }
   ]) {
     const args = buildCliArgs("agy", options);

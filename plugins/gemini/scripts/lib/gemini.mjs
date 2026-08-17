@@ -7,6 +7,7 @@ import { buildCliArgs, detectEngine, ENGINE_ENV, formatAgyTimeout, mapEffortToMo
 import { classifyCliFailure } from "./failures.mjs";
 import { binaryAvailable, runCommand } from "./process.mjs";
 import { resolveAgyBrainRoot, listConvDirs, recoverAgyResponse } from "./agy-transcript.mjs";
+import { describeReadOnlyWrites, detectWrites, snapshotWorkspace } from "./readonly-guard.mjs";
 
 const DEFAULT_SPAWN_TIMEOUT_MS = 600_000; // 10 minutes (gemini)
 // AGY's `agy --print` does not stream its response over a pipe in non-interactive
@@ -74,11 +75,6 @@ function stripAnsi(str) {
   return String(str ?? "").replace(/\x1B\[[0-9;]*[mGKHF]/g, "");
 }
 
-function extractTouchedFiles(text) {
-  const matches = text.match(/\b[\w./\\-]+\.(ts|tsx|js|jsx|mjs|cjs|py|go|rs|java|kt|rb|php|cs|cpp|c|h|json|yaml|yml|toml|md|sh|bash)\b/g);
-  if (!matches) return [];
-  return [...new Set(matches)];
-}
 
 // CLI noise that must never surface as model "reasoning": Node deprecation
 // warnings, terminal-capability notices, and ripgrep fallbacks. Filtered BEFORE
@@ -206,11 +202,12 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
     const killedBeforePrinting = !String(rawStdout).trim();
     const recovered = brainRoot && killedBeforePrinting ? recoverAgyResponse(brainRoot, conversationsBefore) : null;
     if (recovered?.response) {
-      if (!recovered.confident) {
-        process.stderr.write(
-          `[gemini-companion] Warning: AGY returned no envelope and the recovered transcript match is not certain (${recovered.reason}). Verify the response corresponds to this run.\n`
-        );
-      }
+      // No "the match may not be this run's" warning any more: recovery either
+      // identifies one conversation or attributes none (agy-transcript.mjs
+      // TODO-2). What is left — an unfinished transcript — travels as a non-zero
+      // exit and a classified failure, which reaches a background job's rendered
+      // output. The warning it replaces went to a stderr that detached workers
+      // discard, so it was invisible exactly where it mattered.
       return {
         text: String(recovered.response).trim(),
         threadId: recovered.convDir ?? null,
@@ -273,13 +270,38 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
   };
 }
 
+// Did the resume land on the thread the caller resolved?
+//
+// On AGY the id is pinned with `--conversation`, so a mismatch would mean the id
+// stopped meaning what it meant — worth saying, but not expected. On gemini it is
+// the whole story: `--resume` only accepts "latest", so the turn continues
+// whatever gemini saw last, which need not be the tracked thread. That cannot be
+// prevented from here, so it is measured instead — the same choice readonly-guard
+// makes, and for the same reason: an unverifiable promise is worse than a
+// verified report.
+//
+// A resumed conversation carries its original workspace, so landing on the wrong
+// thread means a write turn writes somewhere else. That is why `write` sharpens
+// the wording rather than being left for the reader to infer.
+export function resolveResumeMismatch({ resumeThreadId, threadId, engine, write = false }) {
+  if (!resumeThreadId) return null;
+  // No id back at all: a failed or killed turn has nothing to compare, and
+  // claiming a mismatch there would be inventing one.
+  if (!threadId) return null;
+  if (threadId === resumeThreadId) return null;
+  const where = write
+    ? "This turn could write, and a resumed conversation keeps its own workspace, so any edits may have landed in that conversation's directory rather than this one"
+    : "A resumed conversation keeps its own workspace, so the reply may be about a different project";
+  return `Resume landed on ${engine} conversation ${threadId}, not the tracked thread ${resumeThreadId}. ${where}. Start a fresh task instead of continuing this one.`;
+}
+
 // The third parameter mirrors dispatchBackgroundTask's { spawnFn, detectEngineFn }
 // seam. It exists so the engine-response logic can be exercised without a real
 // binary: the Windows AGY stand-in must be an absolute .exe (CVE-2024-27980), so
 // a fixture there cannot report a chosen version, and spawn-driven tests cost
 // ~150s per suite against ~0.2s for direct calls.
 export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runCommand, detectEngineFn = detectEngine } = {}) {
-  const { prompt, effort: requestedEffort, write = true, resumeLast = false, engine: requestedEngine, timeoutSeconds = null, onProgress } = options;
+  const { prompt, effort: requestedEffort, write = true, resumeLast = false, resumeThreadId = null, engine: requestedEngine, timeoutSeconds = null, onProgress } = options;
   let { model } = options;
   let effort = requestedEffort;
 
@@ -335,6 +357,7 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
     effort,
     write,
     resumeLast,
+    resumeThreadId,
     timeoutMs: engineInfo.engine === "agy" ? agyPrintTimeoutMs : spawnTimeoutMs,
     agyVersion: engineInfo.version,
     useStdin,
@@ -345,6 +368,11 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
   });
 
   onProgress?.({ message: `Starting ${engineInfo.engine} turn...`, phase: "running" });
+
+  // Snapshot before the turn, whatever mode it is in. A read-only turn needs it
+  // because nothing enforces read-only (see readonly-guard.mjs); a write turn
+  // needs it to report which files it actually changed.
+  const workspaceBefore = snapshotWorkspace(cwd);
 
   const result = runCommandFn(engineInfo.binary, args, {
     cwd,
@@ -440,7 +468,14 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
     exitCode = 1;
   }
 
-  const touchedFiles = extractTouchedFiles(finalMessage);
+  // `touchedFiles` used to be a regex for filename-shaped tokens in the model's
+  // reply, which is not the same question. It reported files that were merely
+  // mentioned — including paths that did not exist in the workspace — and
+  // missed files that were changed without being named. Both directions were
+  // wrong, and nothing rendered or tested it, so it stayed wrong. It is now the
+  // set of paths that actually changed in the working tree during this turn.
+  const workspaceChanges = detectWrites(workspaceBefore, cwd);
+  const touchedFiles = workspaceChanges.written;
   const failure = recoveryFailure ?? (exitCode !== 0 || !finalMessage
     ? classifyCliFailure({
         engine: engineInfo.engine,
@@ -453,6 +488,20 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
       })
     : null);
 
+  // Only report when there is something to report: a clean read-only turn says
+  // nothing, so the warning keeps its meaning when it does appear.
+  const readOnlyNotice = write ? null : describeReadOnlyWrites(workspaceChanges);
+  if (readOnlyNotice) {
+    process.stderr.write(`[gemini-companion] ${readOnlyNotice}
+`);
+  }
+
+  const resumeNotice = resolveResumeMismatch({ resumeThreadId, threadId, engine: engineInfo.engine, write });
+  if (resumeNotice) {
+    process.stderr.write(`[gemini-companion] ${resumeNotice}
+`);
+  }
+
   onProgress?.({ message: exitCode === 0 ? "Turn completed." : "Turn failed.", phase: exitCode === 0 ? "done" : "failed" });
 
   return {
@@ -464,13 +513,15 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
     engine: engineInfo.engine,
     stderr: rawStderr,
     modelFallback: modelFallbackNote,
+    ...(readOnlyNotice ? { readOnlyNotice, readOnlyWrites: workspaceChanges.written } : {}),
+    ...(resumeNotice ? { resumeNotice, resumeExpectedThreadId: resumeThreadId } : {}),
     ...(failure ? { failure } : {})
   };
 }
 
 // Same injection seam as runGeminiTurn; see the note there.
 export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCommand, detectEngineFn = detectEngine } = {}) {
-  const { prompt, model: requestedModel, effort: requestedEffort, engine: requestedEngine, isAdversarial = true, timeoutSeconds = null, onProgress } = options;
+  const { prompt, model: requestedModel, effort: requestedEffort, engine: requestedEngine, isAdversarial = true, deep = false, timeoutSeconds = null, onProgress } = options;
 
   // Mode-aware label: the standard /review and adversarial /adversarial-review
   // share this runner, so the progress line must reflect the actual mode.
@@ -538,7 +589,25 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
     timeoutMs: engineInfo.engine === "agy" ? agyPrintTimeoutMs : spawnTimeoutMs,
     agyVersion: engineInfo.version,
     useStdin,
+    // Only --deep gets a workspace, and it needs one to mean anything. A default
+    // review is single-shot from a diff already inside the prompt; --deep tells
+    // the model to go and read dependency manifests, callers and untracked files.
+    // Unoriented, an AGY turn's cwd is ~/.gemini/antigravity-cli/scratch, so those
+    // relative reads missed the repository entirely and landed next to `brain/` —
+    // the transcripts of every past conversation. So the flag both failed to do
+    // what it promises and pointed the model at the user's private data.
+    //
+    // This is not a permission change. AGY has no read-only mode and can reach any
+    // absolute path either way (docs/THREAT-MODEL.md 7.2); what --add-dir decides
+    // is where relative paths land. Whether anything was written is measured below
+    // rather than promised.
+    workspaceDir: deep ? cwd : null,
   });
+
+  // A review is read-only by construction — no --yolo, no --write — but nothing
+  // enforces that, and --deep hands the model tools and a workspace. Same guard
+  // as the task path: silence has to mean "compared, unchanged".
+  const workspaceBefore = snapshotWorkspace(cwd);
 
   const result = runCommandFn(engineInfo.binary, args, {
     cwd,
@@ -603,10 +672,11 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
         noOutput: !reviewText
       });
     } else {
+      // No "match is not certain" warning here either: an ambiguous recovery now
+      // returns no response at all, so reaching this branch means the
+      // conversation was identified. What remains is truncation, which the
+      // exitCode below already reports. See the task path for the full reasoning.
       recoveryFailure = rec.failure ?? null;
-      if (!rec.confident) {
-        process.stderr.write(`[gemini-companion] Warning: AGY transcript match is not certain (${rec.reason}). Verify the review corresponds to this run.\n`);
-      }
       reviewText = String(rec.response).trim();
       reviewJson = tryParseJsonFromText(reviewText);
       reasoningSummary = rec.thinking ?? reasoningSummary;
@@ -653,6 +723,9 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
       })
     : null);
 
+  const workspaceChanges = detectWrites(workspaceBefore, cwd);
+  const readOnlyNotice = describeReadOnlyWrites(workspaceChanges);
+
   onProgress?.({ message: exitCode === 0 ? "Review completed." : "Review failed.", phase: exitCode === 0 ? "done" : "failed" });
 
   return {
@@ -663,6 +736,7 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
     engine: engineInfo.engine,
     stderr: rawStderr,
     modelFallback: modelFallbackNote,
+    ...(readOnlyNotice ? { readOnlyNotice, readOnlyWrites: workspaceChanges.written } : {}),
     ...(failure ? { failure } : {})
   };
 }

@@ -108,6 +108,56 @@ test("both workflows pin the same claude-code version for plugin validation", ()
   }
 });
 
+// Split a workflow's `jobs:` mapping into { name, text } blocks. The repo has no
+// dependencies and will not take a YAML parser for one test, and the shapes
+// asserted below are lexical anyway.
+function releaseJobs() {
+  const text = fs.readFileSync(path.join(ROOT, ".github", "workflows", "release.yml"), "utf8");
+  const lines = text.split(/\r?\n/);
+  const start = lines.findIndex((line) => line === "jobs:");
+  assert.ok(start !== -1, "release.yml has no jobs: block");
+
+  // `text` keeps everything; `code` drops whole-line comments, so the assertions
+  // below read the job's steps rather than the prose explaining them — a comment
+  // saying "no npm ci here" must not read as an npm step.
+  const jobs = [];
+  for (const line of lines.slice(start + 1)) {
+    const header = line.match(/^ {2}([A-Za-z0-9_-]+):\s*$/);
+    if (header) {
+      jobs.push({ name: header[1], text: "", code: "" });
+      continue;
+    }
+    if (!jobs.length) continue;
+    const job = jobs[jobs.length - 1];
+    job.text += `${line}\n`;
+    if (!line.trimStart().startsWith("#")) job.code += `${line}\n`;
+  }
+  assert.ok(jobs.length >= 2, "release.yml should have a verify job and a publish job");
+  return jobs;
+}
+
+// Whoever can push a `v*` tag chooses what `npm test`, `npm ci`'s lifecycle
+// scripts, and every `npm run` on that tag execute. A job holding a token that
+// can publish must therefore run none of it. This is one `needs:` away from
+// being undone by a merge, and the damage would not show up in any output.
+test("the release job that can write runs no code from the tag", () => {
+  const writers = releaseJobs().filter(({ code }) => /permissions:[\s\S]*?contents:\s*write/.test(code));
+  assert.equal(writers.length, 1, "exactly one release job should hold contents: write");
+
+  const [publish] = writers;
+  assert.doesNotMatch(publish.code, /uses:\s*actions\/checkout/, `${publish.name} checks out the tag it is publishing`);
+  assert.doesNotMatch(publish.code, /\bnpm\b/, `${publish.name} runs npm, which executes tag-controlled code`);
+  assert.match(publish.code, /needs:\s*verify/, `${publish.name} must publish only after the verifying job passed`);
+});
+
+test("the release workflow defaults to a read-only token", () => {
+  const text = fs.readFileSync(path.join(ROOT, ".github", "workflows", "release.yml"), "utf8");
+  // The top-level block, before `jobs:`. A workflow-wide `contents: write` would
+  // hand the write token to every job including the one running the tag's tests.
+  const preamble = text.slice(0, text.indexOf("jobs:"));
+  assert.match(preamble, /permissions:\s*\n\s*contents:\s*read/);
+});
+
 // --- bump-version (ported from upstream, adapted for the gemini layout) ---
 
 test("bump-version updates every manifest and --check detects drift", () => {

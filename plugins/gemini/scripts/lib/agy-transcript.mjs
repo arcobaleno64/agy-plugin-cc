@@ -22,9 +22,11 @@
 //     brain/<uuid>/ (it hung and wrote nothing); `--conversation` only resumes
 //     an EXISTING id (antigravity-cli#7 still open). => the set-diff path below
 //     is required, and a fresh turn must NOT pass --conversation.
-//   TODO-2 (concurrency): job-control spawns one foreground agy turn at a time;
-//     pickNewConvDir() still marks confident=false if >1 new dir appears so the
-//     caller can warn. Add a hard lock if background agy turns are introduced.
+//   TODO-2 (concurrency): RESOLVED by refusal, not by a lock. Its premise —
+//     one foreground agy turn at a time — stopped holding when --background
+//     arrived, and the "confident=false so the caller can warn" mitigation was
+//     silent in exactly that case (detached workers run with stdio "ignore").
+//     pickNewConvDir now attributes nothing when >1 new dir appears; see there.
 //   TODO-3 (platform paths): RESOLVED — Windows 1.0.3 and macOS 1.0.7 share
 //     the ~/.gemini/antigravity-cli/brain root (both machine-verified, macOS
 //     2026-06-12 end-to-end: task --engine agy recovered the transcript);
@@ -101,9 +103,20 @@ export function listConvDirs(brainRoot) {
 
 // Set-difference id capture: dirs present AFTER the spawn but not BEFORE.
 // More robust than mtime comparison — it ignores external touches to existing
-// dirs and only counts genuinely new ones. Residual race (TODO-2): if something
-// else creates a conv dir during the spawn window we may see >1; we then pick
-// the newest by mtime and mark confident=false so the caller can warn.
+// dirs and only counts genuinely new ones.
+//
+// When more than one appears there is nothing to choose between them. This used
+// to pick the newest by mtime and set confident=false "so the caller can warn"
+// (TODO-2), which held only while TODO-2's premise did: one foreground AGY turn
+// at a time. `--background` broke it. Two concurrent background turns both
+// snapshot, both see both dirs, and a turn killed by its timeout then rendered
+// the *other* job's answer as its own — with the warning written to a stderr
+// that spawnDetachedWorker sets to "ignore", so nothing reached the user.
+//
+// mtime cannot resolve it either: the other job's dir is still being written, so
+// "newest" actively favours the wrong one. So this refuses instead. The turn ran
+// and was billed, and the reason says so; `transcript-ambiguous` is retryable and
+// tells the user to retry when no other AGY run is starting.
 export function pickNewConvDir(before, after) {
   const added = [];
   for (const [name, mtime] of after) {
@@ -112,12 +125,14 @@ export function pickNewConvDir(before, after) {
   if (added.length === 0) {
     return { dir: null, confident: false, reason: "no new conversation dir appeared after spawn" };
   }
-  added.sort((a, b) => b.mtime - a.mtime);
-  return {
-    dir: added[0].name,
-    confident: added.length === 1,
-    reason: added.length > 1 ? `${added.length} new dirs appeared; picked newest by mtime` : "single new dir",
-  };
+  if (added.length > 1) {
+    return {
+      dir: null,
+      confident: false,
+      reason: `${added.length} new conversation dirs appeared during this spawn, so the match is ambiguous and none can be attributed to this turn`
+    };
+  }
+  return { dir: added[0].name, confident: true, reason: "single new dir" };
 }
 
 // Read the final model response from a conversation's transcript.
@@ -199,16 +214,11 @@ export function recoverAgyResponse(brainRoot, beforeSnapshot) {
   if (!picked.dir) {
     return { response: null, thinking: null, done: false, confident: false, convDir: null, reason: picked.reason, failure: classifyCliFailure({ transcriptReason: picked.reason }) };
   }
+  // A dir here is an unambiguous one — pickNewConvDir attributes nothing when it
+  // cannot tell which conversation was this turn's. So the only remaining doubt
+  // is whether the transcript finished, which is what `done` already says.
   const t = readAgyTranscript(brainRoot, picked.dir);
-  const reason = picked.confident ? t.reason : `${picked.reason}; ${t.reason}`;
-  const failure = t.failure ?? (!picked.confident ? classifyCliFailure({ transcriptReason: reason }) : null);
-  return {
-    ...t,
-    confident: picked.confident && t.done,
-    convDir: picked.dir,
-    reason,
-    ...(failure ? { failure } : {})
-  };
+  return { ...t, confident: t.done, convDir: picked.dir };
 }
 
 // Integration invariant: gemini.mjs snapshots the brain directory before every

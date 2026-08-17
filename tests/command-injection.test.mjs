@@ -1,0 +1,104 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+import { parseTransferArgs } from "../plugins/gemini/scripts/transfer.mjs";
+
+const COMMANDS_DIR = fileURLToPath(new URL("../plugins/gemini/commands", import.meta.url));
+
+function commandFiles() {
+  return fs
+    .readdirSync(COMMANDS_DIR)
+    .filter((name) => name.endsWith(".md"))
+    .map((name) => ({ name, text: fs.readFileSync(path.join(COMMANDS_DIR, name), "utf8") }));
+}
+
+// A slash command's `$ARGUMENTS` is substituted into the file as text before the
+// model sees it. Anything that then reaches a shell is evaluated there —
+// measured: `/gemini:status $(echo INJECTED)` ran the substitution and passed
+// `INJECTED` on as the job id. These tests pin the shape that cannot happen
+// again, because the mistake is a one-character edit away and looks harmless.
+
+test("no pre-execution block interpolates the user's arguments", () => {
+  // A `!`…`` line runs before the model is even consulted, so there is no
+  // judgement in the way. This is the shape that was exploitable.
+  for (const { name, text } of commandFiles()) {
+    for (const line of text.split(/\r?\n/)) {
+      if (!line.trimStart().startsWith("!`")) continue;
+      assert.ok(
+        !line.includes("$ARGUMENTS"),
+        `${name}: pre-execution block must not contain $ARGUMENTS — found: ${line.trim()}`
+      );
+    }
+  }
+});
+
+test("no command interpolates the user's arguments into a shell invocation", () => {
+  // Covers the model-executed shape too: a documented `node …"$ARGUMENTS"`
+  // command is one the model is being told to run verbatim.
+  const offenders = [];
+  for (const { name, text } of commandFiles()) {
+    for (const [index, line] of text.split(/\r?\n/).entries()) {
+      if (!line.includes("$ARGUMENTS")) continue;
+      // Naming the variable in prose is fine; putting it in a command is not.
+      if (/\b(node|npm|npx|bash|sh|python)\b[^\n]*\$ARGUMENTS/.test(line)) {
+        offenders.push(`${name}:${index + 1}: ${line.trim()}`);
+      }
+    }
+  }
+  assert.deepEqual(offenders, [], `arguments must never be interpolated into a command:\n${offenders.join("\n")}`);
+});
+
+test("every command that still mentions $ARGUMENTS says it must not reach a shell", () => {
+  // The text is what the model actually follows, so the warning has to be in
+  // the file, not only in this test.
+  for (const { name, text } of commandFiles()) {
+    if (!text.includes("$ARGUMENTS")) continue;
+    assert.match(
+      text,
+      /never reach a shell|must never reach a shell|never place the argument text/i,
+      `${name}: mentions $ARGUMENTS without telling the model to keep it out of a shell`
+    );
+  }
+});
+
+// --- transfer's file-based instructions ------------------------------------
+
+test("--instructions-file supplies the instruction text", () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "transfer-instr-")), "instructions.txt");
+  fs.writeFileSync(file, "Continue the linter.\n", "utf8");
+  const parsed = parseTransferArgs(["--instructions-file", file, "--engine", "agy"]);
+  assert.equal(parsed.instructions, "Continue the linter.");
+  assert.equal(parsed.engine, "agy");
+});
+
+test("shell metacharacters in the file are text, never evaluated", () => {
+  // The whole point: this content reached the script without passing a shell.
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "transfer-instr-")), "instructions.txt");
+  const payload = "Explain $(echo PWNED) and `whoami` and $HOME; rm -rf /";
+  fs.writeFileSync(file, payload, "utf8");
+  assert.equal(parseTransferArgs(["--instructions-file", file]).instructions, payload);
+});
+
+test("giving instructions twice is refused rather than silently merged", () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "transfer-instr-")), "instructions.txt");
+  fs.writeFileSync(file, "from the file", "utf8");
+  assert.throws(
+    () => parseTransferArgs(["--instructions-file", file, "also", "positional"]),
+    /not both/
+  );
+});
+
+test("an unreadable instructions file names the path it could not read", () => {
+  assert.throws(
+    () => parseTransferArgs(["--instructions-file", path.join(os.tmpdir(), "definitely-not-here-9c3d.txt")]),
+    /Could not read --instructions-file/
+  );
+});
+
+test("positional instructions still work when no file is given", () => {
+  assert.equal(parseTransferArgs(["carry", "on"]).instructions, "carry on");
+});
