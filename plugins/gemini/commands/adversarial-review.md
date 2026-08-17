@@ -5,6 +5,31 @@ disable-model-invocation: true
 allowed-tools: Read, Glob, Grep, Bash(node:*), Bash(git:*), AskUserQuestion
 ---
 
+## Those arguments must never reach a shell
+
+`$ARGUMENTS` is substituted into this file as text, so a shell receiving it
+would evaluate whatever it contains — `$(…)`, backticks, `;`, `|`. Measured on
+the job commands: `$(echo INJECTED)` was executed before Node ever started.
+
+Read the argument text, then assemble the command from fixed pieces only. Never
+place the argument text, or any fragment of it, into a command, and never pass
+it as a single quoted string. Every value below must be one you checked against
+its list and then wrote out yourself — chosen, never copied:
+
+- `--base <ref>`: only if it matches `^[A-Za-z0-9._/~^-]+$`
+- `--scope <value>`: `auto`, `working-tree`, `branch`
+- `--engine <value>`: `auto`, `gemini`, `agy`
+- `--model <value>`: an alias (`flash`, `pro`, `lite`, …) or an id matching `^[A-Za-z0-9][A-Za-z0-9._-]*$`
+- `--deep`, `--wait`, `--background`, `--json`: literal flags, no value
+Any remaining text is the review focus. It is free text, so there is no safe way
+to quote it into a command line: use the **Write** tool to put it in a file and
+pass `--focus-file <that path>`. Build the path yourself; never from the user's
+text.
+
+If a value is not in its set, stop and say so rather than passing it through to
+find out.
+
+
 Run an adversarial Gemini review through the shared plugin runtime.
 Position it as a challenge review that questions the chosen implementation, design choices, tradeoffs, and assumptions.
 It is not just a stricter pass over implementation defects.
@@ -49,7 +74,7 @@ Argument handling:
 Foreground flow:
 - Run:
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" adversarial-review "$ARGUMENTS"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" adversarial-review [verified flags] [--focus-file <path>]
 ```
 - Return the command stdout verbatim, exactly as-is.
 - Do not paraphrase, summarize, or add commentary before or after it.
@@ -60,7 +85,7 @@ Background flow:
 - Run the companion with its own `--background` flag in the FOREGROUND (the companion detaches its own worker and returns immediately).
 - `--background` goes INSIDE the quoted argument string below, not beside it. A token placed next to that quoted string makes it a second argv element, and the flags inside it are then read as focus text instead of flags. Copy the line as written:
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" adversarial-review "$ARGUMENTS --background"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" adversarial-review --background [verified flags] [--focus-file <path>]
 ```
 - If the user's focus text contains double quotes, they close that quoting early and the shell splits the line: `--background` lands inside the focus text and the review runs in the foreground. Ask the user for focus text without double quotes (single quotes are safe) rather than trying to escape it.
 - This enqueues the review, spawns a detached `review-worker`, and returns a job id right away. The result persists even if this Claude session is interrupted.

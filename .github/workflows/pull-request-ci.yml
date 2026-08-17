@@ -14,13 +14,23 @@ jobs:
     # handling and shim resolution are the most platform-specific code it has.
     # Five other tests are the mirror image (`skip: === "win32"`) and still need
     # Linux, so both legs carry assertions the other cannot.
+    #
+    # macOS earns its place the same way. The keychain probe branches three ways
+    # by platform, and only one branch runs per leg: Windows resolves cmdkey in
+    # System32, Linux resolves secret-tool, and `security` exists on neither. Its
+    # branch had therefore never executed on any runner — it was covered only by
+    # tests that simulate darwin, and a simulated platform is exactly what let a
+    # green Windows build hide a red Linux one in this file's history. On macOS
+    # the probe really does spawn `security find-generic-password`, which is
+    # read-only and, on a runner whose keychain holds no gemini entry, exits 44
+    # and reports absence.
     runs-on: ${{ matrix.os }}
     strategy:
       # Run both to completion: a Windows failure must not cancel Linux, or the
       # first red build hides whether the problem is platform-specific.
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     # Raised from 10: the Windows runner is slower at npm ci and at the ~350-test
     # suite, which spawns a Node process per background-job case.
     timeout-minutes: 20

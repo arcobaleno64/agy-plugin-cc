@@ -1,6 +1,6 @@
 {
   "name": "@arcobaleno64/gemini-plugin-cc",
-  "version": "0.17.3",
+  "version": "0.18.0",
   "private": true,
   "type": "module",
   "description": "Use Gemini CLI or Antigravity CLI (agy) inside Claude Code for task delegation, code review, and adversarial review.",
@@ -40,7 +40,7 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "test": "node --test tests/*.test.mjs bench/*.test.mjs",
+    "test": "node --import ./tests/isolate-state.mjs --test tests/*.test.mjs bench/*.test.mjs",
     "bump-version": "node scripts/bump-version.mjs",
     "check-version": "node scripts/bump-version.mjs --check",
     "verify-contracts": "node scripts/verify-contracts.mjs",

@@ -4,13 +4,31 @@ argument-hint: '[--engine <agy|gemini>] [--probe-agy] [--probe-gemini] [--enable
 allowed-tools: Bash(node:*), Bash(npm:*), Bash(curl:*), AskUserQuestion
 ---
 
+## Those arguments must never reach a shell
+
+`$ARGUMENTS` is substituted into this file as text, so a shell receiving it
+would evaluate whatever it contains — `$(…)`, backticks, `;`, `|`. Measured on
+the job commands: `$(echo INJECTED)` was executed before Node ever started.
+
+Read the argument text, then assemble the command from fixed pieces only. Never
+place the argument text, or any fragment of it, into a command, and never pass
+it as a single quoted string. Every value below must be one you checked against
+its list and then wrote out yourself — chosen, never copied:
+
+- `--engine <value>`: `auto`, `gemini`, `agy`
+- `--probe-agy`, `--probe-gemini`, `--enable-review-gate`, `--disable-review-gate`, `--json`: literal flags, no value
+
+If a value is not in its set, stop and say so rather than passing it through to
+find out.
+
+
 Run this exactly as written — `--json` belongs inside the quoted argument string.
 A token placed beside that quoted string makes it a second argv element, and every
 flag inside it is then read as one positional and ignored, which is how
 `/gemini:setup --engine gemini` came back reporting a different engine:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" setup "--json $ARGUMENTS"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" setup --json [verified flags]
 ```
 
 Gemini CLI and AGY are first-class supported engines. Each is a conditional
@@ -38,7 +56,7 @@ npm install -g @google/gemini-cli
 - Then rerun:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" setup "--json $ARGUMENTS"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" setup --json [verified flags]
 ```
 
 When `requestedEngine` is `agy` and AGY is unavailable
@@ -57,7 +75,7 @@ curl -fsSL https://antigravity.google/cli/install.sh | bash
 - Then rerun:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" setup "--json $ARGUMENTS"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" setup --json [verified flags]
 ```
 
 Do not ask about installation when:
@@ -79,7 +97,7 @@ not "not signed in". When the user asks whether AGY is ready, or when they are
 about to act on a `partial` verdict, rerun with `--probe-agy`:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" setup "--json --probe-agy $ARGUMENTS"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" setup --json --probe-agy [verified flags]
 ```
 
 It asks AGY a read-only question the account has to answer, so it verifies the
@@ -110,7 +128,7 @@ a licence to spend a turn answering it.
 Then, and only then:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" setup "--json --probe-gemini $ARGUMENTS"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" setup --json --probe-gemini [verified flags]
 ```
 
 Without it, gemini readiness is read off disk, which can only prove staleness, not

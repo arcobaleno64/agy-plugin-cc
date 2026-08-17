@@ -45,22 +45,57 @@ function keychainProbeDisabled(env) {
 // Presence only — never the secret. macOS and Linux report presence in the exit
 // status, so their output is discarded unread; `cmdkey` has no such status and
 // prints only metadata (target, type, user), never the credential value.
-function keychainProbeCommand(entry, platform) {
+// Resolve a probe tool to an absolute path rather than trusting PATH.
+//
+// process.mjs already refuses to spawn a bare command name where it can avoid
+// it, and says why: resolving a system tool in System32 "avoids executing a
+// same-named binary planted earlier in PATH". This file was spawning `cmdkey`
+// and `security` by bare name and so opted out of that reasoning for no reason.
+//
+// Measured, the exposure is narrower than it looks: Node's spawn does not search
+// the current directory, so a cmdkey.exe sitting in a scanned repository is not
+// executed. PATH order is still PATH order, though, and these probes run on
+// every engine detection. Returning null when the tool cannot be located is the
+// safe outcome — the caller already treats a failed probe as "no credential".
+function absoluteProbeTool(platform, name, existsImpl = fs.existsSync, env = process.env) {
+  if (platform === "win32") {
+    const root = env.SystemRoot || env.SYSTEMROOT;
+    if (!root) return null;
+    const full = path.join(root, "System32", `${name}.exe`);
+    return existsImpl(full) ? full : null;
+  }
+  for (const dir of ["/usr/bin", "/bin", "/usr/local/bin"]) {
+    // path.posix, not path: these are POSIX locations, and on Windows — where
+    // the test suite simulates other platforms — path.join would emit
+    // backslashes for a path that is never a Windows path.
+    const full = path.posix.join(dir, name);
+    if (existsImpl(full)) return full;
+  }
+  return null;
+}
+
+function keychainProbeCommand(entry, platform, existsImpl, env) {
   const target = `${entry.service}/${entry.account}`;
   if (platform === "win32") {
     // A single-target query. `cmdkey /list` would enumerate every credential on
     // the machine, which is more of the user's data than this question needs.
-    return { command: "cmdkey", args: [`/list:${target}`], readStdout: true };
+    const cmdkey = absoluteProbeTool(platform, "cmdkey", existsImpl, env);
+    if (!cmdkey) return null;
+    return { command: cmdkey, args: [`/list:${target}`], readStdout: true };
   }
   if (platform === "darwin") {
     // No -w: without it the tool reports attributes and exits 0/44, and never
     // prints the password.
-    return { command: "security", args: ["find-generic-password", "-s", entry.service, "-a", entry.account], readStdout: false };
+    const security = absoluteProbeTool(platform, "security", existsImpl, env);
+    if (!security) return null;
+    return { command: security, args: ["find-generic-password", "-s", entry.service, "-a", entry.account], readStdout: false };
   }
   if (platform === "linux") {
     // keytar stores libsecret items under the default Generic schema with these
     // two attributes. `search` rather than `lookup`, which prints the secret.
-    return { command: "secret-tool", args: ["search", "service", entry.service, "account", entry.account], readStdout: false };
+    const secretTool = absoluteProbeTool(platform, "secret-tool", existsImpl, env);
+    if (!secretTool) return null;
+    return { command: secretTool, args: ["search", "service", entry.service, "account", entry.account], readStdout: false };
   }
   return null;
 }
@@ -85,7 +120,7 @@ function cmdkeyOutputHasEntry(stdout, entry) {
 export function keychainEntryExists(entry, options = {}) {
   const { platform = process.platform, spawnImpl = spawnSync, env = process.env } = options;
   if (keychainProbeDisabled(env)) return false;
-  const spec = keychainProbeCommand(entry, platform);
+  const spec = keychainProbeCommand(entry, platform, options.existsImpl ?? fs.existsSync, env);
   if (!spec) return false;
   try {
     const result = spawnImpl(spec.command, spec.args, {

@@ -25,12 +25,30 @@ export function getCurrentSessionId(options = {}) {
 // hidden. This keeps the default scope honest — `--resume-last` can never
 // silently continue another session's thread, and status/result never expose
 // unrelated job output. Explicit `--all` remains the way to cross sessions.
+//
+// An UNTAGGED job is a third case, and it used to be sorted onto the wrong side.
+// "No sessionId" does not mean "another session's": it means nobody could say.
+// The MCP server is launched from .mcp.json and never receives
+// GEMINI_COMPANION_SESSION_ID (the lifecycle hook can only export into
+// CLAUDE_ENV_FILE, which reaches later Bash commands, not a server started
+// alongside them), so every job it queues is untagged — and was therefore
+// invisible to `/gemini:status` in any session, which is every session inside
+// Claude Code. Measured: a completed untagged job appears in neither `running`,
+// `recent`, nor `latestFinished`. The user could not see the review they had
+// just started, and could not cancel it, because cancel resolves through the
+// same filter.
+//
+// So discovery admits untagged jobs, and only jobs belonging to a *different*
+// session stay hidden — the leak the filter was built for is untouched.
+// `includeUnattributed: false` is for the one caller that must stay stricter:
+// resume continues a conversation rather than merely listing one.
 export function filterJobsForCurrentSession(jobs, options = {}) {
   const sessionId = getCurrentSessionId(options);
   if (!sessionId) {
     return jobs.filter((job) => !job.sessionId);
   }
-  return jobs.filter((job) => job.sessionId === sessionId);
+  const includeUnattributed = options.includeUnattributed !== false;
+  return jobs.filter((job) => job.sessionId === sessionId || (includeUnattributed && !job.sessionId));
 }
 
 function getJobTypeLabel(job) {

@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs, normalizeArgv } from './lib/args.mjs';
@@ -6,12 +7,25 @@ import { buildTransferSnapshot } from './lib/transfer-context.mjs';
 const SELF_PATH = fileURLToPath(import.meta.url);
 const VALID_ENGINES = new Set(['auto', 'gemini', 'agy']);
 
+// Instructions are free text, which is exactly what must not travel through a
+// shell: a slash command that interpolated them into its command string had
+// `$(…)` evaluated before this script ever started (measured on the sibling
+// job commands). Reading them from a file the caller wrote with a file-writing
+// tool keeps them off every command line between the user and here.
+function readInstructionsFile(filePath) {
+  try {
+    return fs.readFileSync(filePath, 'utf8').trim();
+  } catch (error) {
+    throw new Error(`Could not read --instructions-file "${filePath}": ${error.message}`);
+  }
+}
+
 // The slash command hands the whole user tail over as one quoted "$ARGUMENTS"
 // token, so it has to go through the same normalize + parse path as every
 // gemini-companion subcommand.
 export function parseTransferArgs(argv) {
   const { options, positionals } = parseArgs(normalizeArgv(argv), {
-    valueOptions: ['engine', 'model', 'effort'],
+    valueOptions: ['engine', 'model', 'effort', 'instructions-file'],
     booleanOptions: ['json'],
   });
 
@@ -20,12 +34,17 @@ export function parseTransferArgs(argv) {
     throw new Error(`Unknown engine "${options.engine}". Valid values: auto, gemini, agy.`);
   }
 
+  const instructionsFile = options['instructions-file'] ?? null;
+  if (instructionsFile && positionals.length > 0) {
+    throw new Error('Pass instructions either as --instructions-file or as positional text, not both.');
+  }
+
   // `json` stays in booleanOptions so it never leaks into the instructions text.
   return {
     engine,
     model: options.model ?? null,
     effort: options.effort ?? null,
-    instructions: positionals.join(' '),
+    instructions: instructionsFile ? readInstructionsFile(instructionsFile) : positionals.join(' '),
   };
 }
 

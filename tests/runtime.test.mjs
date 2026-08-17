@@ -712,6 +712,71 @@ test("task --resume-last continues the latest completed thread", () => {
   assert.ok(readFakeState(binDir).lastInvocation.args.includes("--resume"));
 });
 
+// The resolved thread used to be checked and then dropped: the engine was told
+// "continue the most recent conversation", which is whatever that engine saw
+// last, not the thread this session tracked. On gemini it still is — `--resume`
+// takes "latest" or an index, never an id — so the landing is compared instead
+// of promised. The fake mints a fresh session id per invocation, which is
+// exactly the shape of the bug: the resume went somewhere else.
+test("a resume that lands on another thread says so instead of passing silently", () => {
+  const { repo, binDir } = setupRepo("task");
+  commit(repo, "README.md", "hello\n");
+
+  run("node", [SCRIPT, "task", "first task"], { cwd: repo, env: buildEnv(binDir) });
+  const resumed = run("node", [SCRIPT, "task", "--resume-last", "keep going"], { cwd: repo, env: buildEnv(binDir) });
+
+  assert.equal(resumed.status, 0, resumed.stderr);
+  assert.match(resumed.stdout, /Resume landed on gemini conversation/);
+  assert.match(resumed.stdout, /not the tracked thread/);
+  // Above the reply, not buried under it: it says the whole answer may be about
+  // another project.
+  assert.ok(
+    resumed.stdout.indexOf("Resume landed on") < resumed.stdout.indexOf("Resumed the prior run."),
+    "the notice must precede the output it qualifies"
+  );
+});
+
+// `--continue` resumes AGY's most recent conversation account-wide, so a bare
+// `agy` run in another terminal was enough to redirect it — and the resumed
+// conversation brings its own workspace, so a write turn writes into that
+// project. The id was known the whole time.
+test("an AGY resume names the tracked conversation instead of continuing the newest", { skip: process.platform === "win32" }, () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  const capturePath = path.join(binDir, "agy-capture.json");
+  installCapturingAgyExecutable(binDir, { version: "1.1.10" });
+  initGitRepo(repo);
+  commit(repo, "README.md", "hello\n");
+
+  const conversationId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+  const env = {
+    ...buildFailingAgyEnv(binDir),
+    FAKE_AGY_CAPTURE: capturePath,
+    FAKE_AGY_STDOUT: `${JSON.stringify({
+      conversation_id: conversationId,
+      status: "SUCCESS",
+      response: "AGY_RESUME_OK",
+      num_turns: 1
+    })}\n`
+  };
+
+  const first = run("node", [SCRIPT, "task", "first task"], { cwd: repo, env });
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(storedJobs(repo)[0].threadId, conversationId);
+
+  const resumed = run("node", [SCRIPT, "task", "--resume-last", "keep going"], { cwd: repo, env });
+  assert.equal(resumed.status, 0, resumed.stderr);
+
+  const capture = JSON.parse(fs.readFileSync(capturePath, "utf8"));
+  const at = capture.args.indexOf("--conversation");
+  assert.ok(at !== -1, `the resolved thread was not named: ${capture.args.join(" ")}`);
+  assert.equal(capture.args[at + 1], conversationId);
+  assert.ok(!capture.args.includes("--continue"), "--continue resumes whatever ran last, anywhere");
+
+  // Landing where it was told to land is not a warning.
+  assert.doesNotMatch(resumed.stdout, /Resume landed on/);
+});
+
 test("task --resume-last fails when there is no prior thread", () => {
   const { repo, binDir } = setupRepo("task");
   commit(repo, "README.md", "hello\n");
@@ -1773,6 +1838,53 @@ test("status hides other-session jobs when the session id is unset (but --all st
   assert.deepEqual(allIds, ["task-a", "task-b"]);
 });
 
+// An untagged job is a third case, distinct from "mine" and "another session's".
+// The MCP server is launched from .mcp.json and never receives
+// GEMINI_COMPANION_SESSION_ID, so every job it queues carries no sessionId — and
+// being treated as another session's made those jobs invisible in every session,
+// which is every session inside Claude Code. The user could not see or cancel a
+// review they had just started through gemini_review.
+
+function untaggedJob(id, updatedAt) {
+  const { sessionId, ...rest } = sessionJob(id, "unused", updatedAt);
+  return rest;
+}
+
+test("status shows a job that belongs to no session", () => {
+  const workspace = makeTempDir();
+  seedState(workspace, [untaggedJob("task-mcp", "2026-03-18T15:30:00.000Z")]);
+  const env = { ...process.env, GEMINI_COMPANION_SESSION_ID: "sess-current" };
+
+  const payload = JSON.parse(run("node", [SCRIPT, "status", "--json"], { cwd: workspace, env }).stdout);
+  const ids = [payload.latestFinished?.id, ...payload.recent.map((job) => job.id)].filter(Boolean);
+  assert.ok(ids.includes("task-mcp"), `an untagged job stayed hidden: ${JSON.stringify(ids)}`);
+});
+
+test("showing untagged jobs does not also show another session's", () => {
+  // The leak the filter was built for, pinned against the fix for the one above.
+  const workspace = makeTempDir();
+  seedState(workspace, [
+    untaggedJob("task-mcp", "2026-03-18T15:30:00.000Z"),
+    sessionJob("task-other", "sess-other", "2026-03-18T15:35:00.000Z")
+  ]);
+  const env = { ...process.env, GEMINI_COMPANION_SESSION_ID: "sess-current" };
+
+  const payload = JSON.parse(run("node", [SCRIPT, "status", "--json"], { cwd: workspace, env }).stdout);
+  const ids = [payload.latestFinished?.id, ...payload.recent.map((job) => job.id)].filter(Boolean);
+  assert.deepEqual(ids.sort(), ["task-mcp"]);
+});
+
+test("an untagged thread is visible but not silently resumable", () => {
+  // Listing a job the user can then see and cancel is not the same as
+  // continuing its conversation without being asked. Resume stays strict.
+  const workspace = makeTempDir();
+  seedState(workspace, [untaggedJob("task-mcp", "2026-03-18T15:30:00.000Z")]);
+  const env = { ...process.env, GEMINI_COMPANION_SESSION_ID: "sess-current" };
+
+  const payload = JSON.parse(run("node", [SCRIPT, "task-resume-candidate", "--json"], { cwd: workspace, env }).stdout);
+  assert.equal(payload.available, false);
+});
+
 // result/cancel must honor the same default session scope as status, so an
 // explicit id can never reach — or act on — another Claude session's job
 // without an explicit --all.
@@ -1784,6 +1896,10 @@ test("result is scoped to the current session and needs --all to read another se
     status: "completed",
     title: "Gemini Task",
     threadId: "thr_task-other",
+    // The per-job file is the store, so the tag has to be here and not only in
+    // the seeded index — without it this job is untagged rather than another
+    // session's, which is a different case and no longer hidden.
+    sessionId: "sess-other",
     result: { rawOutput: "Other session output." }
   });
   const env = { ...process.env, GEMINI_COMPANION_SESSION_ID: "sess-current" };

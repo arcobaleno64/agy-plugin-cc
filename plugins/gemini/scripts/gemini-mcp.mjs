@@ -47,7 +47,7 @@ export const TOOLS = [
   tool(
     "gemini_rescue",
     "Delegate a task to Gemini or AGY",
-    "Queue a Gemini/AGY rescue task through the existing companion runtime. With `write: true` the delegated CLI may edit files anywhere it can reach; it is not confined to the workspace.",
+    "Queue a Gemini/AGY rescue task through the existing companion runtime. With `write: true` the delegated CLI may edit files anywhere it can reach; it is not confined to the workspace. `write: false` is an intent, not a sandbox: AGY has no read-only mode, so a delegated turn can still edit files, and the run reports afterwards what it wrote. `workspace` may be any existing directory, so pass one the user meant.",
     // Not read-only, because `write: true` hands the delegated agent the
     // filesystem with no path boundary (docs/THREAT-MODEL.md 7.2). Not
     // idempotent: every call queues a new job.
@@ -204,6 +204,15 @@ export async function callTool(name, args = {}, { runtime = DEFAULT_RUNTIME } = 
   // the CLI or a slash command reported `No job found` from gemini_job_result
   // and gemini_job_cancel while gemini_job_status returned it fine — not
   // intermittently, always.
+  //
+  // `all: true` is the answer to that and stays. It is not a workaround for the
+  // other half of the same missing session id — jobs queued HERE being untagged,
+  // and so unreachable from the slash commands. That half is fixed where it
+  // belongs, in filterJobsForCurrentSession: an untagged job is now shown by the
+  // discovery paths, because "nobody could say whose it is" was never the same
+  // claim as "it is someone else's". Removing `all: true` would still break these
+  // three tools, because a job queued by a slash command is tagged, and this
+  // process has no id to match it against.
   const jobId = requiredString(args.jobId, "jobId");
   if (name === "gemini_job_status") return runtime.getJobStatus({ cwd: workspace, jobId });
   if (name === "gemini_job_result") return runtime.getJobResult({ cwd: workspace, jobId, all: true });

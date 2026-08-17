@@ -6,8 +6,8 @@ Only the current MINOR line is supported. Update this table with every MINOR bum
 
 | Version | Supported |
 |---|---|
-| 0.17.x | :white_check_mark: |
-| < 0.17.0 | :x: |
+| 0.18.x | :white_check_mark: |
+| < 0.18.0 | :x: |
 
 ## Security Model & Trust Boundaries
 

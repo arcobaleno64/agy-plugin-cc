@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -108,6 +109,56 @@ test("both workflows pin the same claude-code version for plugin validation", ()
   }
 });
 
+// Split a workflow's `jobs:` mapping into { name, text } blocks. The repo has no
+// dependencies and will not take a YAML parser for one test, and the shapes
+// asserted below are lexical anyway.
+function releaseJobs() {
+  const text = fs.readFileSync(path.join(ROOT, ".github", "workflows", "release.yml"), "utf8");
+  const lines = text.split(/\r?\n/);
+  const start = lines.findIndex((line) => line === "jobs:");
+  assert.ok(start !== -1, "release.yml has no jobs: block");
+
+  // `text` keeps everything; `code` drops whole-line comments, so the assertions
+  // below read the job's steps rather than the prose explaining them — a comment
+  // saying "no npm ci here" must not read as an npm step.
+  const jobs = [];
+  for (const line of lines.slice(start + 1)) {
+    const header = line.match(/^ {2}([A-Za-z0-9_-]+):\s*$/);
+    if (header) {
+      jobs.push({ name: header[1], text: "", code: "" });
+      continue;
+    }
+    if (!jobs.length) continue;
+    const job = jobs[jobs.length - 1];
+    job.text += `${line}\n`;
+    if (!line.trimStart().startsWith("#")) job.code += `${line}\n`;
+  }
+  assert.ok(jobs.length >= 2, "release.yml should have a verify job and a publish job");
+  return jobs;
+}
+
+// Whoever can push a `v*` tag chooses what `npm test`, `npm ci`'s lifecycle
+// scripts, and every `npm run` on that tag execute. A job holding a token that
+// can publish must therefore run none of it. This is one `needs:` away from
+// being undone by a merge, and the damage would not show up in any output.
+test("the release job that can write runs no code from the tag", () => {
+  const writers = releaseJobs().filter(({ code }) => /permissions:[\s\S]*?contents:\s*write/.test(code));
+  assert.equal(writers.length, 1, "exactly one release job should hold contents: write");
+
+  const [publish] = writers;
+  assert.doesNotMatch(publish.code, /uses:\s*actions\/checkout/, `${publish.name} checks out the tag it is publishing`);
+  assert.doesNotMatch(publish.code, /\bnpm\b/, `${publish.name} runs npm, which executes tag-controlled code`);
+  assert.match(publish.code, /needs:\s*verify/, `${publish.name} must publish only after the verifying job passed`);
+});
+
+test("the release workflow defaults to a read-only token", () => {
+  const text = fs.readFileSync(path.join(ROOT, ".github", "workflows", "release.yml"), "utf8");
+  // The top-level block, before `jobs:`. A workflow-wide `contents: write` would
+  // hand the write token to every job including the one running the tag's tests.
+  const preamble = text.slice(0, text.indexOf("jobs:"));
+  assert.match(preamble, /permissions:\s*\n\s*contents:\s*read/);
+});
+
 // --- bump-version (ported from upstream, adapted for the gemini layout) ---
 
 test("bump-version updates every manifest and --check detects drift", () => {
@@ -170,4 +221,35 @@ test("--check stays silent about a changelog that does not exist", () => {
   const root = makeFixture("1.2.3");
   const result = run("node", [BUMP, "--root", root, "--check"], { cwd: ROOT });
   assert.equal(result.status, 0, result.stderr);
+});
+
+// Job state lives under CLAUDE_PLUGIN_DATA, which Claude Code sets in the
+// environment its commands run in — so a suite run from inside a session
+// inherited the real one, and every temp workspace a test created left a
+// permanent state directory in the developer's own plugin data. Nothing reclaims
+// them: pruneJobStore bounds the jobs inside a workspace, and nothing bounds the
+// number of workspaces. Measured on the machine this was found on, 9626 of 9651
+// directories under that state root were named `gemini-plugin-test*`.
+//
+// Probed through a child process rather than read off this one's environment, so
+// the guard says the same thing whether or not the suite was launched via
+// `npm test`.
+test("npm test keeps job state out of the developer's plugin data", () => {
+  const pkg = readJson(path.join(ROOT, "package.json"));
+  assert.match(pkg.scripts.test, /--import \.\/tests\/isolate-state\.mjs/, "npm test must preload the state isolator");
+
+  const inherited = path.join(ROOT, "not-a-real-plugin-data-dir");
+  const probe = run(
+    process.execPath,
+    ["--import", "./tests/isolate-state.mjs", "-e", "console.log(JSON.stringify([process.env.CLAUDE_PLUGIN_DATA, process.env.GEMINI_COMPANION_DATA]))"],
+    { cwd: ROOT, env: { ...process.env, CLAUDE_PLUGIN_DATA: inherited, GEMINI_COMPANION_DATA: inherited } }
+  );
+  assert.equal(probe.status, 0, probe.stderr);
+
+  // Both names, not one: state.mjs reads GEMINI_COMPANION_DATA first, so leaving
+  // a developer's own override standing would defeat the redirect.
+  for (const value of JSON.parse(probe.stdout)) {
+    assert.notEqual(value, inherited, "the inherited plugin data dir must not survive the preload");
+    assert.equal(path.dirname(value), os.tmpdir(), "state must be redirected into a fresh temp directory");
+  }
 });

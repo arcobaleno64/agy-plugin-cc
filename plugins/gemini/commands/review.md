@@ -5,6 +5,27 @@ disable-model-invocation: true
 allowed-tools: Read, Glob, Grep, Bash(node:*), Bash(git:*), AskUserQuestion
 ---
 
+## Those arguments must never reach a shell
+
+`$ARGUMENTS` is substituted into this file as text, so a shell receiving it
+would evaluate whatever it contains — `$(…)`, backticks, `;`, `|`. Measured on
+the job commands: `$(echo INJECTED)` was executed before Node ever started.
+
+Read the argument text, then assemble the command from fixed pieces only. Never
+place the argument text, or any fragment of it, into a command, and never pass
+it as a single quoted string. Every value below must be one you checked against
+its list and then wrote out yourself — chosen, never copied:
+
+- `--base <ref>`: only if it matches `^[A-Za-z0-9._/~^-]+$`
+- `--scope <value>`: `auto`, `working-tree`, `branch`
+- `--engine <value>`: `auto`, `gemini`, `agy`
+- `--model <value>`: an alias (`flash`, `pro`, `lite`, …) or an id matching `^[A-Za-z0-9][A-Za-z0-9._-]*$`
+- `--deep`, `--wait`, `--background`, `--json`: literal flags, no value
+
+If a value is not in its set, stop and say so rather than passing it through to
+find out.
+
+
 Run a standard Gemini code review against the current git state through the shared plugin runtime.
 It is a pragmatic reviewer that finds real bugs, missing error handling, and incomplete code paths.
 
@@ -44,7 +65,7 @@ Argument handling:
 Foreground flow:
 - Run:
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" review "$ARGUMENTS"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" review [verified flags]
 ```
 - Return the command stdout verbatim, exactly as-is.
 - Do not paraphrase, summarize, or add commentary before or after it.
@@ -55,7 +76,7 @@ Background flow:
 - Run the companion with its own `--background` flag in the FOREGROUND (the companion detaches its own worker and returns immediately).
 - `--background` goes INSIDE the quoted argument string below, not beside it. A token placed next to that quoted string makes it a second argv element, and the flags inside it are then read as one positional this command does not accept — which is how `--base` and `--scope` were silently discarded. Copy the line as written:
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" review "$ARGUMENTS --background"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" review --background [verified flags]
 ```
 - This enqueues the review, spawns a detached `review-worker`, and returns a job id right away. The result persists even if this Claude session is interrupted.
 - Do not use `run_in_background: true` and do not call `BashOutput` — the companion already detached; this call returns immediately.
