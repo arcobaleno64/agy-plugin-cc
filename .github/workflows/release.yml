@@ -3,10 +3,15 @@ on:
   push:
     tags:
       - "v*"
+
+# Read-only by default. The write token is granted to one job, and that job runs
+# no code from the tag — see the comment on `publish`.
 permissions:
-  contents: write
+  contents: read
+
 jobs:
-  release:
+  # Everything that executes repository code, with a token that cannot publish.
+  verify:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -34,6 +39,20 @@ jobs:
       - run: npm install -g @anthropic-ai/claude-code@2.1.222
       - run: claude plugin validate ./plugins/gemini --strict
       - run: claude plugin validate . --strict
+
+  publish:
+    # The only job granted a write token below, and deliberately the only one with
+    # no checkout, no `npm ci`, and no repository code of any kind: whoever can
+    # push a `v*` tag chooses what `npm test` and that tag's lifecycle scripts
+    # run, and that must not be code sharing a job with a token that can publish.
+    # Everything here is `gh` against the API, addressed by --repo rather than a
+    # working copy.
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -44,4 +63,8 @@ jobs:
             printf 'Released: %s (UTC+8 台北)\n\n' "$released_at"
             printf '%s\n' "$notes"
           } > release-notes.md
-          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release-notes.md --verify-tag
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file release-notes.md \
+            --verify-tag
