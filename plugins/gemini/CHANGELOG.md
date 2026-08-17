@@ -1,5 +1,117 @@
 # Changelog
 
+## 0.18.0 — 2026-08-17 — Arguments out of the shell, and claims backed by a check
+
+Nine findings from a dogfooding security pass, plus the release gate that would
+have caught the one release note nobody wrote. Most share a shape: something was
+reported without ever having been checked, so "not verified" reached the user
+wearing the words of "verified, clean".
+
+### `$ARGUMENTS` reached a shell
+
+All seven slash commands interpolated `$ARGUMENTS` into a command line, so
+`/gemini:status $(echo INJECTED)` ran the substitution before the model ever saw
+the text. Nothing interpolates it now. Where a command genuinely needs free text,
+the text travels through a file the model writes and names itself:
+`transfer.mjs --instructions-file <path>` and `adversarial-review --focus-file
+<path>`. Positional focus text still works; passing both is an error rather than
+a silent precedence rule.
+
+**Behavior change.** Anything scripted against the old interpolating command
+bodies must move to the file flags. The runtime rejects an unreadable
+`--instructions-file` / `--focus-file` instead of proceeding with empty text.
+
+### Reports that were never checked
+
+- **`--write`-less runs were documented as read-only, which AGY cannot enforce.**
+  AGY has no read-only mode; a turn without `--write` was an intent, not a
+  sandbox. The workspace is now compared before and after the run, and a turn
+  that wrote says so above its output. "Not checked" no longer looks like
+  "checked, clean". The review path gained the same check as tasks.
+- **`touchedFiles` was a regex over filename-shaped tokens in the model's reply.**
+  It listed files that were merely mentioned and missed files that were quietly
+  changed — a list assembled from what the model said about its work rather than
+  from the work. It is a real before/after comparison now.
+- **`--resume-last` resolved a thread, checked it, then threw the id away.** It
+  told AGY to `--continue`, which means "the most recent conversation in AGY's
+  store" — not the one just checked. A resumed conversation carries its own
+  workspace, so a write resume could edit a different project entirely. AGY is
+  now pinned by `--conversation <id>` and refuses to resume without one. Gemini
+  CLI cannot be pinned (`--resume` takes only `latest` or an index), so the
+  landing is compared against the tracked thread and a mismatch is reported above
+  the output.
+- **AGY transcript recovery picked the newest of several new conversation
+  directories**, which under concurrent background jobs favors the sibling job
+  still writing — one job could be handed another's answer. It now attributes
+  nothing when more than one candidate appeared, and says why.
+- **`--deep` told the model to read the repository while giving AGY no
+  workspace.** An unoriented AGY turn reports its cwd as
+  `~/.gemini/antigravity-cli/scratch` — the sibling of `brain/`, which holds every
+  past transcript — so the deep review read AGY's own directory instead of the
+  repo, and could not have reached the repo at all. It is oriented with
+  `--add-dir` now, gated at AGY 1.1.10.
+- **The keychain probes resolved bare command names**, which on Windows means
+  whatever `PATH` offers first. They resolve absolute paths now, and CI grew a
+  macOS leg so the darwin branch runs somewhere real rather than being reasoned
+  about.
+
+### Jobs nobody could attribute
+
+The MCP server is launched from `.mcp.json` and never receives
+`GEMINI_COMPANION_SESSION_ID`: the lifecycle hook can only export into
+`CLAUDE_ENV_FILE`, which reaches later Bash commands, not a server started
+alongside them. Every job it queued was therefore untagged — and the session
+filter sorted untagged onto the same side as "another session's", so a review
+started through `gemini_review` appeared in neither `running`, `recent`, nor
+`latestFinished`, and could not be cancelled, because cancel resolves through the
+same filter. Only the job id, held by the caller, reached it.
+
+"No sessionId" is not "someone else's sessionId" — it means nobody could say. The
+discovery paths admit untagged jobs now; jobs tagged to a different session stay
+hidden, so the cross-session leak the filter exists for is untouched. Resume stays
+strict at both call sites: listing a job the user can then see and cancel is not
+the same as continuing its conversation unasked.
+
+`all: true` on the three id-addressed MCP tools stays, and is not what this fixed.
+A job queued by a slash command is tagged, and that process has no id to match it
+against, so those tools would still report `No job found` without it.
+
+### Release, CI, and the test suite
+
+- **The release job held `contents: write` while running the tag's own `npm ci`,
+  `npm test` and scripts.** Split in two: the job that runs code from the tag
+  cannot publish, and the job that publishes has no checkout and no npm. Pinned by
+  contract tests that read the workflow rather than trusting its shape.
+- **`check-version` now requires a `## <version>` heading in this file.** A
+  release whose four manifests agreed and whose changelog never mentioned the
+  version passed every gate the repository had. The comparison is on the version
+  token, not a constructed regex, so `## 1.2.30` does not satisfy 1.2.3 and no
+  command-line argument reaches a pattern constructor.
+- **The test suite wrote thousands of directories into the developer's own plugin
+  data.** Job state lives under `CLAUDE_PLUGIN_DATA`, which Claude Code sets in
+  the environment its commands run in, so a suite run from inside a session
+  inherited the real one and every temp workspace a test created left a permanent
+  state directory behind. Nothing reclaims them: `pruneJobStore` bounds the jobs
+  inside a workspace, and nothing bounds the number of workspaces. Measured on the
+  machine this was found on: 9626 of 9651 directories there were named
+  `gemini-plugin-test*`, holding 40088 job files. `npm test` now preloads
+  `tests/isolate-state.mjs`, which redirects both `CLAUDE_PLUGIN_DATA` and
+  `GEMINI_COMPANION_DATA` into a temp directory it removes on exit. Measured
+  after: a full run adds none.
+
+### Engine
+
+Verified against **AGY 1.1.13**: all six version gates in `engine.mjs` still hold,
+every flag the plugin spawns is still present in `agy --help`, and `--probe-agy`
+answered `/quota` from the account with no turn spent. Nothing moved, so nothing
+was regated.
+
+Not adopted here, and noted for their own change: AGY 1.1.12 fixed `--mode` being
+ignored in headless `-p` runs, which makes `--mode plan` worth measuring against
+the "AGY has no read-only mode" premise in `docs/THREAT-MODEL.md` 7.2; 1.1.12 also
+added `--output-format json` to `agy models`, which `model-map.mjs` currently has
+no machine-readable source for.
+
 ## 0.17.3 — 2026-08-12 — Say what it costs, say what it deleted, say who chose
 
 Three things the plugin did to users without telling them. None was a crash, which
