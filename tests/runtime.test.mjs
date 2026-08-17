@@ -1838,6 +1838,53 @@ test("status hides other-session jobs when the session id is unset (but --all st
   assert.deepEqual(allIds, ["task-a", "task-b"]);
 });
 
+// An untagged job is a third case, distinct from "mine" and "another session's".
+// The MCP server is launched from .mcp.json and never receives
+// GEMINI_COMPANION_SESSION_ID, so every job it queues carries no sessionId — and
+// being treated as another session's made those jobs invisible in every session,
+// which is every session inside Claude Code. The user could not see or cancel a
+// review they had just started through gemini_review.
+
+function untaggedJob(id, updatedAt) {
+  const { sessionId, ...rest } = sessionJob(id, "unused", updatedAt);
+  return rest;
+}
+
+test("status shows a job that belongs to no session", () => {
+  const workspace = makeTempDir();
+  seedState(workspace, [untaggedJob("task-mcp", "2026-03-18T15:30:00.000Z")]);
+  const env = { ...process.env, GEMINI_COMPANION_SESSION_ID: "sess-current" };
+
+  const payload = JSON.parse(run("node", [SCRIPT, "status", "--json"], { cwd: workspace, env }).stdout);
+  const ids = [payload.latestFinished?.id, ...payload.recent.map((job) => job.id)].filter(Boolean);
+  assert.ok(ids.includes("task-mcp"), `an untagged job stayed hidden: ${JSON.stringify(ids)}`);
+});
+
+test("showing untagged jobs does not also show another session's", () => {
+  // The leak the filter was built for, pinned against the fix for the one above.
+  const workspace = makeTempDir();
+  seedState(workspace, [
+    untaggedJob("task-mcp", "2026-03-18T15:30:00.000Z"),
+    sessionJob("task-other", "sess-other", "2026-03-18T15:35:00.000Z")
+  ]);
+  const env = { ...process.env, GEMINI_COMPANION_SESSION_ID: "sess-current" };
+
+  const payload = JSON.parse(run("node", [SCRIPT, "status", "--json"], { cwd: workspace, env }).stdout);
+  const ids = [payload.latestFinished?.id, ...payload.recent.map((job) => job.id)].filter(Boolean);
+  assert.deepEqual(ids.sort(), ["task-mcp"]);
+});
+
+test("an untagged thread is visible but not silently resumable", () => {
+  // Listing a job the user can then see and cancel is not the same as
+  // continuing its conversation without being asked. Resume stays strict.
+  const workspace = makeTempDir();
+  seedState(workspace, [untaggedJob("task-mcp", "2026-03-18T15:30:00.000Z")]);
+  const env = { ...process.env, GEMINI_COMPANION_SESSION_ID: "sess-current" };
+
+  const payload = JSON.parse(run("node", [SCRIPT, "task-resume-candidate", "--json"], { cwd: workspace, env }).stdout);
+  assert.equal(payload.available, false);
+});
+
 // result/cancel must honor the same default session scope as status, so an
 // explicit id can never reach — or act on — another Claude session's job
 // without an explicit --all.
@@ -1849,6 +1896,10 @@ test("result is scoped to the current session and needs --all to read another se
     status: "completed",
     title: "Gemini Task",
     threadId: "thr_task-other",
+    // The per-job file is the store, so the tag has to be here and not only in
+    // the seeded index — without it this job is untagged rather than another
+    // session's, which is a different case and no longer hidden.
+    sessionId: "sess-other",
     result: { rawOutput: "Other session output." }
   });
   const env = { ...process.env, GEMINI_COMPANION_SESSION_ID: "sess-current" };
