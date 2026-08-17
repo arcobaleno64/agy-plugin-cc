@@ -521,7 +521,7 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
 
 // Same injection seam as runGeminiTurn; see the note there.
 export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCommand, detectEngineFn = detectEngine } = {}) {
-  const { prompt, model: requestedModel, effort: requestedEffort, engine: requestedEngine, isAdversarial = true, timeoutSeconds = null, onProgress } = options;
+  const { prompt, model: requestedModel, effort: requestedEffort, engine: requestedEngine, isAdversarial = true, deep = false, timeoutSeconds = null, onProgress } = options;
 
   // Mode-aware label: the standard /review and adversarial /adversarial-review
   // share this runner, so the progress line must reflect the actual mode.
@@ -589,7 +589,25 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
     timeoutMs: engineInfo.engine === "agy" ? agyPrintTimeoutMs : spawnTimeoutMs,
     agyVersion: engineInfo.version,
     useStdin,
+    // Only --deep gets a workspace, and it needs one to mean anything. A default
+    // review is single-shot from a diff already inside the prompt; --deep tells
+    // the model to go and read dependency manifests, callers and untracked files.
+    // Unoriented, an AGY turn's cwd is ~/.gemini/antigravity-cli/scratch, so those
+    // relative reads missed the repository entirely and landed next to `brain/` —
+    // the transcripts of every past conversation. So the flag both failed to do
+    // what it promises and pointed the model at the user's private data.
+    //
+    // This is not a permission change. AGY has no read-only mode and can reach any
+    // absolute path either way (docs/THREAT-MODEL.md 7.2); what --add-dir decides
+    // is where relative paths land. Whether anything was written is measured below
+    // rather than promised.
+    workspaceDir: deep ? cwd : null,
   });
+
+  // A review is read-only by construction — no --yolo, no --write — but nothing
+  // enforces that, and --deep hands the model tools and a workspace. Same guard
+  // as the task path: silence has to mean "compared, unchanged".
+  const workspaceBefore = snapshotWorkspace(cwd);
 
   const result = runCommandFn(engineInfo.binary, args, {
     cwd,
@@ -705,6 +723,9 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
       })
     : null);
 
+  const workspaceChanges = detectWrites(workspaceBefore, cwd);
+  const readOnlyNotice = describeReadOnlyWrites(workspaceChanges);
+
   onProgress?.({ message: exitCode === 0 ? "Review completed." : "Review failed.", phase: exitCode === 0 ? "done" : "failed" });
 
   return {
@@ -715,6 +736,7 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
     engine: engineInfo.engine,
     stderr: rawStderr,
     modelFallback: modelFallbackNote,
+    ...(readOnlyNotice ? { readOnlyNotice, readOnlyWrites: workspaceChanges.written } : {}),
     ...(failure ? { failure } : {})
   };
 }

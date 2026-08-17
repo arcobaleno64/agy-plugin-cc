@@ -153,6 +153,90 @@ test("a write turn reports what it changed without a read-only warning", async (
   assert.equal(result.readOnlyNotice ?? null, null, "the user asked for edits; that is not a warning");
 });
 
+// --- a review is read-only too, and --deep needs somewhere to read -----------
+
+import { runGeminiReview } from "../plugins/gemini/scripts/lib/gemini.mjs";
+
+function reviewEnvelope(response) {
+  return `${JSON.stringify({ conversation_id: "c1", status: "SUCCESS", response, num_turns: 1 })}\n`;
+}
+
+const REVIEW_JSON = JSON.stringify({ verdict: "approve", summary: "ok", findings: [], next_steps: [] });
+
+test("a deep review is oriented on the repository being reviewed", async () => {
+  // Without --add-dir an AGY turn's cwd is ~/.gemini/antigravity-cli/scratch, so
+  // "go and read the dependency manifests" read someone else's directory — one
+  // level from `brain/`, which holds every past conversation.
+  const repo = tempRepo();
+  let seen = null;
+  await runGeminiReview(
+    repo,
+    { prompt: "p", engine: "agy", deep: true },
+    {
+      detectEngineFn: () => ({ engine: "agy", binary: "/fake/agy.exe", version: "1.1.10" }),
+      runCommandFn: (_binary, args) => {
+        seen = args;
+        return { status: 0, stdout: reviewEnvelope(REVIEW_JSON), stderr: "" };
+      }
+    }
+  );
+
+  const at = seen.indexOf("--add-dir");
+  assert.ok(at !== -1, `a deep review was left unoriented: ${seen.join(" ")}`);
+  assert.equal(seen[at + 1], repo);
+});
+
+test("a default review is not given a workspace it does not use", async () => {
+  // The diff is already in the prompt; a single-shot review has nothing to look
+  // up, so it gets no orientation to look up.
+  const repo = tempRepo();
+  let seen = null;
+  await runGeminiReview(
+    repo,
+    { prompt: "p", engine: "agy" },
+    {
+      detectEngineFn: () => ({ engine: "agy", binary: "/fake/agy.exe", version: "1.1.10" }),
+      runCommandFn: (_binary, args) => {
+        seen = args;
+        return { status: 0, stdout: reviewEnvelope(REVIEW_JSON), stderr: "" };
+      }
+    }
+  );
+  assert.ok(!seen.includes("--add-dir"));
+});
+
+test("a review that writes to the workspace is reported", async () => {
+  // Nothing enforces a review's read-only intent, and --deep hands the model
+  // tools. So the tree is compared rather than trusted.
+  const repo = tempRepo();
+  const result = await runGeminiReview(
+    repo,
+    { prompt: "p", engine: "agy", deep: true },
+    {
+      detectEngineFn: () => ({ engine: "agy", binary: "/fake/agy.exe", version: "1.1.10" }),
+      runCommandFn: () => {
+        fs.writeFileSync(path.join(repo, "review-wrote-this.txt"), "x", "utf8");
+        return { status: 0, stdout: reviewEnvelope(REVIEW_JSON), stderr: "" };
+      }
+    }
+  );
+  assert.match(result.readOnlyNotice, /review-wrote-this\.txt/);
+  assert.deepEqual(result.readOnlyWrites, ["review-wrote-this.txt"]);
+});
+
+test("a review that changes nothing says nothing", async () => {
+  const repo = tempRepo();
+  const result = await runGeminiReview(
+    repo,
+    { prompt: "p", engine: "agy", deep: true },
+    {
+      detectEngineFn: () => ({ engine: "agy", binary: "/fake/agy.exe", version: "1.1.10" }),
+      runCommandFn: () => ({ status: 0, stdout: reviewEnvelope(REVIEW_JSON), stderr: "" })
+    }
+  );
+  assert.equal(result.readOnlyNotice ?? null, null);
+});
+
 // --- a resume is verified, not assumed ---------------------------------------
 // Same shape as the read-only guard above, and for the same reason: gemini's
 // `--resume latest` cannot be pinned to an id, so the only honest thing to do is

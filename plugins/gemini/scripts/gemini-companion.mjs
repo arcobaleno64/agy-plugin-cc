@@ -86,11 +86,18 @@ const STOP_REVIEW_TASK_MARKER = "";
 // Deep (agentic) review guidance, appended to the review prompt when `--deep` is
 // set. It invites the model to use its read-only tools to inspect repo context
 // beyond the diff (dependency manifests, callers, untracked artifacts) — closing
-// the gap vs a native agentic reviewer. The review path runs with write off, so
-// on AGY the session is never bound to `cwd` and edits land in AGY's own scratch
-// directory rather than the repository (docs/THREAT-MODEL.md 7.2). Note this is
-// workspace binding, not a permission gate: headless mode approves edit tools
-// either way, so the guarantee is about *where*, not *whether*.
+// the gap vs a native agentic reviewer.
+//
+// A deep review is the one review shape that gets a workspace, because this text
+// is an instruction to go and read one. It used to be sent unoriented, which put
+// the model's cwd in AGY's scratch directory beside `brain/` — so it could not
+// reach the repository and everything it could reach was the user's own
+// conversation history. runGeminiReview explains the fix at the flag.
+//
+// That is workspace binding, not a permission gate: headless mode approves edit
+// tools either way and any absolute path is reachable regardless, so the choice
+// is about *where* relative paths land, never *whether* a write is possible.
+// Whether one happened is measured after the turn (readonly-guard.mjs).
 const DEEP_REVIEW_GUIDANCE = [
   "",
   "DEEP REVIEW MODE — look beyond the diff:",
@@ -709,6 +716,10 @@ async function executeReviewRun(request) {
     effort: request.effort,
     engine: request.engine,
     isAdversarial: templateName === "adversarial-review",
+    // Decides whether the engine gets a workspace, so it must be the same flag
+    // that appended the deep-review guidance to the prompt — a model told to go
+    // and read the repository with no repository to read is the shape this fixes.
+    deep: Boolean(request.deep),
     timeoutSeconds: request.timeoutSeconds ?? null,
     onProgress: request.onProgress
   });
@@ -725,10 +736,14 @@ async function executeReviewRun(request) {
     gemini: { status: result.status, stdout: result.reviewText, stderr: result.stderr ?? "" },
     result: parsed.parsed,
     ...(truncation ? { truncation } : {}),
+    ...(result.readOnlyNotice ? { readOnlyNotice: result.readOnlyNotice, readOnlyWrites: result.readOnlyWrites } : {}),
     ...(result.failure ? { failure: result.failure } : {})
   };
 
   const fallbackBanner = result.modelFallback ? `> ⚠️ ${result.modelFallback}\n\n` : "";
+  // A review that changed the tree is not a review finding — it is the review
+  // itself having done something nobody asked for, so it goes above everything.
+  const writeBanner = result.readOnlyNotice ? `> ⚠️ ${result.readOnlyNotice}\n\n` : "";
 
   return {
     exitStatus: result.status,
@@ -736,7 +751,7 @@ async function executeReviewRun(request) {
     turnId: null,
     engine: result.engine ?? null,
     payload,
-    rendered: fallbackBanner + renderTruncationBanner(truncation) + renderReviewResult(parsed, {
+    rendered: writeBanner + fallbackBanner + renderTruncationBanner(truncation) + renderReviewResult(parsed, {
       reviewLabel: reviewName,
       targetLabel: describeReviewTarget(context.target),
       reasoningSummary: result.reasoningSummary
