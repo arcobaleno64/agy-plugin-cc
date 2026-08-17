@@ -224,6 +224,35 @@ Cancels a running or queued background job.
 
 ---
 
+## MCP Tools
+
+The plugin also ships an MCP server (`.mcp.json` → `scripts/gemini-mcp.mjs`), so an agent can drive it without a human typing a slash command. This surface is **not** a mirror of the commands above — read the two tables together before assuming a feature is reachable.
+
+| Tool | Required | Optional | Read-only | Reaches Google |
+|---|---|---|---|---|
+| `gemini_rescue` | `workspace`, `prompt` | `write`, `model`, `effort`, `engine` | no | yes |
+| `gemini_review` | `workspace` | `base`, `scope`, `model`, `engine`, `deep` | yes | yes |
+| `gemini_adversarial_review` | `workspace` | `base`, `scope`, `model`, `engine`, `deep`, `focus` | yes | yes |
+| `gemini_job_status` | `workspace`, `jobId` | — | yes | no |
+| `gemini_job_result` | `workspace`, `jobId` | — | yes | no |
+| `gemini_job_cancel` | `workspace`, `jobId` | — | no | no |
+
+`workspace` is required on every tool and must be an absolute path to an existing directory. There is no implicit "current directory" here: the server is launched once per session from `.mcp.json`, not per invocation from a shell.
+
+**The first three queue a background job and return immediately** with a `jobId`. Nothing arrives with that response — poll `gemini_job_status`, then collect with `gemini_job_result`. A job started and never collected is quota spent for nothing, which is this plugin's most expensive failure mode.
+
+**`write: false` is an intent, not a sandbox.** AGY has no read-only mode, so a delegated turn can still edit files; the run compares the workspace before and after and reports what it wrote. `gemini_rescue` is annotated `destructiveHint: true` for that reason even though `write` defaults to false — annotations describe the worst a tool can do and cannot vary with arguments. See [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) §7.2.
+
+**The three job tools are addressed by job id and deliberately cross sessions.** A caller holding an id has already identified the job, so the session filter that keeps the *discovery* paths honest cannot do any work for them — and applying it broke them outright, because this server never receives a session id (see below).
+
+**Jobs queued here belong to no session.** `.mcp.json` gives the server no way to learn `GEMINI_COMPANION_SESSION_ID`: the `SessionStart` hook can only export into `CLAUDE_ENV_FILE`, which reaches later Bash commands, not a server started alongside them. Before v0.18.0 those untagged jobs were sorted with "another session's" and were invisible to `/gemini:status` and uncancellable from the slash commands. They are shown now — "nobody could say whose it is" is not the same claim as "it is someone else's".
+
+### Slash-only, by omission
+
+Listed so the gap is visible rather than discovered: `/gemini:setup` and its probe flags (interactive by design), `/gemini:transfer` (it writes a workspace-local snapshot and needs the model to author the instructions file), `--timeout`, `--resume-last`, and `--engines gemini,agy` are not on this surface — use the slash command or the CLI. MCP jobs take the per-engine default timeout, and every `gemini_rescue` starts a fresh turn. The [Review Gate](#review-gate-optional) is configured through `/gemini:setup` and then applies to the whole session, whichever surface queued the job.
+
+---
+
 ## Review Gate (Optional)
 
 An optional stop-time gate that runs an adversarial review before Claude Code can stop, whenever a `--write` task completed in the session. Disabled by default.

@@ -222,6 +222,35 @@
 
 ---
 
+## MCP 工具
+
+本外掛同時提供一個 MCP server（`.mcp.json` → `scripts/gemini-mcp.mjs`），讓 agent 不必等人手打斜線命令就能驅動它。**這個介面並非上面命令表的鏡像**——判斷某個功能是否構得到之前，兩張表要一起看。
+
+| 工具 | 必填 | 選填 | 唯讀 | 連外 |
+|---|---|---|---|---|
+| `gemini_rescue` | `workspace`、`prompt` | `write`、`model`、`effort`、`engine` | 否 | 是 |
+| `gemini_review` | `workspace` | `base`、`scope`、`model`、`engine`、`deep` | 是 | 是 |
+| `gemini_adversarial_review` | `workspace` | `base`、`scope`、`model`、`engine`、`deep`、`focus` | 是 | 是 |
+| `gemini_job_status` | `workspace`、`jobId` | — | 是 | 否 |
+| `gemini_job_result` | `workspace`、`jobId` | — | 是 | 否 |
+| `gemini_job_cancel` | `workspace`、`jobId` | — | 否 | 否 |
+
+`workspace` 每個工具都必填，且必須是既存目錄的絕對路徑。這裡沒有隱含的「當前目錄」：server 由 `.mcp.json` 在 session 啟動時起一次，不是每次呼叫從 shell 起。
+
+**前三個會排入背景工作並立即回傳** `jobId`。那個回應裡沒有結果——要以 `gemini_job_status` 輪詢，再用 `gemini_job_result` 取回。**起了不收等於白花錢**，這是本外掛最貴的失敗模式。
+
+**`write: false` 是意圖，不是沙箱。** AGY 沒有唯讀模式，被委派的 turn 仍可能改檔案；執行前後會比對工作區並回報實際寫入了什麼。`gemini_rescue` 標註 `destructiveHint: true` 正是因此——即使 `write` 預設為 false，annotation 描述的是該工具**最壞**能做到什麼，且無法隨參數變動。詳見 [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) §7.2。
+
+**三個 job 工具以 job id 定址，且刻意跨 session。** 持有 id 的呼叫者已經指明了是哪個 job，那道用來讓**發現**路徑保持誠實的 session 過濾對他們毫無作用——而套上去反而直接弄壞它們，因為這個 server 從來收不到 session id（見下）。
+
+**在此排入的工作不屬於任何 session。** `.mcp.json` 沒有任何途徑讓 server 得知 `GEMINI_COMPANION_SESSION_ID`：`SessionStart` hook 只能匯出到 `CLAUDE_ENV_FILE`，那只到得了之後的 Bash 命令，到不了與其一同啟動的 server。v0.18.0 之前這些無主工作被歸到「別的 session 的」那一側，因此在 `/gemini:status` 看不到、也無法取消。現在會顯示了——「沒人能說它屬於誰」與「它屬於別人」是兩件不同的事。
+
+### 僅限斜線命令（明列缺口）
+
+列出來是為了讓缺口可見，而不是等人踩到：`/gemini:setup` 與其 probe 旗標（本質上是互動式的）、`/gemini:transfer`（會寫入工作區內的快照，且需要模型自行撰寫 instructions 檔）、`--timeout`、`--resume-last`、`--engines gemini,agy` 都不在這個介面上——請改用斜線命令或 CLI。MCP 工作採各引擎的預設 timeout，且每次 `gemini_rescue` 都是全新的 turn。[Review Gate](#review-gate可選) 由 `/gemini:setup` 設定，之後對整個 session 生效，與工作由哪個介面排入無關。
+
+---
+
 ## Review Gate（可選）
 
 可選的停止時審查閘門，當本次 session 有 `--write` 工作完成時，在 Claude Code 停止前自動執行對抗性審查。預設停用。

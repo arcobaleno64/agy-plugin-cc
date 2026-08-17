@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import { handleRequest } from "../plugins/gemini/scripts/gemini-mcp.mjs";
+import { handleRequest, TOOLS } from "../plugins/gemini/scripts/gemini-mcp.mjs";
 import { dispatchBackgroundTask } from "../plugins/gemini/scripts/gemini-companion.mjs";
 import { readStoredJob } from "../plugins/gemini/scripts/lib/job-control.mjs";
 import { writeJobFile } from "../plugins/gemini/scripts/lib/state.mjs";
@@ -79,6 +79,39 @@ test("gemini_review still queues the standard template and takes no focus", asyn
 
   const rejected = await handleRequest(toolRequest("gemini_review", { workspace, focus: "x" }), { runtime });
   assert.equal(rejected.isError, true, "an argument the tool does not accept must be refused, not dropped");
+});
+
+// Neither README documented the MCP surface at all, which is the structural
+// reason adversarial review could be missing from it for as long as it was: there
+// was no list for a missing tool to be missing from. Both directions are asserted,
+// so adding a tool without documenting it fails, and documenting a tool that does
+// not exist fails too — the second is how a rename would otherwise leave a README
+// promising a tool no client can call.
+function parseReadmeToolNames(readme, heading) {
+  const afterHeading = readme.split(new RegExp(`^##\\s+${heading}\\s*$`, "m"))[1];
+  assert.ok(afterHeading, `README must have a \`## ${heading}\` section`);
+  const body = afterHeading.split(/^---\s*$/m)[0];
+  const names = new Set();
+  for (const line of body.split(/\r?\n/)) {
+    if (!/^\|\s*`gemini_/.test(line)) continue;
+    const first = line.split("|").map((cell) => cell.trim()).filter(Boolean)[0];
+    for (const match of first.matchAll(/`(gemini_[a-z_]+)`/g)) names.add(match[1]);
+  }
+  return names;
+}
+
+test("both READMEs list exactly the MCP tools the server serves", () => {
+  const served = new Set(TOOLS.map((tool) => tool.name));
+  for (const [file, heading] of [["README.md", "MCP Tools"], ["README.zh-TW.md", "MCP 工具"]]) {
+    const readme = fs.readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+    const documented = parseReadmeToolNames(readme, heading);
+    for (const name of served) {
+      assert.ok(documented.has(name), `${file} does not document \`${name}\``);
+    }
+    for (const name of documented) {
+      assert.ok(served.has(name), `${file} documents \`${name}\`, which the server does not serve`);
+    }
+  }
 });
 
 // The Anthropic software directory policy requires every applicable annotation,
