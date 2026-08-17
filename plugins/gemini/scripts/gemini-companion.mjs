@@ -590,10 +590,12 @@ async function waitForSingleJobSnapshot(cwd, reference, options = {}) {
 async function resolveLatestTrackedTaskThread(cwd, options = {}) {
   const workspaceRoot = resolveWorkspaceRoot(cwd);
   // Only consider jobs from the current Claude session so a resume never jumps
-  // into another session's (or another project's) thread.
-  const jobs = sortJobsNewestFirst(filterJobsForCurrentSession(listJobs(workspaceRoot))).filter(
-    (job) => job.id !== options.excludeJobId
-  );
+  // into another session's (or another project's) thread. Untagged jobs are
+  // excluded here too, unlike the listing paths: showing a job the user can see
+  // and cancel is one thing, silently continuing its conversation is another.
+  const jobs = sortJobsNewestFirst(
+    filterJobsForCurrentSession(listJobs(workspaceRoot), { includeUnattributed: false })
+  ).filter((job) => job.id !== options.excludeJobId);
   const activeTask = jobs.find((job) => job.jobClass === "task" && (job.status === "queued" || job.status === "running"));
   if (activeTask) {
     throw new Error(`Task ${activeTask.id} is still running. Use /gemini:status before continuing it.`);
@@ -1515,8 +1517,13 @@ async function handleTaskResumeCandidate(argv) {
   });
   const cwd = resolveCommandCwd(options);
   const workspaceRoot = resolveCommandWorkspace(options);
-  // Resume candidates are scoped to the current Claude session by default.
-  const jobs = sortJobsNewestFirst(filterJobsForCurrentSession(listJobs(workspaceRoot)));
+  // Resume candidates are scoped to the current Claude session by default, and
+  // must agree with resolveLatestTrackedTaskThread — this command exists to tell
+  // the agent what that one will pick, so an untagged job offered here and
+  // refused there would be worse than not offering it.
+  const jobs = sortJobsNewestFirst(
+    filterJobsForCurrentSession(listJobs(workspaceRoot), { includeUnattributed: false })
+  );
   const activeTask = jobs.find((job) => job.jobClass === "task" && (job.status === "queued" || job.status === "running"));
   if (activeTask) {
     // `available` mirrors upstream codex-companion (rescue.md keys off it). Do not

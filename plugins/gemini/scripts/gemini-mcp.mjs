@@ -204,6 +204,15 @@ export async function callTool(name, args = {}, { runtime = DEFAULT_RUNTIME } = 
   // the CLI or a slash command reported `No job found` from gemini_job_result
   // and gemini_job_cancel while gemini_job_status returned it fine — not
   // intermittently, always.
+  //
+  // `all: true` is the answer to that and stays. It is not a workaround for the
+  // other half of the same missing session id — jobs queued HERE being untagged,
+  // and so unreachable from the slash commands. That half is fixed where it
+  // belongs, in filterJobsForCurrentSession: an untagged job is now shown by the
+  // discovery paths, because "nobody could say whose it is" was never the same
+  // claim as "it is someone else's". Removing `all: true` would still break these
+  // three tools, because a job queued by a slash command is tagged, and this
+  // process has no id to match it against.
   const jobId = requiredString(args.jobId, "jobId");
   if (name === "gemini_job_status") return runtime.getJobStatus({ cwd: workspace, jobId });
   if (name === "gemini_job_result") return runtime.getJobResult({ cwd: workspace, jobId, all: true });
