@@ -90,7 +90,7 @@ test("describeReadOnlyWrites tolerates a missing detection", () => {
 // and missed files changed without being named. Both directions wrong, with no
 // render path and no test, which is why it survived.
 
-import { runGeminiTurn } from "../plugins/gemini/scripts/lib/gemini.mjs";
+import { resolveResumeMismatch, runGeminiTurn } from "../plugins/gemini/scripts/lib/gemini.mjs";
 
 function agyEngine() {
   return () => ({ engine: "agy", binary: "/fake/agy.exe", version: "1.1.10" });
@@ -151,6 +151,42 @@ test("a write turn reports what it changed without a read-only warning", async (
   );
   assert.deepEqual(result.touchedFiles, ["asked-for.txt"]);
   assert.equal(result.readOnlyNotice ?? null, null, "the user asked for edits; that is not a warning");
+});
+
+// --- a resume is verified, not assumed ---------------------------------------
+// Same shape as the read-only guard above, and for the same reason: gemini's
+// `--resume latest` cannot be pinned to an id, so the only honest thing to do is
+// compare where it landed. Silence has to mean "checked, correct".
+
+test("a resume that lands on the requested thread says nothing", () => {
+  assert.equal(
+    resolveResumeMismatch({ resumeThreadId: "thr_1", threadId: "thr_1", engine: "agy" }),
+    null
+  );
+});
+
+test("a resume that lands elsewhere names both threads", () => {
+  const notice = resolveResumeMismatch({ resumeThreadId: "thr_1", threadId: "thr_9", engine: "gemini" });
+  assert.match(notice, /thr_9/);
+  assert.match(notice, /thr_1/);
+  assert.match(notice, /gemini/);
+});
+
+test("a write turn's mismatch says where the edits may have gone", () => {
+  // A resumed conversation keeps its own workspace, so this is not merely a
+  // wrong answer — it is edits in another repository.
+  const notice = resolveResumeMismatch({ resumeThreadId: "thr_1", threadId: "thr_9", engine: "agy", write: true });
+  assert.match(notice, /may have landed in that conversation's directory/);
+});
+
+test("a turn that was not resuming is never reported as a mismatch", () => {
+  assert.equal(resolveResumeMismatch({ resumeThreadId: null, threadId: "thr_9", engine: "agy" }), null);
+});
+
+test("a turn that came back with no thread id invents no mismatch", () => {
+  // A killed or failed turn has nothing to compare; claiming it landed wrong
+  // would be manufacturing a finding out of missing data.
+  assert.equal(resolveResumeMismatch({ resumeThreadId: "thr_1", threadId: null, engine: "agy" }), null);
 });
 
 test("a read-only turn that writes reports it in both places", async () => {

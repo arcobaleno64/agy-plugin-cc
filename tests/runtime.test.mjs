@@ -712,6 +712,71 @@ test("task --resume-last continues the latest completed thread", () => {
   assert.ok(readFakeState(binDir).lastInvocation.args.includes("--resume"));
 });
 
+// The resolved thread used to be checked and then dropped: the engine was told
+// "continue the most recent conversation", which is whatever that engine saw
+// last, not the thread this session tracked. On gemini it still is — `--resume`
+// takes "latest" or an index, never an id — so the landing is compared instead
+// of promised. The fake mints a fresh session id per invocation, which is
+// exactly the shape of the bug: the resume went somewhere else.
+test("a resume that lands on another thread says so instead of passing silently", () => {
+  const { repo, binDir } = setupRepo("task");
+  commit(repo, "README.md", "hello\n");
+
+  run("node", [SCRIPT, "task", "first task"], { cwd: repo, env: buildEnv(binDir) });
+  const resumed = run("node", [SCRIPT, "task", "--resume-last", "keep going"], { cwd: repo, env: buildEnv(binDir) });
+
+  assert.equal(resumed.status, 0, resumed.stderr);
+  assert.match(resumed.stdout, /Resume landed on gemini conversation/);
+  assert.match(resumed.stdout, /not the tracked thread/);
+  // Above the reply, not buried under it: it says the whole answer may be about
+  // another project.
+  assert.ok(
+    resumed.stdout.indexOf("Resume landed on") < resumed.stdout.indexOf("Resumed the prior run."),
+    "the notice must precede the output it qualifies"
+  );
+});
+
+// `--continue` resumes AGY's most recent conversation account-wide, so a bare
+// `agy` run in another terminal was enough to redirect it — and the resumed
+// conversation brings its own workspace, so a write turn writes into that
+// project. The id was known the whole time.
+test("an AGY resume names the tracked conversation instead of continuing the newest", { skip: process.platform === "win32" }, () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  const capturePath = path.join(binDir, "agy-capture.json");
+  installCapturingAgyExecutable(binDir, { version: "1.1.10" });
+  initGitRepo(repo);
+  commit(repo, "README.md", "hello\n");
+
+  const conversationId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+  const env = {
+    ...buildFailingAgyEnv(binDir),
+    FAKE_AGY_CAPTURE: capturePath,
+    FAKE_AGY_STDOUT: `${JSON.stringify({
+      conversation_id: conversationId,
+      status: "SUCCESS",
+      response: "AGY_RESUME_OK",
+      num_turns: 1
+    })}\n`
+  };
+
+  const first = run("node", [SCRIPT, "task", "first task"], { cwd: repo, env });
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(storedJobs(repo)[0].threadId, conversationId);
+
+  const resumed = run("node", [SCRIPT, "task", "--resume-last", "keep going"], { cwd: repo, env });
+  assert.equal(resumed.status, 0, resumed.stderr);
+
+  const capture = JSON.parse(fs.readFileSync(capturePath, "utf8"));
+  const at = capture.args.indexOf("--conversation");
+  assert.ok(at !== -1, `the resolved thread was not named: ${capture.args.join(" ")}`);
+  assert.equal(capture.args[at + 1], conversationId);
+  assert.ok(!capture.args.includes("--continue"), "--continue resumes whatever ran last, anywhere");
+
+  // Landing where it was told to land is not a warning.
+  assert.doesNotMatch(resumed.stdout, /Resume landed on/);
+});
+
 test("task --resume-last fails when there is no prior thread", () => {
   const { repo, binDir } = setupRepo("task");
   commit(repo, "README.md", "hello\n");

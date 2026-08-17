@@ -257,7 +257,7 @@ function assertAgyPromptSafe(prompt) {
 }
 
 export function buildCliArgs(engine, options = {}) {
-  const { prompt = "", model, effort, write = false, resumeLast = false, outputJson = false, timeoutMs, useStdin = false, agyVersion = null, workspaceDir = null } = options;
+  const { prompt = "", model, effort, write = false, resumeLast = false, resumeThreadId = null, outputJson = false, timeoutMs, useStdin = false, agyVersion = null, workspaceDir = null } = options;
 
   if (engine === "agy") {
     // AGY >=1.1.2 auto-enters print mode when a prompt is piped on stdin; adding
@@ -310,8 +310,22 @@ export function buildCliArgs(engine, options = {}) {
     // knowledge of where the repository is, which stops nothing that a prompt
     // injection carrying an absolute path would do. See docs/THREAT-MODEL.md 7.2.
     if (resumeLast) {
-      // A resumed conversation already carries its original workspace.
-      args.push("--continue");
+      // A resumed conversation already carries its original workspace, which is
+      // exactly why the id has to be pinned. `--continue` means "the most recent
+      // conversation" in AGY's own store — not the one the caller checked. The
+      // caller resolves a thread from *this* session's tracked jobs and then had
+      // no way to say which one it meant, so a bare `agy` run in another terminal,
+      // or a task in another project, became the thing that got continued — and
+      // it brought its own workspace with it, so `--write` landed in that repo.
+      //
+      // `--conversation <id>` resumes an existing id (agy --help; only a *fresh*
+      // uuid fails, see agy-transcript.mjs TODO-1). Without an id there is nothing
+      // to pin and the unsafe shape is the only one left, so refuse instead: the
+      // caller asked to continue a specific thread, not whatever ran last.
+      if (!resumeThreadId) {
+        throw new Error("Cannot resume an AGY conversation without its id. `--continue` resumes AGY's most recent conversation, which may belong to another session or project.");
+      }
+      args.push("--conversation", resumeThreadId);
     } else if (write) {
       args.push("--new-project");
     } else if (workspaceDir && supportsAgyWorkspaceDir(agyVersion)) {
@@ -345,6 +359,12 @@ export function buildCliArgs(engine, options = {}) {
   if (write) {
     args.push("--yolo");
   }
+  // gemini's `--resume` takes "latest" or a positional index, never a session id
+  // (`gemini --help`, 0.53.1), so the AGY pinning above has no equivalent here and
+  // this really does resume whatever gemini saw last. `--session-id` starts a new
+  // session rather than reopening one, so it is not a substitute. The caller
+  // therefore compares the returned session id against the thread it resolved and
+  // says so when they differ — see resolveResumeMismatch in gemini.mjs.
   if (resumeLast) args.push("--resume", "latest");
   if (outputJson) args.push("--output-format", "json");
   return args;

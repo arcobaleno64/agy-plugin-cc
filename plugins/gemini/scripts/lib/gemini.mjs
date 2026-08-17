@@ -269,13 +269,38 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
   };
 }
 
+// Did the resume land on the thread the caller resolved?
+//
+// On AGY the id is pinned with `--conversation`, so a mismatch would mean the id
+// stopped meaning what it meant — worth saying, but not expected. On gemini it is
+// the whole story: `--resume` only accepts "latest", so the turn continues
+// whatever gemini saw last, which need not be the tracked thread. That cannot be
+// prevented from here, so it is measured instead — the same choice readonly-guard
+// makes, and for the same reason: an unverifiable promise is worse than a
+// verified report.
+//
+// A resumed conversation carries its original workspace, so landing on the wrong
+// thread means a write turn writes somewhere else. That is why `write` sharpens
+// the wording rather than being left for the reader to infer.
+export function resolveResumeMismatch({ resumeThreadId, threadId, engine, write = false }) {
+  if (!resumeThreadId) return null;
+  // No id back at all: a failed or killed turn has nothing to compare, and
+  // claiming a mismatch there would be inventing one.
+  if (!threadId) return null;
+  if (threadId === resumeThreadId) return null;
+  const where = write
+    ? "This turn could write, and a resumed conversation keeps its own workspace, so any edits may have landed in that conversation's directory rather than this one"
+    : "A resumed conversation keeps its own workspace, so the reply may be about a different project";
+  return `Resume landed on ${engine} conversation ${threadId}, not the tracked thread ${resumeThreadId}. ${where}. Start a fresh task instead of continuing this one.`;
+}
+
 // The third parameter mirrors dispatchBackgroundTask's { spawnFn, detectEngineFn }
 // seam. It exists so the engine-response logic can be exercised without a real
 // binary: the Windows AGY stand-in must be an absolute .exe (CVE-2024-27980), so
 // a fixture there cannot report a chosen version, and spawn-driven tests cost
 // ~150s per suite against ~0.2s for direct calls.
 export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runCommand, detectEngineFn = detectEngine } = {}) {
-  const { prompt, effort: requestedEffort, write = true, resumeLast = false, engine: requestedEngine, timeoutSeconds = null, onProgress } = options;
+  const { prompt, effort: requestedEffort, write = true, resumeLast = false, resumeThreadId = null, engine: requestedEngine, timeoutSeconds = null, onProgress } = options;
   let { model } = options;
   let effort = requestedEffort;
 
@@ -331,6 +356,7 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
     effort,
     write,
     resumeLast,
+    resumeThreadId,
     timeoutMs: engineInfo.engine === "agy" ? agyPrintTimeoutMs : spawnTimeoutMs,
     agyVersion: engineInfo.version,
     useStdin,
@@ -469,6 +495,12 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
 `);
   }
 
+  const resumeNotice = resolveResumeMismatch({ resumeThreadId, threadId, engine: engineInfo.engine, write });
+  if (resumeNotice) {
+    process.stderr.write(`[gemini-companion] ${resumeNotice}
+`);
+  }
+
   onProgress?.({ message: exitCode === 0 ? "Turn completed." : "Turn failed.", phase: exitCode === 0 ? "done" : "failed" });
 
   return {
@@ -481,6 +513,7 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
     stderr: rawStderr,
     modelFallback: modelFallbackNote,
     ...(readOnlyNotice ? { readOnlyNotice, readOnlyWrites: workspaceChanges.written } : {}),
+    ...(resumeNotice ? { resumeNotice, resumeExpectedThreadId: resumeThreadId } : {}),
     ...(failure ? { failure } : {})
   };
 }

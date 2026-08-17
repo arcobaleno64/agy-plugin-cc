@@ -757,12 +757,18 @@ async function executeTaskRun(request) {
   const workspaceRoot = resolveWorkspaceRoot(request.cwd);
 
   let resumeLast = false;
+  let resumeThreadId = null;
   if (request.resumeLast) {
     const latestThread = await resolveLatestTrackedTaskThread(workspaceRoot, { excludeJobId: request.jobId });
     if (!latestThread) {
       throw new Error("No previous Gemini task thread found.");
     }
     resumeLast = true;
+    // The id is the point of the lookup. It used to be resolved, checked, and
+    // then dropped — the engine was handed "continue the most recent
+    // conversation", which is not the same thread and, on AGY, is not even
+    // scoped to this project.
+    resumeThreadId = latestThread.id;
   }
 
   if (!request.prompt && !resumeLast) {
@@ -776,6 +782,7 @@ async function executeTaskRun(request) {
     engine: request.engine,
     write: request.write,
     resumeLast,
+    resumeThreadId,
     timeoutSeconds: request.timeoutSeconds ?? null,
     onProgress: request.onProgress
   });
@@ -797,13 +804,18 @@ async function executeTaskRun(request) {
     touchedFiles: result.touchedFiles,
     reasoningSummary: result.reasoningSummary,
     ...(result.readOnlyNotice ? { readOnlyNotice: result.readOnlyNotice, readOnlyWrites: result.readOnlyWrites } : {}),
+    ...(result.resumeNotice ? { resumeNotice: result.resumeNotice, resumeExpectedThreadId: result.resumeExpectedThreadId } : {}),
     ...(failure ? { failure } : {})
   };
 
-  // A read-only turn that wrote is the one thing here the user cannot afford to
-  // scroll past, so it goes above the output rather than into the log alone.
-  const renderedWithNotice = result.readOnlyNotice
-    ? `> ⚠️ ${result.readOnlyNotice}
+  // A read-only turn that wrote, and a resume that landed on another thread, are
+  // the two things here the user cannot afford to scroll past, so they go above
+  // the output rather than into the log alone. Both can be true at once, and the
+  // resume notice comes first because it says the whole reply may be about a
+  // different project — which changes how the rest should be read.
+  const notices = [result.resumeNotice, result.readOnlyNotice].filter(Boolean);
+  const renderedWithNotice = notices.length
+    ? `${notices.map((notice) => `> ⚠️ ${notice}`).join("\n>\n")}
 
 ${rendered}`
     : rendered;
