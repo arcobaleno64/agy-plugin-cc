@@ -1,5 +1,70 @@
 # Changelog
 
+## 0.19.1 — 2026-08-17 — The instructions the subagent loads, checked against the code
+
+`plugins/gemini/skills/` is not commentary. The `gemini:gemini-rescue` subagent
+loads those files and follows them. Nothing tested them, so they drifted three
+releases behind the code that is supposed to be their subject, and one of the
+drifted lines was a safety default.
+
+### `--write` was documented as the default in three places
+
+v0.16.0 inverted the rescue default and said so in `agents/gemini-rescue.md:34`:
+"Do NOT add `--write` unless the user asked for edits." Two lines of
+`skills/gemini-cli-runtime/SKILL.md` and one of
+`skills/gemini-prompting/references/gemini-prompt-recipes.md` still said the
+opposite. The subagent loads both documents in the same turn, so which
+instruction won was undetermined — and an AGY `--write` run has no path boundary
+([`docs/THREAT-MODEL.md` §7.2](../../docs/THREAT-MODEL.md)). The stake was
+whether "investigate this" could edit your repository.
+
+### `--model` and `--effort` were documented as ignored on AGY
+
+Five places said AGY leaves model choice to its own configured default and that
+these flags are not translated. False since AGY 1.1.10: `buildCliArgs` in
+`lib/engine.mjs` pushes both to the AGY command line. What the flags actually
+require is now stated — an exact ID from `agy models` via `--model`, or a native
+`low`/`medium`/`high` via `--effort`, never both, and Gemini aliases are rejected
+for AGY. `--effort`'s accepted set is documented per engine rather than
+unconditionally, since `normalizeAgyEffort` throws on the other four values.
+
+### AGY was documented as returning unstructured output
+
+Two places said the response is plain text and that the on-disk transcript is
+authoritative. Since v0.11.0 the plugin reads AGY's JSON envelope and does not
+touch the transcript at or above AGY 1.1.8; transcript recovery is the fallback
+below it. The engine-routing rationale was wrong for the same reason — it claimed
+gemini wins on its JSON contract, when `detectEngine` picks gemini only when it
+is installed **and** holds a usable credential.
+
+### The alias list named three of nine
+
+`skills/gemini-cli-runtime/SKILL.md` listed `flash`, `pro`, and `lite`.
+`MODEL_ALIAS_ENTRIES` has nine.
+
+### A test now holds all four in place
+
+`tests/skills-drift.test.mjs` scans the 18 instruction documents under
+`agents/`, `commands/`, `skills/`, and `prompts/`. `CHANGELOG.md` is excluded by
+using a directory allowlist rather than an exclusion list, because a changelog
+legitimately quotes the wording a release removed — including this one.
+
+Three of the four rules are worded blacklists, which are only worth what a
+mutation proves. Each pre-fix sentence was restored, the suite run, and the
+failure checked to be an assertion in the intended rule rather than a load
+error: six mutations, six kills, one failing test each. The fourth rule is a
+positive assertion against `MODEL_ALIASES`, so adding an alias to
+`model-map.mjs` turns the documentation red until it is written down.
+
+### Notes
+
+- No runtime behavior changed. `plugins/gemini/scripts/` is untouched; it was the
+  authority this release was checked against, not the subject of it.
+- The audit and the edits were dispatched to the plugin's own AGY backend. Across
+  six runs it produced no fabricated citation, and its one review finding — a
+  `SyntaxError` claimed at confidence 1.0 in a regular expression that compiles
+  and runs — was rejected.
+
 ## 0.19.0 — 2026-08-17 — What it reached, what it wrote, which engine it used
 
 Three things a run could not tell you afterwards, and one it wrote without asking.

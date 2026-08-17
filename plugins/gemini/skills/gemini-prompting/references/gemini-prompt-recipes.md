@@ -2,9 +2,9 @@
 
 Use these as starting templates for Gemini task prompts or other Gemini/AGY prompt construction.
 Copy the smallest recipe that fits the task, then trim anything you do not need.
-In `gemini:gemini-rescue`, run diagnosis and fix-oriented recipes in write mode by default unless the user explicitly asked for read-only behavior.
+In `gemini:gemini-rescue`, run diagnosis and fix-oriented recipes in read-only mode by default, and add `--write` only when the user explicitly asked for edits.
 
-For the **gemini** engine, pick capability with `--effort` (or an explicit `--model`). For **AGY**, this plugin currently leaves model choice to AGY's configured/default behavior and does not translate Gemini aliases or effort tiers, so lean on a tight prompt contract instead of plugin-managed model power.
+For the **gemini** engine, pick capability with `--effort` (or an explicit `--model`). For **AGY**, pass an exact `agy models` ID via `--model` or a native effort tier (`low`, `medium`, or `high`) via `--effort` (never both), and lean on a tight prompt contract instead of Gemini engine model aliases.
 
 ## Diagnosis
 

@@ -19,4 +19,4 @@ When the helper returns Gemini output:
 - CRITICAL: After presenting review findings, STOP. Do not make any code changes. Do not fix any issues. You MUST explicitly ask the user which issues, if any, they want fixed before touching a single file. Auto-applying fixes from a review is strictly forbidden, even if the fix is obvious.
 - If the helper reports malformed output or a failed run, include the most actionable stderr lines and stop there instead of guessing.
 - If the helper reports that setup or authentication is required, direct the user to `/gemini:setup` and do not improvise alternate auth flows.
-- Engine note: if AGY was used instead of Gemini CLI, the output format will be plain text without structured JSON. Present it as-is without attempting to parse structure that is not there.
+- Engine note: when AGY is used instead of Gemini CLI, AGY returns a structured JSON envelope (via `--output-format json` or `stream-json`) containing output, status, and metadata, which the plugin parses.
