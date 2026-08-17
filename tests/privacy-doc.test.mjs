@@ -33,6 +33,27 @@ test("every entry document links to PRIVACY.md", () => {
   }
 });
 
+// Same failure mode, generalised. Material moved out of a README into docs/ is
+// only moved if the pointer resolves; a link that rots leaves the README
+// promising an explanation the reader cannot reach, which is worse than the long
+// version it replaced. Repo-relative links only — external URLs are not this
+// suite's to verify, and anchors are checked no further than the file.
+const LINKED = ["README.md", "README.zh-TW.md", "SECURITY.md", "PRIVACY.md", "CONTRIBUTING.md"];
+
+test("every repo-relative link in the entry documents resolves", () => {
+  for (const file of LINKED) {
+    const dir = path.dirname(path.join(ROOT, file));
+    for (const match of read(file).matchAll(/\]\(([^)\s]+)\)/g)) {
+      const target = match[1];
+      if (/^(https?:|mailto:|#)/.test(target)) continue;
+      const [relative] = target.split("#");
+      if (!relative) continue;
+      const resolved = path.resolve(dir, relative);
+      assert.ok(fs.existsSync(resolved), `${file} links to ${target}, which does not exist`);
+    }
+  }
+});
+
 test("SECURITY.md declares support for the shipped minor line", () => {
   const version = JSON.parse(read("package.json")).version;
   const minorLine = `${version.split(".").slice(0, 2).join(".")}.x`;
