@@ -202,11 +202,12 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
     const killedBeforePrinting = !String(rawStdout).trim();
     const recovered = brainRoot && killedBeforePrinting ? recoverAgyResponse(brainRoot, conversationsBefore) : null;
     if (recovered?.response) {
-      if (!recovered.confident) {
-        process.stderr.write(
-          `[gemini-companion] Warning: AGY returned no envelope and the recovered transcript match is not certain (${recovered.reason}). Verify the response corresponds to this run.\n`
-        );
-      }
+      // No "the match may not be this run's" warning any more: recovery either
+      // identifies one conversation or attributes none (agy-transcript.mjs
+      // TODO-2). What is left — an unfinished transcript — travels as a non-zero
+      // exit and a classified failure, which reaches a background job's rendered
+      // output. The warning it replaces went to a stderr that detached workers
+      // discard, so it was invisible exactly where it mattered.
       return {
         text: String(recovered.response).trim(),
         threadId: recovered.convDir ?? null,

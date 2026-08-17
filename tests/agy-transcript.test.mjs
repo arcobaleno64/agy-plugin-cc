@@ -95,13 +95,19 @@ test("pickNewConvDir identifies a single new dir confidently", () => {
   assert.equal(p.confident, true);
 });
 
-test("pickNewConvDir picks the newest of several new dirs but is not confident", () => {
+// This used to return the newest by mtime with confident=false. Two concurrent
+// background AGY turns are enough to produce two new dirs, and the other job's
+// dir is the one still being written — so "newest" pointed at the wrong
+// conversation, and the caller rendered another job's answer. mtime cannot
+// break the tie, so nothing is attributed.
+test("pickNewConvDir attributes nothing when several new dirs appeared", () => {
   const before = new Map();
   const after = new Map([["old", 10], ["new", 20]]);
   const p = pickNewConvDir(before, after);
-  assert.equal(p.dir, "new");
+  assert.equal(p.dir, null, "a coin flip between conversations is not an answer");
   assert.equal(p.confident, false);
-  assert.match(p.reason, /2 new dirs/);
+  assert.match(p.reason, /2 new conversation dirs/);
+  assert.match(p.reason, /ambiguous/);
 });
 
 test("pickNewConvDir returns no dir when nothing new appeared", () => {
@@ -145,14 +151,20 @@ test("recoverAgyResponse reports when no new conversation dir appears", () => {
   assert.equal(rec.failure.category, "transcript-missing");
 });
 
-test("recoverAgyResponse marks ambiguous transcript recovery", () => {
+test("recoverAgyResponse returns no response at all when the match is ambiguous", () => {
+  // The turn ran and was billed, but neither transcript can be shown to be its
+  // own. Returning either one would put another job's answer under this job's
+  // id — a leak the user has no way to notice.
   const root = tmpRoot();
   const before = listConvDirs(root);
   writeTranscript(root, "older", realRows("OLDER", "DONE"));
   writeTranscript(root, "newer", realRows("NEWER", "DONE"));
   const rec = recoverAgyResponse(root, before);
+  assert.equal(rec.response, null);
+  assert.equal(rec.convDir, null, "no conversation id may be attributed either");
   assert.equal(rec.confident, false);
   assert.equal(rec.failure.category, "transcript-ambiguous");
+  assert.equal(rec.failure.retryable, true, "retrying without a concurrent run is the fix");
 });
 
 test("recoverAgyResponse marks non-DONE transcripts as missing/incomplete", () => {
