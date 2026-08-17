@@ -20,15 +20,15 @@ Execution rules:
 - That prompt drafting is the only Claude-side work allowed. Do not inspect the repo, solve the task yourself, or add independent analysis outside the forwarded prompt text.
 - Leave `--effort` unset unless the user explicitly requests a specific effort.
 - Leave model unset by default. Add `--model` only when the user explicitly asks for one.
-- Model aliases: `flash` → gemini-3-flash-preview, `pro` → gemini-3.1-pro-preview, `lite` → gemini-2.5-flash-lite.
-- Default to a write-capable run by adding `--write` unless the user explicitly asks for read-only behavior.
+- Model aliases (source of truth: `MODEL_ALIAS_ENTRIES` in `plugins/gemini/scripts/lib/model-map.mjs`): `flash` / `flash3` → `gemini-3-flash-preview`, `pro` / `pro3` → `gemini-3.1-pro-preview`, `lite3` → `gemini-3.1-flash-lite`, `flash25` → `gemini-2.5-flash`, `pro25` → `gemini-2.5-pro`, `lite` / `fast` → `gemini-2.5-flash-lite`.
+- Read-only is the default; add `--write` only when the user explicitly asked for edits.
 
 Command selection:
 - Use exactly one `task` invocation per rescue handoff.
 - If the forwarded request includes `--background` or `--wait`, treat that as Claude-side execution control only. Strip it before calling `task`.
 - If the forwarded request includes `--model`, normalize aliases and pass it through.
 - If the forwarded request includes `--effort`, pass it through to `task`.
-- `--effort` accepted values: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`.
+- `--effort` accepted values: Gemini engine accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`; AGY engine accepts only `low`, `medium`, `high`.
 - `--resume`: add `--resume-last`, even if the request text is ambiguous.
 - `--fresh`: use a fresh `task` run, do not add `--resume-last`.
 - `task --resume-last`: for "keep going", "resume", "apply the top fix", or "dig deeper".
@@ -36,14 +36,14 @@ Command selection:
 Engine routing:
 - Gemini CLI and AGY are both first-class supported engines; only the selected
   engine's CLI is required.
-- Default engine: auto-detect in capability order (gemini first for its
-  JSON/model contract, then agy).
+- Default engine: credential-gated auto-detection (selects Gemini if installed
+  and authenticated with valid credentials, otherwise AGY).
 - Force AGY: add `--engine agy`.
 - Force Gemini CLI: add `--engine gemini`.
-- Note: `--model` and `--effort` are ignored when the AGY engine is active; AGY uses its configured/default model and tier.
+- Note for AGY engine: `--model` takes an exact model ID from `agy models` or `--effort` accepts `low`, `medium`, or `high`; the two cannot be combined, and Gemini model aliases are rejected for AGY.
 
 Safety rules:
-- Default to write-capable work in `gemini:gemini-rescue` unless the user explicitly asks for read-only behavior.
+- Read-only is the default in `gemini:gemini-rescue`; add `--write` only when the user explicitly asked for edits.
 - Preserve the user's task text as-is apart from stripping routing flags.
 - Do not inspect the repository, read files, grep, monitor progress, poll status, fetch results, cancel jobs, summarize output, or do any follow-up work of your own.
 - Return the stdout of the `task` command exactly as-is.

@@ -188,8 +188,7 @@ Mention only major phase changes or blockers.
 
 ### `model_selection`
 
-Drives `--effort` / `--model` for the **gemini** engine. The plugin does not translate these controls to AGY — see the
-anti-patterns file.
+Drives `--effort` / `--model` for the **gemini** engine. For AGY, pass an exact `agy models` ID via `--model` or a native `low`/`medium`/`high` via `--effort`, never both — see the anti-patterns file.
 
 ```xml
 <model_selection>
@@ -197,7 +196,7 @@ anti-patterns file.
 --effort medium → gemini-3-flash-preview  (balanced review, research)
 --effort low   → gemini-3-flash-preview   (formatting, structure)
 --effort none  → gemini-2.5-flash-lite    (cheapest, trivial transforms)
-AGY: plugin-managed --model and --effort do not apply; AGY uses its configured/default model behavior.
+AGY: takes an exact `agy models` ID via --model or a native low/medium/high via --effort, never both.
 Aliases (override anytime with --model <id>): flash/pro/lite, plus *25/*3 variants. Preview
 ids ending in -preview can drift; see model-map.mjs.
 </model_selection>

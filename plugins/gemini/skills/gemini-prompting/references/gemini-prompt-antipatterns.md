@@ -105,28 +105,29 @@ If a point is an inference, label it clearly.
 Bad:
 
 ```text
-Use --engine agy --model gemini-3.1-pro-preview --effort high to force AGY through the plugin's Gemini aliases.
+Use --engine agy --model pro --effort high or combine --model with --effort when targeting AGY.
 ```
 
 Better:
-- Use the **gemini** engine when you need this plugin to pick a specific model or effort tier — `--effort high` → `gemini-3.1-pro-preview`.
-- For AGY, treat `--model`/`--effort` as unmanaged by this plugin: it leaves model choice to AGY's configured/default behavior and prints a note when you pass those flags.
+- For AGY, pass an exact model ID from `agy models` via `--model`, or a native effort tier (`low`, `medium`, or `high`) via `--effort`, but never both.
+- Use Gemini model aliases (such as `pro` or `flash`) only with `--engine gemini`, as AGY requires exact model IDs.
 
-Explanation: AGY's own model surface can change by AGY version, and it is not the same contract as this plugin's Gemini alias / effort map. Plugin-managed capability selection is a gemini-engine concern only.
+Explanation: AGY encodes the effort tier into the model ID when `--model` is supplied, so passing `--model` together with `--effort` is refused before spawn. Additionally, Gemini engine aliases such as `pro` are rejected by `normalizeAgyRequestedModel` when targeting AGY. The correct usage is an exact ID from `agy models`, or a native `--effort` of `low`, `medium` or `high`, but not both.
 
 ## Expecting AGY to return output on stdout (AGY-specific)
 
 Bad:
 
 ```text
-Pipe `agy --print "..."` and read its stdout, or tell AGY to print only the final answer.
+Pipe legacy or unversioned `agy --print "..."` directly expecting a clean, pipeable answer stream without version checks.
 ```
 
 Better:
-- Let the plugin treat AGY's on-disk transcript as authoritative, even when AGY 1.1.2 also emits stdout.
-- Prefer the **gemini** engine (`--output-format json`) when you need clean, pipeable structured output.
+- Rely on AGY's stdout JSON envelope as authoritative on AGY 1.1.8 and up (`supportsAgyStructuredOutput` / `supportsAgyStreamJson`).
+- Treat on-disk transcript recovery as the legacy fallback mechanism for AGY versions below 1.1.8.
+- Prefer the **gemini** engine (`--output-format json`) when you need uniform, clean structured output across all environments.
 
-Explanation: older positional `agy --print` releases did not deliver responses over a pipe (upstream google-gemini/gemini-cli#27466). AGY 1.1.2's stdin auto-print path can emit stdout, but the plugin still diffs transcript dirs for the completed response, DONE status, thinking, and conversation id. The 1.1.2 path is live-verified on Windows and Ubuntu WSL2; real macOS 1.1.2 remains not run.
+Explanation: older positional `agy --print` releases did not deliver responses over a pipe (upstream google-gemini/gemini-cli#27466). Since plugin v0.11.0, the plugin reads AGY's stdout JSON envelope as authoritative on AGY 1.1.8+, while on-disk transcript recovery remains only as the fallback for AGY versions below 1.1.8. The 1.1.2 path is live-verified on Windows and Ubuntu WSL2; real macOS 1.1.2 remains not run.
 
 ## Assuming Gemini/AGY behaves like Codex (parity-specific)
 
