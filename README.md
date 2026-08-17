@@ -405,6 +405,8 @@ Documented, non-blocking constraints — see the linked sections for detail:
 
 This is a single-maintainer project, not a staffed support desk. Everything above reaches one person.
 
+Deeper material lives in [`docs/`](docs/README.md), which separates reference kept current from dated records that are never rewritten — reading one as the other is the easiest mistake to make there.
+
 Reviewing the plugin rather than using it? [`docs/verifying-without-credentials.md`](docs/verifying-without-credentials.md) is the complete offline path — no account, no API key. For a run of every command end to end against a stand-in engine, start with `node scripts/reviewer-demo.mjs`.
 
 ---

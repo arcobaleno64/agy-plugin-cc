@@ -38,7 +38,15 @@ test("every entry document links to PRIVACY.md", () => {
 // promising an explanation the reader cannot reach, which is worse than the long
 // version it replaced. Repo-relative links only — external URLs are not this
 // suite's to verify, and anchors are checked no further than the file.
-const LINKED = ["README.md", "README.zh-TW.md", "SECURITY.md", "PRIVACY.md", "CONTRIBUTING.md"];
+const LINKED = [
+  "README.md",
+  "README.zh-TW.md",
+  "SECURITY.md",
+  "PRIVACY.md",
+  "CONTRIBUTING.md",
+  "plugins/gemini/CHANGELOG.md",
+  ...fs.readdirSync(path.join(ROOT, "docs")).filter((f) => f.endsWith(".md")).map((f) => `docs/${f}`)
+];
 
 test("every repo-relative link in the entry documents resolves", () => {
   for (const file of LINKED) {
@@ -62,4 +70,21 @@ test("SECURITY.md declares support for the shipped minor line", () => {
     new RegExp(`\\|\\s*${minorLine.replaceAll(".", "\\.")}\\s*\\|`),
     `SECURITY.md does not list ${minorLine} as supported`
   );
+});
+
+// docs/AGY_1.1.2_MACOS_LINUX_VALIDATION.md sat at 249 lines — the largest file in
+// docs/ — with zero inbound links from anywhere in the repository, pinning AGY
+// 1.1.2 while the plugin was being run against 1.1.13. Nothing was wrong with
+// keeping it; what was wrong is that no reader could tell it existed, or that it
+// was a dated record rather than the current answer. An index only prevents that
+// while it is complete, and an index nobody is forced to update stops being one.
+test("the docs index lists every file in docs/", () => {
+  const dir = path.join(ROOT, "docs");
+  const present = fs.readdirSync(dir).filter((f) => f.endsWith(".md") && !f.startsWith("README"));
+  for (const index of ["docs/README.md", "docs/README.zh-TW.md"]) {
+    const text = read(index);
+    for (const file of present) {
+      assert.ok(text.includes(`(${file})`), `${index} does not list \`${file}\``);
+    }
+  }
 });
