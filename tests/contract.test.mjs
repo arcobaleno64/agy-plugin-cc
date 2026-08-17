@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -220,4 +221,35 @@ test("--check stays silent about a changelog that does not exist", () => {
   const root = makeFixture("1.2.3");
   const result = run("node", [BUMP, "--root", root, "--check"], { cwd: ROOT });
   assert.equal(result.status, 0, result.stderr);
+});
+
+// Job state lives under CLAUDE_PLUGIN_DATA, which Claude Code sets in the
+// environment its commands run in — so a suite run from inside a session
+// inherited the real one, and every temp workspace a test created left a
+// permanent state directory in the developer's own plugin data. Nothing reclaims
+// them: pruneJobStore bounds the jobs inside a workspace, and nothing bounds the
+// number of workspaces. Measured on the machine this was found on, 9626 of 9651
+// directories under that state root were named `gemini-plugin-test*`.
+//
+// Probed through a child process rather than read off this one's environment, so
+// the guard says the same thing whether or not the suite was launched via
+// `npm test`.
+test("npm test keeps job state out of the developer's plugin data", () => {
+  const pkg = readJson(path.join(ROOT, "package.json"));
+  assert.match(pkg.scripts.test, /--import \.\/tests\/isolate-state\.mjs/, "npm test must preload the state isolator");
+
+  const inherited = path.join(ROOT, "not-a-real-plugin-data-dir");
+  const probe = run(
+    process.execPath,
+    ["--import", "./tests/isolate-state.mjs", "-e", "console.log(JSON.stringify([process.env.CLAUDE_PLUGIN_DATA, process.env.GEMINI_COMPANION_DATA]))"],
+    { cwd: ROOT, env: { ...process.env, CLAUDE_PLUGIN_DATA: inherited, GEMINI_COMPANION_DATA: inherited } }
+  );
+  assert.equal(probe.status, 0, probe.stderr);
+
+  // Both names, not one: state.mjs reads GEMINI_COMPANION_DATA first, so leaving
+  // a developer's own override standing would defeat the redirect.
+  for (const value of JSON.parse(probe.stdout)) {
+    assert.notEqual(value, inherited, "the inherited plugin data dir must not survive the preload");
+    assert.equal(path.dirname(value), os.tmpdir(), "state must be redirected into a fresh temp directory");
+  }
 });
