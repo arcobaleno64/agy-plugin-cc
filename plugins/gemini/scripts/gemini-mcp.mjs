@@ -80,6 +80,32 @@ export const TOOLS = [
       deep: { type: "boolean", default: false }
     }
   ),
+  // The slash surface has had /gemini:adversarial-review since it shipped, and
+  // both READMEs list it under Features — but it was reachable only by a human
+  // typing the command. An agent driving this plugin through MCP saw five tools,
+  // none of which could select the adversarial template and none of which said
+  // why, so the feature was absent rather than declined.
+  //
+  // A separate tool rather than a flag on gemini_review: the two differ in the
+  // prompt template they run and in what their output is for, and an agent
+  // choosing between tools by description picks better than one guessing at a
+  // boolean.
+  tool(
+    "gemini_adversarial_review",
+    "Adversarially review the current diff with Gemini or AGY",
+    "Queue a read-only adversarial code review through the existing companion runtime. Same transport as gemini_review, but runs the adversarial template: it argues against the change rather than summarizing it, and is the one to reach for on destructive or hard-to-reverse edits. Secret-looking files are withheld by filename.",
+    { readOnlyHint: true, openWorldHint: true },
+    ["workspace"],
+    {
+      workspace: { type: "string", description: "Absolute path to the target workspace." },
+      base: { type: "string" },
+      scope: enumSchema(["auto", "working-tree", "branch"], "auto"),
+      model: { type: "string" },
+      engine: enumSchema(["auto", "gemini", "agy"]),
+      deep: { type: "boolean", default: false },
+      focus: { type: "string", description: "What the review should concentrate on." }
+    }
+  ),
   tool(
     "gemini_job_status",
     "Check a delegated job's status",
@@ -176,7 +202,16 @@ export async function callTool(name, args = {}, { runtime = DEFAULT_RUNTIME } = 
       engine: optionalEnum(args.engine, "engine", ["auto", "gemini", "agy"])
     });
   }
-  if (name === "gemini_review") {
+  if (name === "gemini_review" || name === "gemini_adversarial_review") {
+    const adversarial = name === "gemini_adversarial_review";
+    // The two tools differ by one argument, which is exactly the shape a caller
+    // gets wrong. Nothing else here validates unknown keys — the schemas declare
+    // additionalProperties: false and clients are expected to enforce it — but a
+    // focus dropped in silence means the review the caller asked for is not the
+    // review that runs, so this one is checked rather than assumed.
+    if (!adversarial && args.focus != null) {
+      throw new Error("gemini_review takes no focus. Use gemini_adversarial_review for a focused review, matching /gemini:review and /gemini:adversarial-review.");
+    }
     return runtime.dispatchBackgroundReview({
       cwd: workspace,
       base: optionalString(args.base, "base"),
@@ -184,8 +219,11 @@ export async function callTool(name, args = {}, { runtime = DEFAULT_RUNTIME } = 
       model: optionalString(args.model, "model"),
       engine: optionalEnum(args.engine, "engine", ["auto", "gemini", "agy"]),
       deep: optionalBoolean(args.deep, "deep") ?? false,
-      reviewName: "Review",
-      templateName: "review"
+      // Focus text is accepted only by the adversarial tool, matching the slash
+      // commands: /gemini:review takes no focus argument either.
+      ...(adversarial ? { focusText: optionalString(args.focus, "focus") ?? "" } : {}),
+      reviewName: adversarial ? "Adversarial Review" : "Review",
+      templateName: adversarial ? "adversarial-review" : "review"
     });
   }
 

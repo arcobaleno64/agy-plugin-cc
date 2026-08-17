@@ -52,6 +52,23 @@ test("a changed thread id replaces the old one rather than being ignored", () =>
   });
 });
 
+// Which engine a run chose was written only when the job finished, so a running
+// job could not answer it — and a background task never carried it at queue time
+// either, while a background review did, which is how the asymmetry was found.
+// Under `auto` this is the field that says whose quota is being spent.
+test("a running job reports the engine its run resolved", () => {
+  withDataDir((cwd) => {
+    const file = seedJob(cwd, "task-engine-1");
+    const update = createJobProgressUpdater(cwd, "task-engine-1");
+
+    update({ message: "Detecting engine...", phase: "starting" });
+    assert.equal(readJobFile(file).engine, undefined, "nothing is known before detection returns");
+
+    update({ message: "Starting agy turn...", phase: "running", engine: "agy" });
+    assert.equal(readJobFile(file).engine, "agy", "a running job must name the engine it is spending quota on");
+  });
+});
+
 test("turn id is tracked independently of thread id", () => {
   withDataDir((cwd) => {
     const file = seedJob(cwd, "task-turn-1");

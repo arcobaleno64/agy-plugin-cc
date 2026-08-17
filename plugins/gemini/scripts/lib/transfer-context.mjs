@@ -22,6 +22,25 @@ export function checkGitConflict(cwd = process.cwd()) {
   return null;
 }
 
+// A snapshot's `gitDiff` field holds the entire uncommitted diff, so a snapshot
+// that reaches version control publishes more than its author was looking at.
+// Both READMEs claimed `.omc/` was excluded from version control; that exclusion
+// lived only in this repository's own .gitignore, so in every other repository
+// the file was merely *untracked* — visible in `git status` and swept up by
+// `git add -A`.
+//
+// `*` inside `.omc/.gitignore` ignores the directory's contents and the ignore
+// file itself, which is why nothing has to be added to the host repository's
+// .gitignore. An existing file is left alone: it may say something deliberate,
+// and this is not the place to decide it was wrong.
+export function ensureOmcIgnored(omcDir) {
+  const ignoreFile = path.join(omcDir, '.gitignore');
+  if (fs.existsSync(ignoreFile)) return ignoreFile;
+  fs.mkdirSync(omcDir, { recursive: true });
+  fs.writeFileSync(ignoreFile, '*\n', 'utf8');
+  return ignoreFile;
+}
+
 export function pruneOldTransfers(transfersDir, maxKeep = 20) {
   if (!fs.existsSync(transfersDir)) return;
   try {
@@ -149,6 +168,7 @@ export function buildTransferSnapshot({ engine = 'auto', model = null, effort = 
 
   const transfersDir = path.join(cwd, '.omc', 'transfers');
   fs.mkdirSync(transfersDir, { recursive: true });
+  ensureOmcIgnored(path.join(cwd, '.omc'));
 
   // LRU Pruning of old snapshots
   pruneOldTransfers(transfersDir, 20);

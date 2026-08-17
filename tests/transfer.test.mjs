@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { isSecretFile, checkGitConflict, pruneOldTransfers, buildTransferSnapshot } from '../plugins/gemini/scripts/lib/transfer-context.mjs';
 import { parseTransferArgs } from '../plugins/gemini/scripts/transfer.mjs';
+import { initGitRepo, run } from './helpers.mjs';
 
 // The slash command passes the entire user tail as one quoted "$ARGUMENTS"
 // token, so flags only work if that single string is re-split first.
@@ -114,4 +115,41 @@ test('buildTransferSnapshot creates valid snapshot with model and effort', (t) =
 
   const content = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
   assert.equal(content.effort, 'high');
+});
+
+// A snapshot's gitDiff field holds the whole uncommitted diff. Both READMEs said
+// `.omc/` was excluded from version control, but the exclusion lived only in this
+// repository's own .gitignore — so in any other repository the snapshot was
+// untracked rather than ignored, showed up in `git status`, and `git add -A`
+// committed it. Asserted through real git, because `git check-ignore` is the only
+// thing that settles whether a rule actually applies.
+test('a transfer snapshot is ignored by the repository it was written into', (t) => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-ignore-test-'));
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }));
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, 'app.js'), 'export const x = 1;\n');
+
+  const { snapshotPath } = buildTransferSnapshot({ cwd: repo, instructions: 'hand off' });
+  const relative = path.relative(repo, snapshotPath).split(path.sep).join('/');
+
+  const ignored = run('git', ['check-ignore', '-q', relative], { cwd: repo });
+  assert.equal(ignored.status, 0, `${relative} is not ignored, so git add -A would commit the working diff`);
+
+  const status = run('git', ['status', '--porcelain'], { cwd: repo });
+  assert.doesNotMatch(status.stdout, /\.omc/, 'the snapshot must not appear in git status');
+});
+
+// The ignore file is the user's once it exists: a repository that deliberately
+// tracks something under .omc/ has said so, and a transfer is not the moment to
+// overrule it.
+test('an existing .omc/.gitignore is left exactly as the user wrote it', (t) => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-ignore-keep-'));
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }));
+  const omc = path.join(repo, '.omc');
+  fs.mkdirSync(omc, { recursive: true });
+  fs.writeFileSync(path.join(omc, '.gitignore'), '# mine\ntransfers/\n');
+
+  buildTransferSnapshot({ cwd: repo, instructions: 'hand off' });
+
+  assert.equal(fs.readFileSync(path.join(omc, '.gitignore'), 'utf8'), '# mine\ntransfers/\n');
 });
