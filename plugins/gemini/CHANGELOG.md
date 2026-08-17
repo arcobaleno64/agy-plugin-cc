@@ -1,5 +1,95 @@
 # Changelog
 
+## 0.19.0 — 2026-08-17 — What it reached, what it wrote, which engine it used
+
+Three things a run could not tell you afterwards, and one it wrote without asking.
+
+### A timed-out AGY run reported nothing at all
+
+When AGY's own print timeout fires it emits a well-formed envelope whose response
+is empty — `{"status":"ERROR","response":"","error":"timeout waiting for
+response"}` — so the plugin had a valid answer meaning "nothing". Measured on the
+run that prompted this: **193,772 tokens spent, and one line saying it timed out.**
+
+From AGY 1.1.12 the engine is asked for `--output-format stream-json`, which emits
+one JSON object per line as the turn happens. The terminal envelope still arrives
+as the final event, so success is unchanged; a run cut off partway now reports how
+far it got and keeps the answer text already written:
+
+    Failure: timeout (retryable)
+    Summary: The CLI command timed out. (reached step 11 agent_response (ACTIVE);
+    partial output preserved)
+
+Two assumptions this started from were wrong, and finding that out changed the fix.
+The lost tokens were not a half-written answer — that transcript has an empty
+response and 272 characters of thinking about reading `hooks.json`, so the turn
+timed out while still exploring; the goal is that a cut-off run says what it
+reached, not that a never-written answer is recovered. And no async rewrite was
+needed: `spawnSync` keeps what a child had written when its timeout kills it
+(20/46/94 lines survived timeouts of 800/1500/3000 ms against a child emitting
+every 20 ms). Two earlier measurements said otherwise and both were wrong — the
+child had died on a quoting error without writing, which shows as
+`status: 1, signal: null` rather than a signal. A streaming spawn was written for
+this and then removed rather than kept as a second spawn implementation with its
+own Windows resolution rules.
+
+Salvaged text never overrides a response the envelope carried, and never makes a
+run count as successful: the envelope stays the authority on completeness, so a
+partial result cannot pass for a whole one. Gated at 1.1.12, where it was
+measured; below that, plain `json` is unchanged.
+
+### A transfer snapshot could be committed into your repository
+
+A snapshot's `gitDiff` field holds the entire uncommitted diff, and both READMEs
+said the workspace-local `.omc/` directory was excluded from version control. That
+exclusion existed only in *this* repository's `.gitignore`. Anywhere else the
+snapshot was merely untracked — it appeared in `git status`, and `git add -A`
+committed it, diff and all.
+
+`/gemini:transfer` now writes `.omc/.gitignore` containing `*` when it creates the
+directory, which ignores the contents and the ignore file itself, so nothing has
+to be added to the host repository. An existing `.omc/.gitignore` is never
+overwritten: it may say something deliberate. Pinned with a real `git check-ignore`
+in a fresh repository, because nothing else settles whether a rule applies.
+
+### A running job could not say which engine it chose
+
+The engine was written onto the job record only on completion, so a running job
+had no answer — and under `auto` that is the field that says whose quota is being
+spent. The asymmetry that surfaced it: a background review carried `engine` from
+queued, a background task never did, because only the review call site passed it.
+
+The resolved engine now travels on the same progress event that announces the
+turn — the pipeline already carrying `phase`, `threadId` and `turnId` — so every
+job kind answers it while running, `auto` included, with no extra detection. The
+queue-time value stays but no longer records `"auto"`: that is a request to decide
+later, not an engine, and a field readers take for the engine in use must not hold
+one.
+
+### Adversarial review was unreachable from MCP
+
+`/gemini:adversarial-review` has existed since it shipped and both READMEs list it
+under Features, but the MCP tool list held five tools, none of which could select
+the template and none of which said why — for an agent driving the plugin through
+MCP the feature was absent rather than declined. `gemini_adversarial_review` is a
+separate tool rather than a flag on `gemini_review`, because the two differ in the
+template they run and an agent choosing by description picks better than one
+guessing at a boolean. It takes `focus`, matching the slash command;
+`gemini_review` does not, and refuses one rather than dropping it.
+
+### Engine
+
+**`--mode plan` is tested and not adopted.** AGY 1.1.12 fixed `--mode` being
+ignored in headless `-p` runs, which made it worth testing against the "AGY has no
+read-only mode" premise in `docs/THREAT-MODEL.md` §7.2. Six runs on 1.1.13: it
+refuses the edit tool and lets a shell command write the same file, exit 0 — a
+tool policy, not a write boundary, and unusable for the same reason `--sandbox`
+is. It is also mutually exclusive with `--disable-slash-commands`, which every AGY
+spawn passes from 1.1.9 up so a prompt beginning with `/` is not executed as a
+command; AGY says so on stderr, readable only because 1.1.12 stopped swallowing
+startup diagnostics into the log file. The measurement is recorded in §7.2 beside
+the 1.1.10 table.
+
 ## 0.18.0 — 2026-08-17 — Arguments out of the shell, and claims backed by a check
 
 Nine findings from a dogfooding security pass, plus the release gate that would
