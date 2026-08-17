@@ -403,6 +403,8 @@ Claude Code
 
 本專案由單一維護者經營，並非有專職人力的支援窗口；以上管道都是同一個人在收。
 
+更深入的材料放在 [`docs/`](docs/README.zh-TW.md)，該頁把「持續更新的參考文件」與「永不重寫的有日期記錄」分開——把後者當成現況來讀，是那個目錄最容易犯的錯。
+
 若你是要審查本外掛而非使用它：[`docs/verifying-without-credentials.md`](docs/verifying-without-credentials.md)（英文）記載完整的離線驗證路徑，不需帳號、不需 API key。若想直接看每個命令的端到端執行（以替身引擎驅動），從 `node scripts/reviewer-demo.mjs` 開始。
 
 ---

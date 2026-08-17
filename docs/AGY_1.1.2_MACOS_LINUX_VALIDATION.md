@@ -1,5 +1,9 @@
 # AGY 1.1.2 macOS/Linux 驗證清單
 
+> **有日期的記錄，不是現況。** 本檔量的是外掛 v0.7.1 對 AGY **1.1.2**；當前為 AGY 1.1.13，其間新增了 `--output-format json`／`stream-json`（1.1.8／1.1.12）、print 模式的 slash command 展開（1.1.9）、真正生效的 `--model`／`--effort`（1.1.10）與唯讀 slash command（1.1.11）——本檔一項都沒涵蓋。沒有人在較新版本上重跑過這份清單。
+>
+> 保留它是因為它回答「當時在 macOS/Linux 上量到什麼」，那是別處沒有的資料。當前行為請看 [`../plugins/gemini/CHANGELOG.md`](../plugins/gemini/CHANGELOG.md) 與 [`THREAT-MODEL.md`](THREAT-MODEL.md) §7.2；文件分類見 [`README.zh-TW.md`](README.zh-TW.md)。
+
 本清單驗證 `gemini-plugin-cc` v0.7.1 對真實 Antigravity CLI 1.1.2 的 stdin、stdout、transcript、背景工作、review、錯誤與 OAuth headless 行為。POSIX fake fixture 只能作為自動化基線，不能取代真實 AGY binary 與服務端回應。
 
 ## 固定範圍與安全界線
