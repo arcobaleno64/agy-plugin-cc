@@ -365,27 +365,9 @@ Claude Code
 
 ## 與 codex-plugin-cc 的對應
 
-本外掛為 [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) 的高保真移植版。公開的斜線命令介面、背景工作模型，以及 state/result/status/cancel 流程皆鏡像上游；執行後端則為第一級支援的 Gemini CLI 與 AGY 引擎，而非 Codex app server。
+本外掛為 [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) 的高保真移植版：斜線命令介面、背景工作模型與 state/result/status/cancel 流程皆鏡像上游，執行後端則為 Gemini CLI 與 AGY 引擎，而非 Codex app server。
 
-### 相容性對照表
-
-| 上游（Codex） | 本外掛（Gemini） | 對應程度 |
-|---|---|---|
-| `/codex:setup` | `/gemini:setup` | **Gemini 專屬差異** — 依所選第一級引擎檢查 Gemini OAuth 或 AGY binary readiness，而非 Codex 認證 |
-| `/codex:review` | `/gemini:review` | **最佳等效** — prompt／CLI adapter 審查，非原生審查器 |
-| `/codex:adversarial-review` | `/gemini:adversarial-review` | **最佳等效** — 對同一 diff target 施以對抗性 prompt |
-| `/codex:rescue` | `/gemini:rescue` | **1:1 對等** — 相同的 forwarder／subagent 合約與旗標 |
-| `/codex:transfer` | `/gemini:transfer` | **1:1 對等** — 匯出會話快照並產生 AGY / Gemini CLI 移交接手啟動命令 |
-| `/codex:status` | `/gemini:status` | **1:1 對等** — 相同工作模型；`--all` 跨 Claude session |
-| `/codex:result` | `/gemini:result` | **Gemini 專屬差異** — 顯示 Gemini session id 與 `gemini --resume` |
-| `/codex:cancel` | `/gemini:cancel` | **1:1 對等** — 相同的 process-tree 終止（POSIX 與 Windows） |
-
-### Codex app server 與 Gemini CLI adapter
-
-- **執行時**：Codex 使用常駐 app-server，具原生審查與持久 thread。本外掛則於*每次命令*直接呼叫所選的第一級 Gemini CLI 或 AGY 引擎（無共享執行時）；`auto` 採 Gemini→AGY 的 capability-based 順序。
-- **標準審查**：Codex 外掛之 `/codex:review` 為*原生*審查器；本外掛之 `/gemini:review` 為 **prompt／CLI adapter 等效實作**——將 diff 連同務實審查 prompt 送交 Gemini 並解析回傳之結構化 JSON，並非原生 Gemini 審查器。
-- **沙箱**：Codex 提供 `read-only`／`workspace-write` 沙箱，並將可寫入的執行限制在工作區內。**Gemini CLI 與 AGY 皆未提供本外掛可施加的對應路徑邊界**，故本外掛亦無。AGY 的 `--sandbox` 不是——1.1.10 實測，啟用它的執行仍透過編輯工具與 shell 指令寫到工作區外；它限制的是終端機指令能碰到什麼（網路、`.git`），不是誰能寫到哪。Gemini CLI 同名旗標則是**容器**沙箱，未安裝 Docker 或 Podman 即拒絕啟動，故未實測，亦不強制使用者安裝。`--write` 在兩引擎的意義不同，且只有在 gemini 上它才是一道能力閘門：那裡它加的是 `--yolo`，不加時模型根本不會被提供寫入與 shell 工具。**在 AGY 上它不是邊界。** 每次執行都會定位到你的版本庫——唯讀用 `--add-dir`，寫入用 `--new-project`——而兩個旗標都不限制寫入，因為 AGY 沒有唯讀模式。未定位的執行仍可讀寫任何絕對路徑，它缺的只是「不知道你的版本庫在哪」，而那個保護不值得賠上所有正當用途。詳見 [`docs/THREAT-MODEL.md` §7.2](docs/THREAT-MODEL.md)。（不採 `--approval-mode plan`：它其實可在無 TTY 下運作，但會把寫入工具重新宣告給模型並注入規劃流程提示，比什麼都不加更弱。）
-- **Thread／session 接續**：Codex 於 app-server 持久化 thread。本外掛之接續依賴自 JSON 信封擷取之 Gemini CLI **session id**；`/gemini:result` 會印出 `gemini --resume <session-id>`，而 `--resume-last` 接續*當前 Claude session* 之最新 thread。
+逐命令的相容性對照表，以及執行時、審查、沙箱與接續四項差異，見 [`docs/parity.zh-TW.md`](docs/parity.zh-TW.md)。對照特定上游版本的稽核快照存於同一目錄。
 
 ---
 
