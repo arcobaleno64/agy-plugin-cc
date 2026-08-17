@@ -292,7 +292,7 @@ Override via `--engine` flag or the `GEMINI_ENGINE` environment variable.
 - **AGY transport fallback**: Only a stable parsed version of 1.1.2 or newer enables stdin. Unknown and prerelease version strings fail closed to the existing positional path, preserving compatibility rather than assuming an upstream capability.
 - **AGY 1.1.10+ `.git` sandbox rule**: AGY 1.1.10 implements read-only `.git` sandbox rules during sandboxed execution, protecting git repository metadata and commit history against accidental modification during review and subagent tasks.
 - **Credential handling**: OAuth credentials in `~/.gemini/oauth_creds.json` are read only to check token expiry via `getGeminiLoginStatus()`; they are never logged, copied elsewhere, or transmitted by this plugin.
-- **`.gitignore`**: The workspace-local `.omc/` directory, which holds `/gemini:transfer` snapshots, is excluded from version control. Job state and logs live outside the repository entirely — see [How It Works](#how-it-works).
+- **`.gitignore`**: A transfer snapshot's `gitDiff` field holds the entire uncommitted diff, so `/gemini:transfer` writes `.omc/.gitignore` containing `*` when it creates the directory — the snapshots are excluded from version control in **your** repository, not only in this one. Before v0.19.0 the exclusion existed only in this repository's own `.gitignore`, so elsewhere the snapshots were untracked rather than ignored and `git add -A` committed them. An existing `.omc/.gitignore` is never overwritten. Job state and logs live outside the repository entirely — see [How It Works](#how-it-works).
 
 **What is sent, kept, and read** — including the one path that transmits without an explicit command — is documented in [`PRIVACY.md`](PRIVACY.md).
 

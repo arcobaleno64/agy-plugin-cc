@@ -14,7 +14,7 @@ function toolRequest(name, args) {
   return { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } };
 }
 
-test("gemini MCP advertises its identity and five tools", async () => {
+test("gemini MCP advertises its identity and six tools", async () => {
   const initialized = await handleRequest({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
   const pluginVersion = JSON.parse(
     fs.readFileSync(new URL("../plugins/gemini/.claude-plugin/plugin.json", import.meta.url), "utf8")
@@ -26,10 +26,59 @@ test("gemini MCP advertises its identity and five tools", async () => {
   assert.deepEqual(listed.tools.map((tool) => tool.name), [
     "gemini_rescue",
     "gemini_review",
+    "gemini_adversarial_review",
     "gemini_job_status",
     "gemini_job_result",
     "gemini_job_cancel"
   ]);
+});
+
+// Adversarial review has been on the slash surface since it shipped and is listed
+// in both READMEs under Features, but MCP exposed no way to reach it and said
+// nothing about why — so an agent driving the plugin through MCP had the feature
+// missing rather than declined.
+test("MCP can run an adversarial review, not only the standard one", async () => {
+  const workspace = makeTempDir();
+  const calls = [];
+  const runtime = {
+    dispatchBackgroundReview(input) {
+      calls.push(input);
+      return { jobId: "review-adv-1", status: "queued" };
+    }
+  };
+
+  const queued = await handleRequest(toolRequest("gemini_adversarial_review", {
+    workspace,
+    engine: "agy",
+    focus: "the migration path"
+  }), { runtime });
+
+  assert.equal(queued.structuredContent.jobId, "review-adv-1");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].templateName, "adversarial-review", "the adversarial template is the whole point of the tool");
+  assert.equal(calls[0].reviewName, "Adversarial Review");
+  assert.equal(calls[0].focusText, "the migration path");
+});
+
+// The standard review takes no focus argument on the slash surface either, and a
+// silently ignored argument is worse than an absent one.
+test("gemini_review still queues the standard template and takes no focus", async () => {
+  const workspace = makeTempDir();
+  const calls = [];
+  const runtime = {
+    dispatchBackgroundReview(input) {
+      calls.push(input);
+      return { jobId: "review-std-1", status: "queued" };
+    }
+  };
+
+  await handleRequest(toolRequest("gemini_review", { workspace }), { runtime });
+  assert.equal(calls[0].templateName, "review");
+  assert.equal(calls[0].reviewName, "Review");
+  assert.ok(!("focusText" in calls[0]));
+
+  const rejected = await handleRequest(toolRequest("gemini_review", { workspace, focus: "x" }), { runtime });
+  assert.equal(rejected.isError, true, "an argument the tool does not accept must be refused, not dropped");
 });
 
 // The Anthropic software directory policy requires every applicable annotation,

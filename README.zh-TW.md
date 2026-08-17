@@ -290,7 +290,7 @@
 - **AGY transport 回退**：只有可穩定解析為 1.1.2 以上的版本才啟用 stdin；未知版與 prerelease 字串一律 fail closed 至既有 positional 路徑，不假設上游能力。
 - **AGY 1.1.10+ `.git` 沙箱規則**：AGY 1.1.10 在沙箱模式下實作 `.git` 目錄唯讀防護規則，保護版本庫 metadata 與 commit 歷史在審查及子代理人任務期間不被意外修改。
 - **憑證處理**：`~/.gemini/oauth_creds.json` 之 OAuth 憑證僅用於 `getGeminiLoginStatus()` 檢查 token 是否過期；本外掛從不記錄、複製或傳輸之。
-- **`.gitignore`**：工作區內的 `.omc/` 目錄（存放 `/gemini:transfer` 快照）已排除於版本控制之外。工作狀態與日誌則完全不在版本庫內——詳見 [運作原理](#運作原理)。
+- **`.gitignore`**：transfer 快照的 `gitDiff` 欄位裝的是完整未提交 diff，因此 `/gemini:transfer` 在建立目錄時會寫入內容為 `*` 的 `.omc/.gitignore`——快照在**你的**版本庫裡就被排除，不只在本專案內。v0.19.0 之前該排除僅存在於本專案自己的 `.gitignore`，在其他版本庫只是「未追蹤」而非「已忽略」，`git add -A` 會一併提交。已存在的 `.omc/.gitignore` 不會被覆寫。工作狀態與日誌則完全不在版本庫內——詳見 [運作原理](#運作原理)。
 
 **送出哪些資料、保留在何處、讀取了什麼**——包含唯一一條不需明確命令即會傳輸的路徑——記載於 [`PRIVACY.md`](PRIVACY.md)（英文）。
 

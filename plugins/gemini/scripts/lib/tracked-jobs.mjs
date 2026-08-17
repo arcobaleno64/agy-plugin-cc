@@ -17,6 +17,7 @@ function normalizeProgressEvent(value) {
       phase: typeof value.phase === "string" && value.phase.trim() ? value.phase.trim() : null,
       threadId: typeof value.threadId === "string" && value.threadId.trim() ? value.threadId.trim() : null,
       turnId: typeof value.turnId === "string" && value.turnId.trim() ? value.turnId.trim() : null,
+      engine: typeof value.engine === "string" && value.engine.trim() ? value.engine.trim() : null,
       stderrMessage: value.stderrMessage == null ? null : String(value.stderrMessage).trim(),
       logTitle: typeof value.logTitle === "string" && value.logTitle.trim() ? value.logTitle.trim() : null,
       logBody: value.logBody == null ? null : String(value.logBody).trimEnd()
@@ -28,6 +29,7 @@ function normalizeProgressEvent(value) {
     phase: null,
     threadId: null,
     turnId: null,
+    engine: null,
     stderrMessage: String(value ?? "").trim(),
     logTitle: null,
     logBody: null
@@ -72,6 +74,7 @@ export function createJobProgressUpdater(workspaceRoot, jobId) {
   let lastPhase = null;
   let lastThreadId = null;
   let lastTurnId = null;
+  let lastEngine = null;
 
   return (event) => {
     const normalized = normalizeProgressEvent(event);
@@ -93,6 +96,18 @@ export function createJobProgressUpdater(workspaceRoot, jobId) {
     if (normalized.turnId && normalized.turnId !== lastTurnId) {
       lastTurnId = normalized.turnId;
       patch.turnId = normalized.turnId;
+      changed = true;
+    }
+
+    // Which engine a run chose was only written when the job finished, so a
+    // running job could not answer it — and under `auto` that is exactly when the
+    // answer matters, because the choice decides which account's quota is being
+    // spent. The runner knows it the moment detection returns, which is well
+    // before the first token; it travels on the same event as the phase change
+    // that announces the turn.
+    if (normalized.engine && normalized.engine !== lastEngine) {
+      lastEngine = normalized.engine;
+      patch.engine = normalized.engine;
       changed = true;
     }
 

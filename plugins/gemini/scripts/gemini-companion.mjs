@@ -872,7 +872,13 @@ function getJobKindLabel(kind, jobClass) {
   return jobClass === "review" ? "review" : "rescue";
 }
 
+// `engine` here is what the caller *asked for*, and only an explicit request says
+// anything: "auto" is a request to decide later, so recording it would put a
+// non-engine into a field readers take for the engine in use. The engine actually
+// chosen is written by the runner as soon as detection returns — see
+// createJobProgressUpdater — which is what a running job under `auto` reports.
 function createCompanionJob({ prefix, kind, title, workspaceRoot, jobClass, summary, write = false, engine = null, groupId = null }) {
+  const requestedEngine = engine === "auto" ? null : engine;
   return createJobRecord({
     id: generateJobId(prefix),
     kind,
@@ -882,7 +888,7 @@ function createCompanionJob({ prefix, kind, title, workspaceRoot, jobClass, summ
     jobClass,
     summary,
     write,
-    ...(engine ? { engine } : {}),
+    ...(requestedEngine ? { engine: requestedEngine } : {}),
     ...(groupId ? { groupId } : {})
   });
 }
@@ -899,7 +905,7 @@ function createTrackedProgress(job, options = {}) {
   };
 }
 
-function buildTaskJob(workspaceRoot, taskMetadata, write) {
+function buildTaskJob(workspaceRoot, taskMetadata, write, engine = null) {
   return createCompanionJob({
     prefix: "task",
     kind: "task",
@@ -907,7 +913,8 @@ function buildTaskJob(workspaceRoot, taskMetadata, write) {
     workspaceRoot,
     jobClass: "task",
     summary: taskMetadata.summary,
-    write
+    write,
+    engine
   });
 }
 
@@ -1192,7 +1199,7 @@ export function dispatchBackgroundTask(request, { spawnFn = spawn, detectEngineF
   const resumeLast = Boolean(request.resumeLast);
   requireTaskRequest(prompt, resumeLast);
   const taskMetadata = buildTaskRunMetadata({ prompt, resumeLast });
-  const job = buildTaskJob(workspaceRoot, taskMetadata, Boolean(request.write));
+  const job = buildTaskJob(workspaceRoot, taskMetadata, Boolean(request.write), request.engine ?? null);
   const storedRequest = buildTaskRequest({
     cwd,
     model,
@@ -1296,7 +1303,8 @@ async function handleReviewCommand(argv, { reviewName, templateName, supportsFoc
     title: `Gemini ${reviewName}`,
     workspaceRoot,
     jobClass: "review",
-    summary: `${reviewName} ${target.label}`
+    summary: `${reviewName} ${target.label}`,
+    engine: options.engine ?? null
   });
 
   await runForegroundCommand(
@@ -1372,7 +1380,7 @@ async function handleTask(argv) {
     return;
   }
 
-  const job = buildTaskJob(workspaceRoot, taskMetadata, write);
+  const job = buildTaskJob(workspaceRoot, taskMetadata, write, engine);
   await runForegroundCommand(
     job,
     (progress) =>

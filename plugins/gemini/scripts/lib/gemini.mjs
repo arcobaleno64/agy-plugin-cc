@@ -410,7 +410,7 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
     workspaceDir: cwd,
   });
 
-  onProgress?.({ message: `Starting ${engineInfo.engine} turn...`, phase: "running" });
+  onProgress?.({ message: `Starting ${engineInfo.engine} turn...`, phase: "running", engine: engineInfo.engine });
 
   // Snapshot before the turn, whatever mode it is in. A read-only turn needs it
   // because nothing enforces read-only (see readonly-guard.mjs); a write turn
@@ -583,6 +583,10 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
   // output", true when only gemini could emit structured output. AGY has carried
   // the same JSON envelope since 1.1.8 (plugin v0.11.0).
   const engineInfo = detectEngineFn(requestedEngine ?? null);
+  // Reported as its own event rather than folded into the line above, which is
+  // printed before detection runs: a review job queued under `auto` otherwise had
+  // no way to say which engine it picked until it finished.
+  onProgress?.({ message: `Using ${engineInfo.engine}.`, phase: "reviewing", engine: engineInfo.engine });
   const agyStructured = engineInfo.engine === "agy" && supportsAgyStructuredOutput(engineInfo.version);
   const useJson = engineInfo.engine === "gemini" || agyStructured;
 
