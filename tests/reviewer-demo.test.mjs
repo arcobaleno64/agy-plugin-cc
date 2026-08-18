@@ -33,6 +33,27 @@ function discardWorkspace(kept) {
   }
 }
 
+// The plugin writes one log per job under the workspace it was given; --keep
+// leaves them, which is how the walkthrough can be checked against what the
+// plugin recorded rather than only against what it printed.
+function findJobLog(kept, marker) {
+  const found = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith(".log")) found.push(full);
+    }
+  };
+  const state = path.join(kept, "plugin-data");
+  if (!fs.existsSync(state)) return null;
+  walk(state);
+  for (const file of found) {
+    const body = fs.readFileSync(file, "utf8");
+    if (body.includes(marker)) return body;
+  }
+  return null;}
+
 test("reviewer-demo lists its steps without running anything", () => {
   const result = run("node", [SCRIPT, "--list"], { cwd: ROOT });
   assert.equal(result.status, 0, result.stderr);
@@ -72,6 +93,25 @@ test("reviewer-demo runs every command end to end", (t) => {
   // A reviewer must not be left believing canned text came from a model.
   assert.match(result.stdout, /stand-in engine/);
   assert.match(result.stdout, /Not verified here/);
+  // Both fallback notes mean the step cancelled a worker that had not started its
+  // turn yet, which is not what it claims to demonstrate.
+  assert.doesNotMatch(result.stdout, /never reported/, "the cancel step did not wait for a running engine");
+  // The step claims to terminate a running job’s process tree, and the job log is
+  // where that can be checked rather than assumed: the worker records `running`
+  // with its pid a beat before it starts the engine, so a cancel that arrives in
+  // that gap kills a worker with nothing under it yet. The turn must have begun
+  // first.
+  const cancelLog = findJobLog(kept, "Cancelled by user");
+  assert.ok(cancelLog, "the cancel step left no job log to check");
+  // Checked for presence before order: indexOf returns -1 for a line that never
+  // arrived, and -1 is less than everything, so the comparison alone would pass
+  // most loudly in exactly the case it is meant to catch.
+  assert.ok(cancelLog.includes("turn..."), `the engine turn never started before the cancel:\n${cancelLog}`);
+  assert.ok(
+    cancelLog.indexOf("turn...") < cancelLog.indexOf("Cancelled by user"),
+    `the cancel arrived before the engine turn started:\n${cancelLog}`
+  );
+
   assert.doesNotMatch(result.stderr, /DeprecationWarning/, "reviewer-facing output must be free of Node warnings");
 });
 
