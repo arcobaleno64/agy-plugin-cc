@@ -47,13 +47,22 @@ export const MODEL_ALIASES = new Map(MODEL_ALIAS_ENTRIES.map((entry) => [entry.a
 //
 // AGY has its own model surface and takes exact ids from `agy models`; the two
 // namespaces do not overlap, which is why normalizeAgyRequestedModel rejects
-// Gemini aliases outright. Re-confirmed on AGY 1.1.10, 2026-08-05 — `agy models`
-// returns gemini-3.6-flash-{high,medium,low} (now GA),
-// gemini-3.5-flash-{high,medium,low}, gemini-3.1-pro-{high,low},
-// claude-sonnet-4-6, claude-opus-4-6-thinking and gpt-oss-120b-medium. None of
-// those is a valid id here: AGY encodes the effort tier into the id, while this
-// map keeps model and effort separate. AGY 1.1.10+ also accepts native
-// --effort low|medium|high; see supportsAgyModelSelection in engine.mjs.
+// Gemini aliases outright. The structural reason is what matters and does not
+// change: AGY encodes the effort tier into the id (`gemini-3.7-flash-high`),
+// while this map keeps model and effort separate, so no AGY id is ever a valid
+// value here. AGY 1.1.10+ also accepts native --effort low|medium|high; see
+// supportsAgyModelSelection in engine.mjs.
+//
+// This comment used to enumerate the AGY ids as of 1.1.10, and by 1.1.13 the
+// listing had gained three that it did not mention. Nothing depended on the
+// list — normalizeAgyRequestedModel checks the character set and rejects Gemini
+// aliases, and never compares against a roster — so it was a copy that could
+// only drift. It is not re-enumerated here: `agy models` is the live answer, and
+// there is no machine-readable form of it to check a copy against (`agy models`
+// on 1.1.13 accepts only -h/--help; the plugin's own 0.19.0 changelog entry says
+// 1.1.12 added `--output-format json` to it, and that is not true of 1.1.13).
+// The dated readings live in docs/MODEL_COMPARISON.md §D, which exists to hold
+// exactly that kind of record.
 export const EFFORT_MODEL_MAP = new Map([
   ["none", "gemini-2.5-flash-lite"],
   ["minimal", "gemini-2.5-flash-lite"],

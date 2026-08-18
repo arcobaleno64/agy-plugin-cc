@@ -66,14 +66,22 @@ campaign matrix for the full three-way comparison.
 ## Follow-ups (adversarial-review groups, low priority)
 
 - **`/gemini:cancel <groupId>` is not group-aware.** `status` and `result`
-  accept a groupId and aggregate, but cancel matches only a job id, so an
-  adversarial-review group must be cancelled one engine job at a time. The
-  command docs never promised group cancel, so this is an asymmetry, not a
-  broken contract.
-- **Partial dispatch has no rollback.** If a later engine in an adversarial
-  dispatch fails after an earlier one already spawned, the earlier job is
-  orphaned (still queryable by its own id, but never gets its group peer). Low
-  probability; no cleanup today.
+  accept a groupId and aggregate, but `resolveCancelableJob` matches only a job
+  id, so an adversarial-review group must be cancelled one engine job at a time —
+  and a groupId is answered with "no active job found", not with a partial
+  cancel. Confirmed still true 2026-08-18. The command docs never promised group
+  cancel, so this is an asymmetry rather than a broken contract, but the
+  aggregating pattern already exists in `buildSingleJobSnapshot` and
+  `resolveResultJobs` and cancel could reuse it.
+- **Partial dispatch has no rollback — narrowed, and re-checked 2026-08-18.**
+  The original entry said any failure in a later engine could orphan an earlier
+  group member. The larger half of that is closed: `gemini-companion.mjs`
+  validates every selected engine into `preparedSelections` *before* the first
+  detached worker is spawned, with a comment saying so, so a validation error
+  now fails before anything is queued. What remains is the spawn itself failing
+  for a later engine, which leaves the earlier job orphaned as described. Lower
+  probability than the entry implied; still no cleanup, and still deliberate —
+  an orphan is queryable by its own id and costs a quota-spending job to undo.
 
 ## Upstream-blocked
 

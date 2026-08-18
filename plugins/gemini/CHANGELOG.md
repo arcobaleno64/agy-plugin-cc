@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.21.1 — 2026-08-18 — A copy of someone else's list, kept by hand
+
+`lib/model-map.mjs` carried a comment listing what `agy models` returns, dated to
+AGY 1.1.10 on 2026-08-05. Read again on 1.1.13 the real listing has 14 ids where
+the comment named 11: the whole Gemini 3.7 Flash family arrived and nothing said
+so. Nothing was broken by this, which is the point — no code reads that list.
+`normalizeAgyRequestedModel` validates the character set and rejects Gemini
+aliases; it never compares against a roster. The comment was a copy of another
+tool's output that could only drift, and nothing could notice when it did.
+
+It cannot be kept honest automatically either. `agy models` on 1.1.13 accepts
+only `-h`/`--help`, so there is no machine-readable form to diff a copy against,
+and the probe needs AGY installed, which CI does not have. (This plugin's 0.19.0
+entry says AGY 1.1.12 added `--output-format json` to `agy models`. That is not
+true of 1.1.13. The entry stands as written — a released changelog is a record of
+what was believed, and correcting it in place would erase that.)
+
+So the comment now keeps the part that does not change — AGY encodes the effort
+tier into the id, which is why no AGY id is ever valid in this map and why
+`--model` and `--effort` cannot be combined — with one id as an illustration of
+the shape, and points at `docs/MODEL_COMPARISON.md` §D for readings. That
+document already existed to hold dated probe records; the 2026-08-18 reading on
+1.1.13 is now there in full. A test keeps the roster from coming back, and keeps
+the pointer resolving.
+
+Two follow-ups in `docs/known-diffs.md` were re-checked against the code rather
+than carried forward:
+
+- **`/gemini:cancel <groupId>`** is still not group-aware, confirmed. The entry
+  now names `resolveCancelableJob` and says what a user actually sees — "no
+  active job found", not a partial cancel — and notes that the aggregating
+  pattern cancel would reuse already exists.
+- **Partial dispatch rollback** was overstated. Every selected engine is
+  validated before the first detached worker is spawned, so a validation error
+  can no longer orphan an earlier group member. Only a failing spawn can, which
+  is narrower than the entry claimed. Still deliberate, now accurately described.
+
+Documentation and tests only; no runtime behaviour changed.
+
 ## 0.21.0 — 2026-08-18 — The timeout flag nobody could reach
 
 `--timeout <seconds>` has been parsed by the CLI since it was added, and was

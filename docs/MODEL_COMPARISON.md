@@ -71,6 +71,27 @@ Probed on this machine (gemini CLI **0.44.1**, then-current on npm), 2026-06-02:
 
 - **AGY (antigravity 1.0.4)** exposed **no `--model`/`--effort`** flag in the original 2026-06-02 probe. By 2026-07-06, local AGY 1.0.16 exposed `--model` and `agy models`.
   **Superseded since — current behavior (verified on AGY 1.1.12, 2026-08-12):** the plugin forwards both. `--effort <low|medium|high>` is passed to AGY natively, and `--model` is passed through as an exact AGY model id from `agy models`. What it still does *not* do is translate Gemini aliases into AGY ids — `flash` and `pro` are Gemini aliases only — and the two flags cannot be combined, because the AGY model ids reject the pairing. See `supportsAgyModelSelection` (gated at 1.1.10, the first version that applies the selection instead of silently falling back to the persisted model).
+- **AGY's own model listing, read 2026-08-18 on AGY 1.1.13.** `agy models` returns 14 ids:
+
+  | Family | Ids |
+  |---|---|
+  | Gemini 3.7 Flash | `gemini-3.7-flash-high` · `-medium` · `-low` |
+  | Gemini 3.6 Flash | `gemini-3.6-flash-high` · `-medium` · `-low` |
+  | Gemini 3.5 Flash | `gemini-3.5-flash-high` · `-medium` · `-low` |
+  | Gemini 3.1 Pro | `gemini-3.1-pro-high` · `-low` |
+  | Other vendors | `claude-sonnet-4-6` · `claude-opus-4-6-thinking` · `gpt-oss-120b-medium` |
+
+  Against the previous reading (AGY 1.1.10, 2026-08-05, 11 ids) the 3.7 Flash
+  family is new and nothing was removed. Note the shape rather than the roster:
+  AGY encodes the effort tier into the id, which is why `--model` and `--effort`
+  cannot be combined and why no Gemini alias is ever a valid AGY model id.
+
+  There is no machine-readable form to check a copy against — `agy models` on
+  1.1.13 accepts only `-h`/`--help`. This plugin's own 0.19.0 changelog entry
+  states that AGY 1.1.12 added `--output-format json` to it; that is not true of
+  1.1.13, and the entry is left as written because a released changelog is a
+  record. `lib/model-map.mjs` no longer keeps a copy of this list and points
+  here instead.
 - The plugin therefore points `flash` at `gemini-3-flash-preview` (served) and **gracefully degrades** to the GA `gemini-2.5-flash` if a requested id 404s — see the model-not-found fallback in `lib/gemini.mjs`.
 - Heads-up: Google's consumer Gemini CLI transition took effect on **2026-06-18** — this is past, not upcoming. On a personal account gemini CLI still installs and answers `--version`, but every request returns `API key not valid` / `API_KEY_INVALID` (verified 2026-08-04); Standard/Enterprise access and API keys are unaffected. See the note at the top of the README.
 

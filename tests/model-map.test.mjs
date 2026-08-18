@@ -87,3 +87,59 @@ test("README model alias table matches model-map.mjs exactly", () => {
     assert.equal(MODEL_ALIASES.get(alias), model, `README declares unknown alias \`${alias}\``);
   }
 });
+
+// ---------------------------------------------------------------------------
+// model-map.mjs used to carry a copy of `agy models` output as a comment, dated
+// to AGY 1.1.10. By 1.1.13 the real listing had gained three ids it did not
+// mention. No code read the list — normalizeAgyRequestedModel validates the
+// character set and rejects Gemini aliases, and never compares against a roster
+// — so it was a copy that could only ever drift, with nothing able to notice.
+//
+// It cannot be kept honest automatically either: `agy models` on 1.1.13 offers
+// only -h/--help, so there is no machine-readable form to diff a copy against,
+// and the probe needs AGY installed, which CI does not have. So the rule is that
+// the copy does not come back. One id may stay as an illustration of the shape
+// (AGY encodes the effort tier into the id); several are a roster again.
+// ---------------------------------------------------------------------------
+
+const AGY_ID_SHAPE = /gemini-\d[\d.]*-[a-z]+-(?:high|medium|low)\b/g;
+
+test("model-map does not keep its own copy of AGY's model listing", () => {
+  const source = fs.readFileSync(
+    path.join(ROOT, "plugins", "gemini", "scripts", "lib", "model-map.mjs"),
+    "utf8"
+  );
+  const ids = [...new Set(source.match(AGY_ID_SHAPE) ?? [])];
+  assert.ok(
+    ids.length <= 1,
+    `model-map.mjs names ${ids.length} AGY model ids (${ids.join(", ")}). ` +
+      "One illustrates the id shape; a list is a roster that will drift. " +
+      "Dated readings belong in docs/MODEL_COMPARISON.md §D."
+  );
+});
+
+test("the document model-map sends readers to for the listing exists", () => {
+  const source = fs.readFileSync(
+    path.join(ROOT, "plugins", "gemini", "scripts", "lib", "model-map.mjs"),
+    "utf8"
+  );
+  const referenced = source.match(/docs\/[A-Za-z0-9_.-]+\.md/g) ?? [];
+  assert.ok(referenced.length > 0, "model-map points nowhere for the AGY listing");
+  for (const relPath of new Set(referenced)) {
+    assert.ok(
+      fs.existsSync(path.join(ROOT, relPath)),
+      `model-map.mjs points at ${relPath}, which does not exist`
+    );
+  }
+});
+
+// The dated readings have to actually be there, or the pointer above sends a
+// reader to a document that answers a different question.
+test("MODEL_COMPARISON records a dated AGY model listing", () => {
+  const doc = fs.readFileSync(path.join(ROOT, "docs", "MODEL_COMPARISON.md"), "utf8");
+  assert.match(doc, /`agy models`/, "no reading of the AGY listing is recorded");
+  assert.ok(
+    (doc.match(AGY_ID_SHAPE) ?? []).length >= 3,
+    "the recorded listing names too few ids to be a listing"
+  );
+});
