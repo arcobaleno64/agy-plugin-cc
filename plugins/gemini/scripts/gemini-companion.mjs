@@ -25,7 +25,7 @@ import {
   buildStatusSnapshot,
   filterJobsForCurrentSession,
   readStoredJob,
-  resolveCancelableJob,
+  resolveCancelableJobs,
   resolveResultJobs,
   sortJobsNewestFirst
 } from "./lib/job-control.mjs";
@@ -45,6 +45,7 @@ import {
   renderTaskResult,
   renderStoredJobResult,
   renderStoredJobGroupResult,
+  renderCancelGroupReport,
   renderCancelReport,
   describeTermination,
   renderJobStatusReport,
@@ -491,6 +492,21 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
   return {
     ready,
     readyState,
+    // Which copy of the plugin is answering. Claude Code resolves an installed
+    // plugin through a versioned cache directory, and a session can stay wired
+    // to an older one after an update: field note gi-2026-08-17-a1c7 recorded a
+    // session running 0.17.3 while installed_plugins.json reported 0.19.0, with
+    // fixes believed shipped silently absent from both the MCP and slash
+    // surfaces. Nothing in the session could say which version was live; it was
+    // found by reading the MCP server's process command line.
+    //
+    // The resolution itself is Claude Code's, and `/reload-plugins` is the
+    // remedy — neither is this plugin's to fix. What is fixable here is the
+    // silence. Both values are read relative to the running script, so they
+    // describe the code that is actually executing rather than what a manifest
+    // elsewhere claims, and plugin.json is the same file Claude Code consults
+    // first (docs/version-sources.md).
+    ...readRunningPluginIdentity(),
     requestedEngine: requestedEngine || "auto",
     geminiReady,
     geminiCredentialSource,
@@ -525,6 +541,20 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
     actionsTaken,
     nextSteps
   };
+}
+
+function readRunningPluginIdentity() {
+  const manifestPath = path.join(ROOT_DIR, ".claude-plugin", "plugin.json");
+  let pluginVersion = null;
+  try {
+    pluginVersion = JSON.parse(fs.readFileSync(manifestPath, "utf8")).version ?? null;
+  } catch {
+    // A missing or unreadable manifest is reported as unknown rather than
+    // thrown: setup exists to diagnose a broken installation, and it is no use
+    // if it cannot run on one.
+    pluginVersion = null;
+  }
+  return { pluginVersion, scriptPath: SELF_PATH };
 }
 
 function handleSetup(argv) {
@@ -1555,13 +1585,37 @@ async function handleCancel(argv) {
 
   const cwd = resolveCommandCwd(options);
   const reference = positionals[0] ?? "";
-  const { payload, job, termination } = cancelJob({ cwd, jobId: reference, all: options.all });
+  const result = cancelJob({ cwd, jobId: reference, all: options.all });
 
-  outputCommandResult(payload, renderCancelReport(job, termination), options.json);
+  outputCommandResult(
+    result.payload,
+    result.groupId
+      ? renderCancelGroupReport(result)
+      : renderCancelReport(result.job, result.termination),
+    options.json
+  );
 }
 
 export function cancelJob({ cwd = process.cwd(), jobId = "", all = false }, { terminateProcessTreeFn = terminateProcessTree } = {}) {
-  const { workspaceRoot, job } = resolveCancelableJob(path.resolve(cwd), jobId, { all });
+  const { workspaceRoot, groupId, jobs } = resolveCancelableJobs(path.resolve(cwd), jobId, { all });
+  const cancelled = jobs.map((job) => cancelOneJob(workspaceRoot, job, terminateProcessTreeFn));
+
+  if (!groupId) {
+    // Unchanged shape for the single-job case, which is every existing caller:
+    // the slash command, the MCP tool and the tests all read `payload.jobId`.
+    const [only] = cancelled;
+    return { payload: only.payload, job: only.job, termination: only.termination };
+  }
+
+  return {
+    groupId,
+    payload: { groupId, cancelled: cancelled.map((entry) => entry.payload) },
+    jobs: cancelled.map((entry) => entry.job),
+    terminations: cancelled.map((entry) => entry.termination)
+  };
+}
+
+function cancelOneJob(workspaceRoot, job, terminateProcessTreeFn) {
   const existing = readStoredJob(workspaceRoot, job.id) ?? {};
 
   // Be honest about whether a live process was actually killed: the detached

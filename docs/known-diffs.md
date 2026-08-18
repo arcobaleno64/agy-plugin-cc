@@ -65,14 +65,9 @@ campaign matrix for the full three-way comparison.
 
 ## Follow-ups (adversarial-review groups, low priority)
 
-- **`/gemini:cancel <groupId>` is not group-aware.** `status` and `result`
-  accept a groupId and aggregate, but `resolveCancelableJob` matches only a job
-  id, so an adversarial-review group must be cancelled one engine job at a time —
-  and a groupId is answered with "no active job found", not with a partial
-  cancel. Confirmed still true 2026-08-18. The command docs never promised group
-  cancel, so this is an asymmetry rather than a broken contract, but the
-  aggregating pattern already exists in `buildSingleJobSnapshot` and
-  `resolveResultJobs` and cancel could reuse it.
+*`/gemini:cancel <groupId>` was the other entry here. Closed in v0.22.0: cancel
+reuses the same aggregating pattern as `status` and `result`.*
+
 - **Partial dispatch has no rollback — narrowed, and re-checked 2026-08-18.**
   The original entry said any failure in a later engine could orphan an earlier
   group member. The larger half of that is closed: `gemini-companion.mjs`

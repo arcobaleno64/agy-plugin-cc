@@ -153,7 +153,7 @@ export const TOOLS = [
   tool(
     "gemini_job_cancel",
     "Cancel a delegated job",
-    "Cancel a queued or running Gemini companion job, terminating its process tree.",
+    "Cancel a queued or running Gemini companion job, terminating its process tree. `jobId` also accepts an adversarial-review group id, which cancels every member of that group still active and leaves finished members alone.",
     // Destructive because a cancelled `write` task can leave half-applied edits
     // behind. Idempotent: cancelling an already-finished job is a no-op.
     { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },

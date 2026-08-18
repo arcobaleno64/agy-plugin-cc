@@ -8,7 +8,10 @@ import {
   probeAgyLogin,
   probeGeminiLogin
 } from "../plugins/gemini/scripts/lib/gemini.mjs";
+import { renderSetupReport } from "../plugins/gemini/scripts/lib/render.mjs";
 import { makeTempDir } from "./helpers.mjs";
+import fs from "node:fs";
+import path from "node:path";
 
 // ---------------------------------------------------------------------------
 // probeAgyLogin
@@ -692,4 +695,40 @@ test("the gemini probe does not spawn when the binary is absent", () => {
 
   assert.equal(status.state, "unavailable");
   assert.equal(runCommandFn.calls.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Field note gi-2026-08-17-a1c7: a session ran plugin 0.17.3 while
+// installed_plugins.json reported 0.19.0. Fixes believed shipped were silently
+// absent from both the MCP and slash surfaces, and nothing in the session could
+// say which version was live — it was found by reading the MCP server's process
+// command line. The cache/PATH resolution is Claude Code's and `/reload-plugins`
+// is the remedy; what is fixable here is the silence.
+//
+// Both values must describe the code that is executing, not a manifest
+// elsewhere, or they would report the same thing the mismatch already reported.
+// ---------------------------------------------------------------------------
+
+test("setup names the plugin version that is actually running", () => {
+  const manifest = JSON.parse(
+    fs.readFileSync(new URL("../plugins/gemini/.claude-plugin/plugin.json", import.meta.url), "utf8")
+  );
+  const report = buildSetupReport(makeTempDir(), [], {});
+  assert.equal(report.pluginVersion, manifest.version);
+});
+
+test("setup names the script answering, so a stale copy is visible", () => {
+  const report = buildSetupReport(makeTempDir(), [], {});
+  assert.match(report.scriptPath, /gemini-companion\.mjs$/);
+  // The path has to be the running file's own, not a guess assembled from cwd:
+  // the whole failure is a session wired to a copy in a different directory.
+  assert.ok(
+    report.scriptPath.includes(`${path.sep}scripts${path.sep}`),
+    `scriptPath does not look like a resolved script path: ${report.scriptPath}`
+  );
+});
+
+test("the setup report shows the running copy without asking for --json", () => {
+  const rendered = renderSetupReport(buildSetupReport(makeTempDir(), [], {}));
+  assert.match(rendered, /^Plugin: /m);
 });

@@ -428,6 +428,37 @@ export function resolveResultJobs(cwd, reference, options = {}) {
   return { workspaceRoot, groupId: selected.groupId, jobs: grouped };
 }
 
+// `/gemini:cancel <groupId>` used to answer "No active job found" — status and
+// result both accept a groupId and aggregate, and cancel alone matched job ids,
+// so an adversarial-review group had to be cancelled one engine at a time from
+// ids the user had to go and read. Same shape as buildSingleJobSnapshot and
+// resolveResultJobs: try the group first, fall back to a single job.
+//
+// Only active members are returned. A group whose other engine already finished
+// is not a reason to refuse the one still running, and "cancel" has nothing to
+// say about a job that is already done.
+export function resolveCancelableJobs(cwd, reference, options = {}) {
+  const workspaceRoot = resolveWorkspaceRoot(cwd);
+  if (reference) {
+    const scoped = options.all ? listJobs(workspaceRoot) : filterJobsForCurrentSession(listJobs(workspaceRoot));
+    const members = sortJobsNewestFirst(scoped).filter((job) => job.groupId === reference);
+    const active = members.filter((job) => isActiveStatus(job.status));
+    if (active.length > 0) {
+      return { workspaceRoot, groupId: reference, jobs: active };
+    }
+    // A group that exists and has finished is not "no job found". Falling
+    // through to the single-job path would say exactly that, and send the user
+    // looking for an id they already gave correctly.
+    if (members.length > 0) {
+      throw new Error(
+        `Review group ${reference} has no active jobs (${members.length} already finished). Read them with /gemini:result ${reference}.`
+      );
+    }
+  }
+  const { job } = resolveCancelableJob(cwd, reference, options);
+  return { workspaceRoot, groupId: null, jobs: [job] };
+}
+
 export function resolveCancelableJob(cwd, reference, options = {}) {
   const workspaceRoot = resolveWorkspaceRoot(cwd);
   // Default scope is the current Claude session so /gemini:cancel can never

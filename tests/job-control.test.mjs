@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 import { makeTempDir } from "./helpers.mjs";
-import { readJobFile, resolveJobFile, saveState, setConfig, writeJobFile } from "../plugins/gemini/scripts/lib/state.mjs";
+import { readJobFile, resolveJobFile, saveState, setConfig, upsertJob, writeJobFile } from "../plugins/gemini/scripts/lib/state.mjs";
+import { cancelJob } from "../plugins/gemini/scripts/gemini-companion.mjs";
 import { buildStatusSnapshot, resolveResultJob } from "../plugins/gemini/scripts/lib/job-control.mjs";
 import { runTrackedJob } from "../plugins/gemini/scripts/lib/tracked-jobs.mjs";
 
@@ -144,4 +145,92 @@ test("a successful run is completed even if the runner also set partial", async 
   const stored = readJobFile(resolveJobFile(cwd, "task-zero"));
   assert.equal(stored.status, "completed");
   assert.equal(stored.failure ?? null, null);
+});
+
+// ---------------------------------------------------------------------------
+// `/gemini:cancel <groupId>` used to answer "No active job found": status and
+// result both accept a groupId and aggregate, and cancel alone matched job ids,
+// so an adversarial-review group had to be cancelled one engine at a time from
+// ids the user had to go and read out of a status listing.
+// ---------------------------------------------------------------------------
+
+function seedGroup(cwd, groupId, members) {
+  for (const member of members) {
+    const record = { jobClass: "review", title: "Adversarial Review", groupId, ...member };
+    upsertJob(cwd, record);
+    writeJobFile(cwd, record.id, record);
+  }
+}
+
+function stubTerminate() {
+  const killed = [];
+  const fn = (pid) => {
+    killed.push(pid);
+    return { attempted: true, delivered: true, method: "taskkill" };
+  };
+  fn.killed = killed;
+  return fn;
+}
+
+test("cancelling a group cancels every active member", () => {
+  const cwd = makeTempDir();
+  seedGroup(cwd, "review-group-1", [
+    { id: "review-agy", status: "running", pid: 4001, engine: "agy" },
+    { id: "review-gemini", status: "running", pid: 4002, engine: "gemini" }
+  ]);
+
+  const terminateProcessTreeFn = stubTerminate();
+  const result = cancelJob({ cwd, jobId: "review-group-1", all: true }, { terminateProcessTreeFn });
+
+  assert.equal(result.groupId, "review-group-1");
+  assert.deepEqual(terminateProcessTreeFn.killed.sort(), [4001, 4002]);
+  for (const id of ["review-agy", "review-gemini"]) {
+    assert.equal(readJobFile(resolveJobFile(cwd, id)).status, "cancelled", `${id} was left running`);
+  }
+});
+
+test("a group cancel leaves members that already finished alone", () => {
+  const cwd = makeTempDir();
+  seedGroup(cwd, "review-group-2", [
+    { id: "review-done", status: "completed", pid: null, engine: "agy" },
+    { id: "review-live", status: "running", pid: 4003, engine: "gemini" }
+  ]);
+
+  const terminateProcessTreeFn = stubTerminate();
+  const result = cancelJob({ cwd, jobId: "review-group-2", all: true }, { terminateProcessTreeFn });
+
+  assert.deepEqual(result.payload.cancelled.map((entry) => entry.jobId), ["review-live"]);
+  assert.equal(readJobFile(resolveJobFile(cwd, "review-done")).status, "completed", "a finished job is not re-labelled");
+});
+
+test("cancelling one job of a group by its own id still cancels only that one", () => {
+  const cwd = makeTempDir();
+  seedGroup(cwd, "review-group-3", [
+    { id: "review-first", status: "running", pid: 4004, engine: "agy" },
+    { id: "review-second", status: "running", pid: 4005, engine: "gemini" }
+  ]);
+
+  const terminateProcessTreeFn = stubTerminate();
+  const result = cancelJob({ cwd, jobId: "review-first", all: true }, { terminateProcessTreeFn });
+
+  // The single-job shape is what every existing caller reads — the slash
+  // command, the MCP tool, and renderCancelReport.
+  assert.equal(result.groupId ?? null, null);
+  assert.equal(result.payload.jobId, "review-first");
+  assert.deepEqual(terminateProcessTreeFn.killed, [4004]);
+  assert.equal(readJobFile(resolveJobFile(cwd, "review-second")).status, "running", "its group peer was cancelled too");
+});
+
+test("a groupId whose members have all finished says so instead of \"no job found\"", () => {
+  const cwd = makeTempDir();
+  seedGroup(cwd, "review-group-4", [
+    { id: "review-old-a", status: "completed", pid: null },
+    { id: "review-old-b", status: "failed", pid: null }
+  ]);
+
+  assert.throws(
+    () => cancelJob({ cwd, jobId: "review-group-4", all: true }, { terminateProcessTreeFn: stubTerminate() }),
+    /group review-group-4 has no active jobs \(2 already finished\)/,
+    "the group exists; saying it was not found sends the user after an id they gave correctly"
+  );
 });
