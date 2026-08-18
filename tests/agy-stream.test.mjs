@@ -268,3 +268,88 @@ test("a SUCCESS envelope with an empty response does not let salvaged text pass 
   assert.ok(result.failure, "but completeness was never established, so this is not success");
   assert.notEqual(result.status, 0);
 });
+
+// --- what a run with no text at all hands back -------------------------------
+//
+// gi-2026-08-17-b2d9: AGY timed out after 194,226 tokens with every one of its
+// 82 step_update events carrying no text — the stream shape says nothing about
+// assistant text on tool steps. With nothing to render, the plugin relayed the
+// 84-line JSONL event log itself as the delegated model's answer, behind
+// DELEGATED_OUTPUT_MARKER. The events are valid JSON, so nothing downstream
+// could tell it apart from a reply.
+
+import { runGeminiReview } from "../plugins/gemini/scripts/lib/gemini.mjs";
+
+const NO_TEXT_STREAM = [
+  `{"event":"init","conversation_id":"${CONV}","init":{"cwd":"/repo"}}`,
+  `{"event":"step_update","step_update":{"conversation_id":"${CONV}","step_index":55,"state":"DONE","step_type":"tool","tool_name":"view_file","duration_seconds":0.028}}`,
+  `{"event":"result","result":{"conversation_id":"${CONV}","status":"ERROR","response":"","error":"timeout waiting for response","duration_seconds":103.8798991,"num_turns":1,"usage":{"input_tokens":180341,"output_tokens":13885,"thinking_tokens":11237,"cache_read_tokens":1366788,"total_tokens":194226}}}`
+].join("\n");
+
+async function timedOutTurnWithNoText() {
+  return runGeminiTurn("/repo", { prompt: "hi", write: false }, {
+    runCommandFn: stubRun({ stdout: NO_TEXT_STREAM, status: 1 }),
+    detectEngineFn: agyEngine("1.1.13")
+  });
+}
+
+test("the event log is never relayed as the delegated model's answer", async () => {
+  // Guard the fixture first: if it stopped looking like an event log, the
+  // assertion below would pass for the wrong reason.
+  assert.match(NO_TEXT_STREAM, /"event":"step_update"/, "fixture is still an event log");
+
+  const result = await timedOutTurnWithNoText();
+  assert.equal(result.finalMessage, "", "no text arrived, so there is no answer to hand over");
+});
+
+test("a run that returned nothing still reports what it cost", async () => {
+  const result = await timedOutTurnWithNoText();
+  assert.match(result.failure.summary, /194,226 tokens spent/);
+});
+
+test("a stream that recovered nothing says so rather than going quiet", async () => {
+  const result = await timedOutTurnWithNoText();
+  assert.match(result.failure.summary, /no response text was recovered/);
+});
+
+test("an envelope that did carry a response is not described as having recovered nothing", async () => {
+  // The failure here is not a timeout, and the response arrived. Saying "no
+  // response text was recovered" beside a response would be plainly false.
+  const errorWithText = [
+    `{"event":"step_update","step_update":{"step_index":0,"state":"DONE","step_type":"agent_response","text_delta":"the answer"}}`,
+    `{"event":"result","result":{"conversation_id":"${CONV}","status":"ERROR","response":"the answer","error":"tool call was denied","usage":{"total_tokens":42}}}`
+  ].join("\n");
+
+  const result = await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
+    runCommandFn: stubRun({ stdout: errorWithText, status: 1 }),
+    detectEngineFn: agyEngine("1.1.13")
+  });
+
+  assert.equal(result.finalMessage, "the answer");
+  assert.doesNotMatch(result.failure.summary, /no response text was recovered/);
+});
+
+test("a review never parses the event log for findings", async () => {
+  // Worse than the task path if it leaked: every event line is valid JSON, so a
+  // JSON-shaped non-review would reach the findings renderer.
+  const result = await runGeminiReview("/repo", { prompt: "review this", engine: "agy" }, {
+    runCommandFn: stubRun({ stdout: NO_TEXT_STREAM, status: 1 }),
+    detectEngineFn: agyEngine("1.1.13")
+  });
+
+  assert.equal(result.reviewText, "");
+  assert.equal(result.reviewJson, null);
+});
+
+test("the plain-json path still shows output that arrived and failed to parse", async () => {
+  // The fence left standing on purpose. Below the stream-json gate, rawStdout is
+  // a malformed envelope rather than a machine log: it is a diagnostic, and
+  // suppressing it would remove information instead of noise.
+  const junk = "agy: something went sideways before it could print an envelope";
+  const result = await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
+    runCommandFn: stubRun({ stdout: junk, status: 1 }),
+    detectEngineFn: agyEngine("1.1.11")
+  });
+
+  assert.equal(result.finalMessage, junk);
+});

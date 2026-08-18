@@ -204,8 +204,32 @@ function annotateFailureWithProgress(failure, structured) {
   const notes = [];
   if (structured.progressLabel) notes.push(`reached ${structured.progressLabel}`);
   if (structured.salvagedText) notes.push("partial output preserved");
+  // Only when the stream is what was read: on the plain-json path an absent
+  // response says nothing about recovery, because there is no stream to recover
+  // from. Guarded on `text` rather than on `salvagedText` so an envelope that
+  // did carry a response is never described as having recovered nothing.
+  else if (structured.streamed && !structured.text) notes.push("no response text was recovered");
+  const cost = describeAgyUsage(structured.usage);
+  if (cost) notes.push(cost);
   if (notes.length === 0) return failure;
   return { ...failure, summary: `${failure.summary} (${notes.join("; ")})` };
+}
+
+// AGY reports the turn's token usage in its envelope even when it has no
+// response to show for it — the run was billed either way. A report that says
+// only "it timed out" leaves the user to guess whether retrying is cheap; the
+// one that cost 194,226 tokens and the one that cost 2,000 call for different
+// decisions. Shape measured on AGY 1.1.13:
+//   {input_tokens, output_tokens, thinking_tokens, cache_read_tokens, total_tokens}
+// Only the total is reported: the breakdown is not what the next decision turns
+// on, and every field is optional as far as this code is concerned.
+function describeAgyUsage(usage) {
+  if (!usage || typeof usage !== "object") return null;
+  const total = Number(usage.total_tokens);
+  if (!Number.isFinite(total) || total <= 0) return null;
+  // Fixed locale: this string is asserted in tests and read in logs, so it must
+  // not change with the machine's locale.
+  return `${total.toLocaleString("en-US")} tokens spent`;
 }
 
 function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, engineInfo, brainRoot = null, conversationsBefore = null }) {
@@ -234,6 +258,8 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
       // output. The warning it replaces went to a stderr that detached workers
       // discard, so it was invisible exactly where it mattered.
       return {
+        streamed,
+        usage: null,
         text: String(recovered.response).trim(),
         threadId: recovered.convDir ?? null,
         // A completed transcript row means the work finished even though the
@@ -256,6 +282,8 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
     }
 
     return {
+      streamed,
+      usage: null,
       text: null,
       threadId: null,
       exitCode: failedExit,
@@ -288,6 +316,11 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
   const succeeded = envelope.status === "SUCCESS" && Boolean(envelopeText);
 
   return {
+    // Which of the two output shapes actually arrived. The caller needs it to
+    // decide whether rawStdout may stand in for an answer: under stream-json it
+    // is a machine event log and never may.
+    streamed,
+    usage: envelope.usage ?? null,
     text,
     // What the caller needs to say "this is partial, and here is how far it
     // got" instead of "it timed out". Null when nothing was salvaged.
@@ -467,7 +500,17 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
     exitCode = structured.exitCode;
     recoveryFailure = annotateFailureWithProgress(structured.failure, structured);
     threadId = structured.threadId;
-    if (structured.text) finalMessage = structured.text;
+    // Under stream-json, rawStdout is a JSONL event log — not an answer, and not
+    // anything a caller should be handed behind DELEGATED_OUTPUT_MARKER. Leaving
+    // finalMessage at its rawStdout default when the run produced no text did
+    // exactly that: an 84-line event stream relayed as the delegated model's
+    // reply. So a stream always speaks through structured.text, empty included.
+    //
+    // The plain-json path keeps the fallback. There rawStdout is a malformed or
+    // unparseable envelope, which is a diagnostic worth showing, and suppressing
+    // it would remove information rather than noise.
+    if (structured.streamed) finalMessage = structured.text ?? "";
+    else if (structured.text) finalMessage = structured.text;
   } else if (engineInfo.engine === "agy") {
     // Pre-1.1.8: recover the authoritative response and conversation id by
     // diffing the transcript directories captured before/after the spawn.
@@ -699,7 +742,14 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
     const structured = resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, engineInfo, brainRoot: agyBrainRoot, conversationsBefore: agyBefore });
     exitCode = structured.exitCode;
     recoveryFailure = annotateFailureWithProgress(structured.failure, structured);
-    if (structured.text) {
+    // Same rule as the task path: a stream's rawStdout is an event log, so it
+    // never stands in for review output. Parsing it for findings would be worse
+    // still — the events are valid JSON, so a JSON-shaped non-review could reach
+    // the findings renderer.
+    if (structured.streamed) {
+      reviewText = structured.text ?? "";
+      reviewJson = reviewText ? tryParseJsonFromText(reviewText) : null;
+    } else if (structured.text) {
       reviewText = structured.text;
       reviewJson = tryParseJsonFromText(reviewText);
     }
