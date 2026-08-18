@@ -284,3 +284,28 @@ test("an ordinary cancel is not given the caveat", () => {
     "terminated the running process"
   );
 });
+
+// The sweep can now answer what the exit code could not, so the report stops
+// speaking in "some processes" and says how many, and whether they died.
+test("a cancel that had to clean up after itself says how much", () => {
+  assert.equal(
+    describeTermination({ attempted: true, delivered: true, orphansKilled: [5678] }),
+    "terminated the running process, and 1 process it had left running"
+  );
+  assert.equal(
+    describeTermination({ attempted: true, delivered: true, orphansKilled: [5678, 5679] }),
+    "terminated the running process, and 2 processes it had left running"
+  );
+});
+
+test("a cancel counts what it could not kill, and still says it could not", () => {
+  const described = describeTermination({
+    attempted: true,
+    delivered: true,
+    treeIncomplete: true,
+    orphansRemaining: [5678]
+  });
+
+  assert.equal(described, "terminated the running process; 1 process it started could not be killed");
+  assert.match(described, /could not be killed/, "the phrase this report has always used is kept");
+});

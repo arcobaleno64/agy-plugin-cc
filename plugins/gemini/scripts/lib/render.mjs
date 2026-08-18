@@ -566,13 +566,29 @@ export function describeTermination(termination) {
   if (!termination.delivered) {
     return "no live process (it had already exited)";
   }
-  // Windows keeps a process's parent link after the parent exits, so taskkill /T
-  // can claim descendants that are not this job's. When it cannot kill some of
-  // them the job's own process is still gone, which is what "terminated" means
-  // here — but saying only that would hide that something it named survived.
+  // A sweep ran and counted, so say what it counted. The bare phrasings below are
+  // for the case where it could not run: taskkill/T can claim descendants that are
+  // not this job’s at all — Windows keeps a parent link after the parent exits, so
+  // a reused pid inherits strangers — and an exit code cannot tell those apart from
+  // the engine this job started.
+  const killed = termination.orphansKilled?.length ?? 0;
+  const remaining = termination.orphansRemaining?.length ?? 0;
+
+  if (remaining > 0) {
+    // "could not be killed" is kept word for word: it is the phrase this report has
+    // always used for a tree it did not finish, and the count is what is new.
+    return `terminated the running process; ${countOf(remaining)} it started could not be killed`;
+  }
+  if (killed > 0) {
+    return `terminated the running process, and ${countOf(killed)} it had left running`;
+  }
   return termination.treeIncomplete
     ? "terminated the running process; some processes the OS reported as its descendants could not be killed"
     : "terminated the running process";
+}
+
+function countOf(total) {
+  return total === 1 ? "1 process" : `${total} processes`;
 }
 
 export function renderCancelReport(job, termination) {

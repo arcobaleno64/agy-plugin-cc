@@ -29,9 +29,13 @@ cleared, so the query can name processes belonging to an earlier owner of that
 number, and those predate the job. Given no start time the sweep does nothing at
 all.
 
-Nothing new is printed. Both existing messages are unchanged; which one a run
-gets is now decided by measurement, so the caveat appears when something of the
-job's really is still running and stays away when it is not. A cancel with a live
+Which of the two existing messages a run gets is now decided by measurement, so
+the caveat appears when something of the job's really is still running and stays
+away when it is not. Both now carry a count, because the sweep knows one: a
+cancel that had to clean up says "terminated the running process, and 1 process
+it had left running", and one that could not says how many it could not kill
+rather than "some processes". The wording for a tree that could not be measured
+at all is unchanged, and so is every other message. A cancel with a live
 worker costs about 350ms more than it did — 335ms to 688ms measured, all of it
 the one child-process query. `wmic` is gone from Windows 11 26200, so that query
 is PowerShell, resolved absolutely like `where.exe` and `taskkill.exe` already
