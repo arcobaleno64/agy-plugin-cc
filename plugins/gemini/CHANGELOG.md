@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.22.1 — 2026-08-19 — A cancel that checks what it killed
+
+`/gemini:cancel` kills the worker with `taskkill /PID <worker> /T /F` and described
+the result from that command's exit code. Under load it could report "terminated
+the running process" while the engine the job started kept running: in one
+captured run the engine was created 484ms before the cancel finished, and was
+still alive 74 seconds later, still holding the job's workspace as its working
+directory.
+
+taskkill is not usually what kills that engine. The worker is spawned detached
+and the engine under it is not, so libuv puts the engine in a job object Windows
+closes along with the worker. Kill the worker inside the window between creating
+the engine and assigning it to that job and the engine escapes — and taskkill,
+which did kill the worker, exits 0 and says so honestly.
+
+The exit code is no more useful in the other direction. Over 36 cancels under
+load, 15 reported "some processes the OS reported as its descendants could not be
+killed" and exactly one leaked an engine: that message is mostly strangers
+inherited through a reused pid, which Windows lets go on naming a dead parent.
+
+So the tree is measured after the kill rather than read off an exit code — the
+same move 0.20.1 made for the target pid itself. Once the worker is gone its
+children are queried by pid, anything created after the job started is killed,
+and the report describes what is left. What keeps that safe is the comparison
+against the job's start time: pids are reused and the parent link is never
+cleared, so the query can name processes belonging to an earlier owner of that
+number, and those predate the job. Given no start time the sweep does nothing at
+all.
+
+Nothing new is printed. Both existing messages are unchanged; which one a run
+gets is now decided by measurement, so the caveat appears when something of the
+job's really is still running and stays away when it is not. A cancel with a live
+worker costs about 350ms more than it did — 335ms to 688ms measured, all of it
+the one child-process query. `wmic` is gone from Windows 11 26200, so that query
+is PowerShell, resolved absolutely like `where.exe` and `taskkill.exe` already
+are.
+
 ## 0.22.0 — 2026-08-18 — Cancel a group; say which copy of the plugin is answering
 
 ### `/gemini:cancel <group-id>`
