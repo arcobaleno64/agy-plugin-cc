@@ -64,8 +64,7 @@ import {
   getGeminiPlanTier,
   hasGeminiCredentials,
   getSessionRuntimeStatus,
-  MIN_TURN_TIMEOUT_SECONDS,
-  MAX_TURN_TIMEOUT_SECONDS
+  normalizeTurnTimeoutSeconds
 } from "./lib/gemini.mjs";
 import { MODEL_MAP_METADATA, MODEL_ALIAS_ENTRIES } from "./lib/model-map.mjs";
 
@@ -1034,14 +1033,7 @@ function enqueueBackgroundJob(cwd, job, request, workerCommand, { spawnFn = spaw
 // — advice that cannot work, because the cause is the size of the request, not a
 // transient fault. Retrying an identical batch fails identically.
 function parseTimeoutSeconds(value) {
-  if (value == null) return null;
-  const seconds = Number(value);
-  if (!Number.isInteger(seconds) || seconds < MIN_TURN_TIMEOUT_SECONDS || seconds > MAX_TURN_TIMEOUT_SECONDS) {
-    throw new Error(
-      `Invalid --timeout "${value}". Give whole seconds between ${MIN_TURN_TIMEOUT_SECONDS} and ${MAX_TURN_TIMEOUT_SECONDS}.`
-    );
-  }
-  return seconds;
+  return normalizeTurnTimeoutSeconds(value, "--timeout");
 }
 
 function validateEffortLevel(effort) {

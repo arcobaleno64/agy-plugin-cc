@@ -1,6 +1,6 @@
 ---
 description: Run an adversarial Gemini code review that challenges the implementation approach and design choices
-argument-hint: '[--wait|--background] [--deep] [--base <ref>] [--scope auto|working-tree|branch] [--engine <agy|gemini> | --engines gemini,agy] [--model <flash|pro>] [focus ...]'
+argument-hint: '[--wait|--background] [--deep] [--base <ref>] [--scope auto|working-tree|branch] [--engine <agy|gemini> | --engines gemini,agy] [--model <flash|pro>] [--timeout <seconds>] [focus ...]'
 disable-model-invocation: true
 allowed-tools: Read, Glob, Grep, Bash(node:*), Bash(git:*), AskUserQuestion
 ---
@@ -20,6 +20,7 @@ its list and then wrote out yourself — chosen, never copied:
 - `--scope <value>`: `auto`, `working-tree`, `branch`
 - `--engine <value>`: `auto`, `gemini`, `agy`
 - `--model <value>`: an alias (`flash`, `pro`, `lite`, …) or an id matching `^[A-Za-z0-9][A-Za-z0-9._-]*$`
+- `--timeout <seconds>`: only if it is entirely digits and between 30 and 3600
 - `--deep`, `--wait`, `--background`, `--json`: literal flags, no value
 Any remaining text is the review focus. It is free text, so there is no safe way
 to quote it into a command line: use the **Write** tool to put it in a file and
@@ -69,6 +70,7 @@ Argument handling:
 - Unlike `/gemini:review`, it can take extra focus text after the flags.
 - `--engines gemini,agy` queues the same blind prompt on both available engines as a background group. The jobs share a group ID but do not receive each other's identity or output. Do not combine `--engines` with `--engine` or `--wait`.
 - If one requested engine is unavailable, the runtime prints a degradation warning to stderr and queues the remaining engine as a normal single job. If neither is available, it fails without creating a job.
+- `--timeout <seconds>` is not only how long the run may take: it is also a ceiling on how much output can be produced, because a turn that cannot finish emitting inside the window is killed. Raise it for a large scope or a batch; the AGY default is 120 seconds.
 - `--deep` runs an **agentic** review: Gemini uses its read-only tools to inspect repo context beyond the diff (dependency manifests, untracked files, callers) before producing the same JSON findings. Slower and higher-token; omit it for the fast, diff-scoped default. Pair `--deep` with `--background` for larger changes.
 
 Foreground flow:

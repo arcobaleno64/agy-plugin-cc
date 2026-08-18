@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.21.0 — 2026-08-18 — The timeout flag nobody could reach
+
+`--timeout <seconds>` has been parsed by the CLI since it was added, and was
+offered by neither surface a user actually drives. The slash commands assemble
+their calls from a whitelist of checked literal flags, and `--timeout` was not on
+it; the MCP tools declare `additionalProperties: false`, and none of their
+schemas had it. So the AGY default of 120 seconds was, in practice, not a default
+but a fixed limit.
+
+That limit is what both 2026-08-17 timeout incidents hit — the ones v0.20.0
+taught the plugin to *report* honestly. This is the other half: the number is now
+adjustable by whoever is paying for the run. `lib/gemini.mjs` had already
+recorded the gap in a comment; nothing had closed it.
+
+The window is also a ceiling on output size, which is the part that is easy to
+miss. A turn that cannot finish emitting its answer inside the window is killed
+with nothing to show, so a large batch or a `--deep` review over a wide diff hits
+the timeout as a size limit long before it hits it as a patience limit. Every
+place the flag is now documented says so, because "it timed out" reads as "it was
+slow" and sends people to make the prompt wait rather than make it smaller.
+
+Reachable from:
+
+- `/gemini:review`, `/gemini:adversarial-review`, `/gemini:rescue` — argument hint
+  and flag whitelist, with the same digits-and-range check the other values get
+- `gemini_rescue`, `gemini_review`, `gemini_adversarial_review` over MCP, with
+  bounds declared from the runtime constants so the schema cannot drift from what
+  is enforced
+
+`/gemini:rescue` does not call the runtime itself; it forwards to the
+`gemini:gemini-rescue` subagent, which builds the `task` call from its own
+instructions. Those now name the flag too — one preserved by the command and
+unknown to the subagent would be preserved into nothing, and a test pins both
+halves.
+
+The range check moved into a single exported function rather than being written
+twice. A caller arriving over MCP is held to the same 30–3600 rule as one typing
+the flag: a client is expected to enforce a declared schema, but nothing makes
+it, and an unchecked value becomes a `spawnSync` timeout nobody chose.
 ## 0.20.1 — 2026-08-18 — A cancel that worked, reported as a failure
 
 `/gemini:cancel` could kill the job it was aimed at, report an error, and leave

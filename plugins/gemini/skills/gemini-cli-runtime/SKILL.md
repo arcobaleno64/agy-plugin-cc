@@ -28,6 +28,7 @@ Command selection:
 - If the forwarded request includes `--background` or `--wait`, treat that as Claude-side execution control only. Strip it before calling `task`.
 - If the forwarded request includes `--model`, normalize aliases and pass it through.
 - If the forwarded request includes `--effort`, pass it through to `task`.
+- If the forwarded request includes `--timeout <seconds>`, pass it through to `task`. Whole seconds, 30 to 3600. It bounds both the run's duration and the amount of output it can emit before being killed.
 - `--effort` accepted values: Gemini engine accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`; AGY engine accepts only `low`, `medium`, `high`.
 - `--resume`: add `--resume-last`, even if the request text is ambiguous.
 - `--fresh`: use a fresh `task` run, do not add `--resume-last`.
