@@ -15,6 +15,24 @@ const SCRIPT = path.join(ROOT, "scripts", "reviewer-demo.mjs");
 // credential breaks with it — and nothing else in the suite would notice,
 // because it drives the commands from outside rather than importing them.
 
+// Cleanup is best effort, like the demo’s own removeWorkspace() and
+// isolate-state.mjs. The cancel step leaves a stand-in engine whose cwd is the
+// workspace; if it outlives the retries, Windows refuses the delete. The OS
+// reclaims temp either way, and throwing from an after hook fails a test whose
+// assertions all passed — which is how this surfaced, as a red "redaction
+// claim" that had nothing to do with redaction.
+const BUSY = ["EPERM", "EBUSY", "ENOTEMPTY", "EACCES"];
+
+function discardWorkspace(kept) {
+  if (!kept) return;
+  try {
+    fs.rmSync(kept, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+  } catch (error) {
+    if (!BUSY.includes(error?.code)) throw error;
+    process.stderr.write(`left ${kept} for the OS: ${error.code} (a demo process still holds it)\n`);
+  }
+}
+
 test("reviewer-demo lists its steps without running anything", () => {
   const result = run("node", [SCRIPT, "--list"], { cwd: ROOT });
   assert.equal(result.status, 0, result.stderr);
@@ -28,9 +46,7 @@ test("reviewer-demo runs every command end to end", (t) => {
   // rather than taken from the demo's own summary line.
   const result = run("node", [SCRIPT, "--keep"], { cwd: ROOT });
   const kept = (result.stdout.match(/^kept: (.+)$/m) ?? [])[1];
-  t.after(() => {
-    if (kept) fs.rmSync(kept, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
-  });
+  t.after(() => discardWorkspace(kept));
 
   assert.equal(result.status, 0, result.stderr);
 
@@ -62,9 +78,7 @@ test("reviewer-demo runs every command end to end", (t) => {
 test("reviewer-demo's redaction claim holds against the files it leaves behind", (t) => {
   const result = run("node", [SCRIPT, "--keep"], { cwd: ROOT });
   const kept = (result.stdout.match(/^kept: (.+)$/m) ?? [])[1];
-  t.after(() => {
-    if (kept) fs.rmSync(kept, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
-  });
+  t.after(() => discardWorkspace(kept));
 
   assert.equal(result.status, 0, result.stderr);
   assert.ok(kept, "--keep did not report the workspace path");
