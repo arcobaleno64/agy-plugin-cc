@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.20.1 — 2026-08-18 — A cancel that worked, reported as a failure
+
+`/gemini:cancel` could kill the job it was aimed at, report an error, and leave
+the cancellation unrecorded. The job was then reconciled as a stale one minutes
+later, so the user saw a failed cancel followed by a failed job — for work that
+had in fact been cancelled.
+
+Windows never clears a process's parent link when the parent exits, so a reused
+pid inherits whatever processes still name it as their parent. `taskkill /T`
+tries to kill those too, and exits 128 when it may not. Observed on this
+repository's own reviewer demo: two system processes were reported as descendants
+of a job worker, taskkill refused them ("the attempted operation is not
+supported"), and `terminateProcessTree` treated the non-zero exit as fatal — even
+though the worker itself was gone. Intermittent, because it needs a pid
+collision, which is why it surfaced as a flaky test rather than a bug report.
+
+The exit code cannot answer the question that matters, so it is no longer asked
+to. When taskkill reports trouble, the process itself is checked, with a short
+bounded settle window because `/F` returns before the kernel has finished the
+teardown. Gone means the cancel worked; still running still raises. Measured
+rather than parsed: taskkill's per-process SUCCESS and ERROR lines are localized,
+and a check that reads them works only in the locale it was written for.
+
+A cancel that could not reach every claimed descendant now says so instead of
+silently reporting a clean kill. The job's own process is gone either way, but
+something the OS named as underneath it survived, and that is not visible
+anywhere else.
+
+Also here: `scripts/reviewer-demo.mjs` waited a fixed two seconds for a worker to
+start before cancelling it, which is a guess about a machine's scheduling. It now
+polls for the state the step needs. And "is this pid alive" had two
+implementations; there is one now, in the process module, with the injection seam
+its callers use unchanged.
+
 ## 0.20.0 — 2026-08-18 — What a run that was cut off hands back
 
 Two field notes from dogfooding v0.19.0, both about the same moment: AGY is

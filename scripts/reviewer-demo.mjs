@@ -204,6 +204,42 @@ function waitForJob(env, cwd, jobId, timeoutMs = 60_000) {
   return "timed-out";
 }
 
+// The cancel step needs a job whose worker is up, because what `cancel`
+// terminates is that worker's process tree. `task --background` returns as soon
+// as the worker is *spawned*, not when it has started, so the step used to wait
+// a fixed two seconds and hope. On a loaded machine two seconds is not enough:
+// the walkthrough then cancelled a job the state directory could not yet
+// describe, and the step produced no output at all -- a failure of the demo's
+// timing, reported as if the plugin could not cancel a job.
+//
+// So wait for the state the step actually needs rather than guessing how long
+// reaching it takes. `pid` is what cancel terminates and the worker records it
+// with the running status, which makes its presence the signal that there is a
+// tree to kill.
+function waitForRunningJob(env, cwd, jobId, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const probe = spawnSync(process.execPath, ["--no-deprecation", COMPANION, "status", jobId, "--json"], {
+      cwd, env, encoding: "utf8", windowsHide: true
+    });
+    try {
+      const payload = JSON.parse(probe.stdout);
+      const job = payload.job ?? payload.jobs?.[0] ?? payload;
+      const status = String(job?.status ?? "");
+      if (status === "running" && job.pid) return true;
+      // Anything neither queued nor running has finished, and will never reach
+      // running. Phrased as the complement of "still active" rather than as a
+      // list of terminal states, which would need updating every time the
+      // runtime gains one.
+      if (status && status !== "queued" && status !== "running") return false;
+    } catch {
+      // status not written yet — keep waiting
+    }
+    sleep(200);
+  }
+  return false;
+}
+
 function sleep(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
@@ -303,7 +339,9 @@ function main() {
     const toCancel = show(["task", "--background", "a job that will be cancelled"], { cwd: repo, env });
     const cancelId = (toCancel.body.match(JOB_ID) ?? [])[1];
     if (cancelId) {
-      sleep(2000); // let the worker spawn the engine before killing the tree
+      if (!waitForRunningJob(env, repo, cancelId)) {
+        note("The worker never reported a running process; cancelling anyway.");
+      }
       show(["cancel", cancelId], { cwd: repo, env, allowFailure: true });
       show(["status", cancelId], { cwd: repo, env, allowFailure: true });
     } else {

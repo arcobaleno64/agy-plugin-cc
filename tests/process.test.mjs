@@ -286,3 +286,72 @@ test("formatCommandFailure formats exit-code and signal failures", () => {
     "node: signal=SIGKILL"
   );
 });
+
+// ---------------------------------------------------------------------------
+// Windows never clears a process's parent link when the parent exits, so a
+// reused pid inherits whatever still names it as parent. `taskkill /T` then
+// tries to kill those too, and exits 128 when it may not — observed on this
+// repository's own reviewer demo, where two system processes were reported as
+// descendants of a job worker. The worker died; the exit code said failure;
+// /gemini:cancel threw, the user's cancellation was never recorded, and the job
+// was later reconciled as stale. Intermittent, because it needs a pid collision.
+//
+// The exit code cannot answer the only question that matters. These pin that the
+// answer comes from measuring the process rather than reading a status code or a
+// localized message.
+// ---------------------------------------------------------------------------
+
+function taskkillPartialFailure() {
+  return {
+    platform: "win32",
+    runCommandImpl(command, args) {
+      return {
+        command,
+        args,
+        status: 128,
+        signal: null,
+        stdout: "",
+        // Deliberately not English: the real message is localized, which is why
+        // nothing here may depend on reading it.
+        stderr: "錯誤: PID 為 2428 的處理程序無法終止。原因: 不支援所嘗試的操作。",
+        error: null
+      };
+    }
+  };
+}
+
+test("a taskkill that could not kill every claimed descendant still counts as delivered when the target is gone", () => {
+  const outcome = terminateProcessTree(1234, {
+    ...taskkillPartialFailure(),
+    isPidAlive: () => false
+  });
+
+  assert.equal(outcome.attempted, true);
+  assert.equal(outcome.delivered, true, "the process this cancel was aimed at is gone");
+  assert.equal(outcome.treeIncomplete, true, "and the caller is told something it claimed survived");
+});
+
+test("a taskkill failure with the target still running is still an error", () => {
+  assert.throws(
+    () => terminateProcessTree(1234, { ...taskkillPartialFailure(), isPidAlive: () => true }),
+    /taskkill/,
+    "a cancel that did not cancel must not report success"
+  );
+});
+
+test("a target that exits a moment after taskkill returns is not called a failure", () => {
+  // `taskkill /F` returns before the kernel has finished the teardown, so an
+  // immediate single check can still see the process. Without the settle window
+  // this run is indistinguishable from the one above.
+  let looks = 0;
+  const outcome = terminateProcessTree(1234, {
+    ...taskkillPartialFailure(),
+    isPidAlive: () => {
+      looks += 1;
+      return looks < 3;
+    }
+  });
+
+  assert.equal(outcome.delivered, true);
+  assert.ok(looks >= 3, "it gave up before the process had a chance to exit");
+});

@@ -266,3 +266,21 @@ test("renderStoredJobResult includes stored failure metadata when there is no ou
   assert.match(out, /Gemini authentication failed\./);
   assert.match(out, /Run `gemini` once to authenticate\./);
 });
+
+
+// A cancel that killed the job's own process but could not touch everything
+// Windows called its descendant is a success with a caveat, and the caveat is
+// the part a user cannot find out any other way.
+test("a cancel whose process tree was incomplete says so", () => {
+  assert.match(
+    describeTermination({ attempted: true, delivered: true, treeIncomplete: true }),
+    /could not be killed/
+  );
+});
+
+test("an ordinary cancel is not given the caveat", () => {
+  assert.equal(
+    describeTermination({ attempted: true, delivered: true }),
+    "terminated the running process"
+  );
+});
