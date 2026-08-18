@@ -4,7 +4,7 @@ import fs from "node:fs";
 
 import { makeTempDir } from "./helpers.mjs";
 import { readJobFile, resolveJobFile, saveState, setConfig, writeJobFile } from "../plugins/gemini/scripts/lib/state.mjs";
-import { buildStatusSnapshot } from "../plugins/gemini/scripts/lib/job-control.mjs";
+import { buildStatusSnapshot, resolveResultJob } from "../plugins/gemini/scripts/lib/job-control.mjs";
 import { runTrackedJob } from "../plugins/gemini/scripts/lib/tracked-jobs.mjs";
 
 test("buildStatusSnapshot surfaces the stop-review-gate flag", () => {
@@ -96,4 +96,52 @@ test("runTrackedJob persists structured failure metadata when the runner throws"
   assert.equal(snapshot.latestFinished.failure.category, "rate-limit");
   assert.equal(snapshot.latestFinished.failure.retryable, true);
   assert.equal(stored.failure.category, "rate-limit");
+});
+
+// A cut-off run that produced text is a third terminal state. These pin the
+// mapping and, more importantly, that /gemini:result can still read it back —
+// the state exists so a user is not told to re-buy an answer they already have,
+// which fails if the answer becomes unreachable.
+test("runTrackedJob stores a cut-off run that produced text as partial", async () => {
+  const cwd = makeTempDir();
+  await runTrackedJob(
+    { id: "task-partial", title: "Gemini Task", workspaceRoot: cwd, jobClass: "task" },
+    () => ({
+      exitStatus: 1,
+      partial: true,
+      payload: { rawOutput: "the whole deliverable" },
+      rendered: "the whole deliverable",
+      summary: "done-ish",
+      failure: { category: "timeout", retryable: true, summary: "cut off", nextStep: "Read it first." }
+    })
+  );
+
+  const stored = readJobFile(resolveJobFile(cwd, "task-partial"));
+  assert.equal(stored.status, "partial");
+  assert.equal(stored.phase, "partial");
+  assert.equal(stored.failure.nextStep, "Read it first.", "the failure is where the next step lives");
+});
+
+test("a partial job is retrievable through the same path as a completed one", async () => {
+  const cwd = makeTempDir();
+  await runTrackedJob(
+    { id: "task-partial-read", title: "Gemini Task", workspaceRoot: cwd, jobClass: "task" },
+    () => ({ exitStatus: 1, partial: true, payload: { rawOutput: "text" }, rendered: "text", summary: "s" })
+  );
+
+  const { job } = resolveResultJob(cwd, "task-partial-read", { all: true });
+  assert.equal(job.id, "task-partial-read");
+  assert.equal(job.status, "partial");
+});
+
+test("a successful run is completed even if the runner also set partial", async () => {
+  const cwd = makeTempDir();
+  await runTrackedJob(
+    { id: "task-zero", title: "Gemini Task", workspaceRoot: cwd, jobClass: "task" },
+    () => ({ exitStatus: 0, partial: true, payload: { rawOutput: "ok" }, rendered: "ok", summary: "s" })
+  );
+
+  const stored = readJobFile(resolveJobFile(cwd, "task-zero"));
+  assert.equal(stored.status, "completed");
+  assert.equal(stored.failure ?? null, null);
 });

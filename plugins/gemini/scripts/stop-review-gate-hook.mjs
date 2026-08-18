@@ -26,9 +26,12 @@ function emitDecision(payload) {
   process.stdout.write(`${JSON.stringify(payload)}\n`);
 }
 
-function hasCompletedWriteTask(jobs) {
+// Exported for test: this predicate decides whether a session that edited the
+// repository is reviewed before it ends, so which statuses count is a claim that
+// has to be pinned rather than read off the line.
+export function hasCompletedWriteTask(jobs) {
   return jobs.some(
-    (job) => job.write === true && job.status === "completed" && job.jobClass === "task"
+    (job) => job.write === true && (job.status === "completed" || job.status === "partial") && job.jobClass === "task"
   );
 }
 

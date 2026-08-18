@@ -109,7 +109,7 @@ export const TOOLS = [
   tool(
     "gemini_job_status",
     "Check a delegated job's status",
-    "Return the current state of a Gemini companion job.",
+    "Return the current state of a Gemini companion job. Terminal status is `completed`, `failed`, `cancelled`, or `partial` — `partial` means the engine was cut off after producing text, so output exists and is worth reading, but nothing confirmed it is the whole answer. Do not treat `partial` as failure: re-running it is billed from the start.",
     { readOnlyHint: true, openWorldHint: false },
     ["workspace", "jobId"],
     {
@@ -120,7 +120,7 @@ export const TOOLS = [
   tool(
     "gemini_job_result",
     "Read a finished job's output",
-    "Return the stored output of a finished Gemini companion job.",
+    "Return the stored output of a finished Gemini companion job, including one whose status is `partial` (cut off after producing text — read it before deciding to re-run).",
     { readOnlyHint: true, openWorldHint: false },
     ["workspace", "jobId"],
     {

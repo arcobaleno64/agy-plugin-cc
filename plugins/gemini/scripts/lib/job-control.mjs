@@ -159,6 +159,8 @@ function fallbackJobPhase(job) {
       return "cancelled";
     case "failed":
       return "failed";
+    case "partial":
+      return "partial";
     case "completed":
       return "done";
     default:
@@ -172,12 +174,12 @@ export function enrichJob(job, options = {}) {
     ...job,
     kindLabel: getJobTypeLabel(job),
     progressPreview:
-      job.status === "queued" || job.status === "running" || job.status === "failed"
+      job.status === "queued" || job.status === "running" || job.status === "failed" || job.status === "partial"
         ? readJobProgressPreview(job.logFile, maxProgressLines)
         : [],
     elapsed: formatElapsedDuration(job.startedAt ?? job.createdAt, job.completedAt ?? null),
     duration:
-      job.status === "completed" || job.status === "failed" || job.status === "cancelled"
+      job.status === "completed" || job.status === "failed" || job.status === "partial" || job.status === "cancelled"
         ? formatElapsedDuration(job.startedAt ?? job.createdAt, job.completedAt ?? job.updatedAt)
         : null
   };
@@ -399,7 +401,7 @@ export function resolveResultJob(cwd, reference, options = {}) {
   const selected = matchJobReference(
     jobs,
     reference,
-    (job) => job.status === "completed" || job.status === "failed" || job.status === "cancelled"
+    (job) => job.status === "completed" || job.status === "failed" || job.status === "partial" || job.status === "cancelled"
   );
 
   if (selected) {

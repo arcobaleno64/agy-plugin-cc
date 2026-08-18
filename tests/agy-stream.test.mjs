@@ -353,3 +353,69 @@ test("the plain-json path still shows output that arrived and failed to parse", 
 
   assert.equal(result.finalMessage, junk);
 });
+
+// --- a cut-off run that did produce text -------------------------------------
+//
+// gi-2026-08-17-c4a1: the run produced its entire deliverable — seven findings,
+// both closing sections, nothing truncated — and was stored as `failed` with
+// "Retry later, reduce prompt size or review scope", which for that run buys a
+// second identical answer at full price. The envelope is still the authority on
+// completeness (a SUCCESS response is what makes a run successful, and that is
+// unchanged), so this does not become a success. It stops being a bare failure.
+
+function streamCutAfter(state, text) {
+  return [
+    `{"event":"step_update","step_update":{"conversation_id":"${CONV}","step_index":56,"state":"${state}","step_type":"agent_response","text_delta":${JSON.stringify(text)}}}`,
+    `{"event":"result","result":{"conversation_id":"${CONV}","status":"ERROR","response":"","error":"timeout waiting for response","usage":{"total_tokens":1000}}}`
+  ].join("\n");
+}
+
+test("a run cut off after a finished response block is not told to retry", async () => {
+  const result = await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
+    runCommandFn: stubRun({ stdout: streamCutAfter("DONE", "the whole deliverable"), status: 1 }),
+    detectEngineFn: agyEngine("1.1.13")
+  });
+
+  assert.equal(result.partial, true);
+  assert.equal(result.finalMessage, "the whole deliverable");
+  assert.match(result.failure.summary, /the recovered response block is complete/);
+  assert.doesNotMatch(result.failure.nextStep, /Retry later/);
+  assert.match(result.failure.nextStep, /Read the recovered response below/);
+});
+
+test("a run cut off mid-answer is partial but still says the text was truncated", async () => {
+  const result = await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
+    runCommandFn: stubRun({ stdout: streamCutAfter("ACTIVE", "half of a sen"), status: 1 }),
+    detectEngineFn: agyEngine("1.1.13")
+  });
+
+  assert.equal(result.partial, true);
+  assert.match(result.failure.summary, /partial output preserved/);
+  assert.doesNotMatch(result.failure.summary, /response block is complete/);
+  assert.match(result.failure.nextStep, /Retry later/, "there is nothing complete to read instead");
+});
+
+test("a run with nothing to show is a failure, not a partial one", async () => {
+  const result = await timedOutTurnWithNoText();
+  assert.equal(result.partial, false, "partial promises text; there is none");
+});
+
+test("a successful run is never partial", async () => {
+  const result = await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
+    runCommandFn: stubRun({ stdout: MEASURED_STREAM }),
+    detectEngineFn: agyEngine("1.1.13")
+  });
+  assert.equal(result.status, 0);
+  assert.equal(result.partial, false);
+});
+
+test("a cut-off review is partial too, and keeps the findings it produced", async () => {
+  const findings = JSON.stringify({ verdict: "needs-attention", summary: "s", findings: [], next_steps: [] });
+  const result = await runGeminiReview("/repo", { prompt: "review this", engine: "agy" }, {
+    runCommandFn: stubRun({ stdout: streamCutAfter("DONE", findings), status: 1 }),
+    detectEngineFn: agyEngine("1.1.13")
+  });
+
+  assert.equal(result.partial, true);
+  assert.equal(result.reviewJson.verdict, "needs-attention");
+});
