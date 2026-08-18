@@ -168,9 +168,19 @@ export async function runTrackedJob(job, runner, options = {}) {
 
   try {
     const execution = await runner();
-    const completionStatus = execution.exitStatus === 0 ? "completed" : "failed";
+    // Three terminal states, not two. A run that was cut off after producing
+    // text is neither: calling it "completed" would claim a completeness the
+    // engine never confirmed, and calling it "failed" told users to pay for a
+    // second copy of an answer already in hand (field note gi-2026-08-17-c4a1).
+    // The runner decides — see the `partial` flag in lib/gemini.mjs — because
+    // only it knows whether text was salvaged or delivered.
+    const completionStatus = execution.exitStatus === 0
+      ? "completed"
+      : (execution.partial ? "partial" : "failed");
     const completedAt = nowIso();
-    const failure = completionStatus === "failed"
+    // A partial run keeps its failure: that is where the next step lives, and it
+    // is the part that stops a user re-running work they already have.
+    const failure = completionStatus !== "completed"
       ? (execution.failure ?? classifyCliFailure({
           status: execution.exitStatus,
           stderr: execution.payload?.gemini?.stderr ?? execution.payload?.stderr ?? "",
@@ -185,7 +195,7 @@ export async function runTrackedJob(job, runner, options = {}) {
       turnId: execution.turnId ?? null,
       engine: execution.engine ?? runningRecord.engine ?? null,
       pid: null,
-      phase: completionStatus === "completed" ? "done" : "failed",
+      phase: completionStatus === "completed" ? "done" : completionStatus,
       completedAt,
       result: execution.payload,
       rendered: execution.rendered,
@@ -198,7 +208,7 @@ export async function runTrackedJob(job, runner, options = {}) {
       turnId: execution.turnId ?? null,
       engine: execution.engine ?? runningRecord.engine ?? null,
       summary: execution.summary,
-      phase: completionStatus === "completed" ? "done" : "failed",
+      phase: completionStatus === "completed" ? "done" : completionStatus,
       pid: null,
       completedAt,
       ...(failure ? { failure } : {})

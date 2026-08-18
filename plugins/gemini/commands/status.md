@@ -42,6 +42,12 @@ If the user did not name a job:
 If the user named a job that appears in the output above:
 - Present that job's full entry. Do not summarize or condense it.
 
+A status of `partial` is not a failure. It means the engine was cut off after it
+had produced text: the output is stored and readable with `/gemini:result`, but
+nothing confirmed it is the whole answer. Say so rather than reporting the job as
+failed, and point at `/gemini:result` before suggesting a re-run — a re-run is
+billed from the start.
+
 If the user asked to wait, or for a job from another session (`--all`), run the
 companion again with those literal flags and the verified id, then present the
 result the same way.

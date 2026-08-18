@@ -385,7 +385,7 @@ export function renderStatusReport(report) {
     lines.push("Latest finished:");
     pushJobDetails(lines, report.latestFinished, {
       showDuration: true,
-      showLog: report.latestFinished.status === "failed"
+      showLog: report.latestFinished.status === "failed" || report.latestFinished.status === "partial"
     });
     lines.push("");
   }
@@ -395,7 +395,7 @@ export function renderStatusReport(report) {
     for (const job of report.recent) {
       pushJobDetails(lines, job, {
         showDuration: true,
-        showLog: job.status === "failed"
+        showLog: job.status === "failed" || job.status === "partial"
       });
     }
     lines.push("");

@@ -601,7 +601,7 @@ async function resolveLatestTrackedTaskThread(cwd, options = {}) {
     throw new Error(`Task ${activeTask.id} is still running. Use /gemini:status before continuing it.`);
   }
 
-  const trackedTask = jobs.find((job) => job.jobClass === "task" && job.status === "completed" && job.threadId);
+  const trackedTask = jobs.find((job) => job.jobClass === "task" && (job.status === "completed" || job.status === "partial") && job.threadId);
   if (trackedTask) {
     return { id: trackedTask.threadId };
   }
@@ -749,6 +749,7 @@ async function executeReviewRun(request) {
 
   return {
     exitStatus: result.status,
+    partial: Boolean(result.partial),
     threadId: null,
     turnId: null,
     engine: result.engine ?? null,
@@ -839,6 +840,7 @@ ${rendered}`
 
   return {
     exitStatus: result.status,
+    partial: Boolean(result.partial),
     threadId: result.threadId ?? null,
     turnId: null,
     engine: result.engine ?? null,
@@ -1543,7 +1545,7 @@ async function handleTaskResumeCandidate(argv) {
     );
     return;
   }
-  const candidate = jobs.find((job) => job.jobClass === "task" && job.status === "completed" && job.threadId);
+  const candidate = jobs.find((job) => job.jobClass === "task" && (job.status === "completed" || job.status === "partial") && job.threadId);
   const payload = candidate
     ? { available: true, jobId: candidate.id, threadId: candidate.threadId, title: candidate.title }
     : { available: false };

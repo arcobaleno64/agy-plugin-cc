@@ -56,3 +56,33 @@ test("an untruncated review reports the summary and the count", () => {
   assert.match(reason, /1 finding\b/);
   assert.doesNotMatch(reason, /too large to review in full/);
 });
+
+// ---------------------------------------------------------------------------
+// Which jobs arm the gate. The question is "did a write task finish", not "did
+// it succeed": a --write turn cut off partway through has still edited the
+// working tree, and those are exactly the edits nobody reviewed. Adding the
+// `partial` status without adding it here would have quietly opened a hole that
+// did not exist before it.
+// ---------------------------------------------------------------------------
+
+import { hasCompletedWriteTask } from "../plugins/gemini/scripts/stop-review-gate-hook.mjs";
+
+const writeTask = (status) => ({ write: true, status, jobClass: "task" });
+
+test("a completed write task arms the gate", () => {
+  assert.equal(hasCompletedWriteTask([writeTask("completed")]), true);
+});
+
+test("a partial write task arms the gate — its edits are in the tree either way", () => {
+  assert.equal(hasCompletedWriteTask([writeTask("partial")]), true);
+});
+
+test("a running or failed write task does not arm the gate", () => {
+  assert.equal(hasCompletedWriteTask([writeTask("running")]), false);
+  assert.equal(hasCompletedWriteTask([writeTask("failed")]), false);
+});
+
+test("a partial job that is not a write task leaves the gate alone", () => {
+  assert.equal(hasCompletedWriteTask([{ write: false, status: "partial", jobClass: "task" }]), false);
+  assert.equal(hasCompletedWriteTask([{ write: true, status: "partial", jobClass: "review" }]), false);
+});
