@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.20.0 — 2026-08-18 — What a run that was cut off hands back
+
+Two field notes from dogfooding v0.19.0, both about the same moment: AGY is
+killed by the plugin's 2-minute cap while the turn is still going. Neither was a
+crash. Both produced a confident report of something that had not happened.
+
+### The event log was relayed as the model's answer
+
+A `--output-format stream-json` run that produced no assistant text handed back
+the JSONL event stream itself, framed by the delegated-output marker as though it
+were the reply. Measured on a real run: 84 event lines, 194,226 tokens, not one
+`text_delta` among them, relayed verbatim to the caller. Every line is valid
+JSON, so nothing downstream could tell it from an answer — and on the review path
+it would have been parsed for findings.
+
+The cause was a default. `finalMessage` started as the raw stdout and was only
+overwritten when the structured result had text, so an empty result left the raw
+stream standing. A stream now always speaks through the structured result, empty
+included. Below the stream-json gate the raw-stdout fallback stays: there it is a
+malformed envelope, which is a diagnostic worth showing rather than noise.
+
+A run that returns nothing now says so, and says what it cost. The envelope
+carries the turn's token usage even when it has no response to show for it, and
+194,226 tokens spent and 2,000 call for different decisions.
+
+### A finished answer was filed as a failure
+
+The other run produced its entire deliverable — seven findings, both closing
+sections, nothing truncated — and was stored as `failed` with "Retry later,
+reduce prompt size or review scope". For that run, the advice buys a second
+identical answer at full price.
+
+Jobs now have a third terminal status, **`partial`**: text came back, and nothing
+established that it is the whole answer. It is set by the two paths that know it
+first-hand — the stream's salvaged deltas, and an unfinished transcript row — not
+inferred from the failure category. A `partial` job keeps its failure object,
+because that is where the next step lives, and `/gemini:result` reads it back
+like any other finished job.
+
+The engine's envelope is still the only thing that makes a run a success; that
+did not change. What changed is what the report says when the envelope never
+arrived. When the last stream event is an `agent_response` that reached DONE, the
+recovered text is a finished block, and the next step says to read it rather than
+to retry — a claim about the text in hand, not about the turn. The measured
+stream has an `agent_response` reach DONE at step 2 and then run tools through
+step 55, so an answered block is not an ended turn, and this does not pretend
+otherwise.
+
+If you consume job status over MCP or from `--json`, this is the change to know
+about: a comparison against `"completed"` alone will now miss runs that produced
+output. Both job-oriented MCP tools describe the state, and `/gemini:status` is
+told not to report it as a failure. The stop-time review gate treats it as
+finished work — a `--write` turn cut off partway has still edited the working
+tree, and those are exactly the edits nobody has reviewed.
+
 ## 0.19.1 — 2026-08-17 — The instructions the subagent loads, checked against the code
 
 `plugins/gemini/skills/` is not commentary. The `gemini:gemini-rescue` subagent
