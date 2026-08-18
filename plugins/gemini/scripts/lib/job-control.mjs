@@ -2,6 +2,7 @@ import fs from "node:fs";
 
 import { classifyCliFailure } from "./failures.mjs";
 import { getSessionRuntimeStatus } from "./gemini.mjs";
+import { isPidAlive as defaultIsPidAlive } from "./process.mjs";
 import { getConfig, listJobs, readJobFile, resolveJobFile, upsertJob, writeJobFile } from "./state.mjs";
 import { SESSION_ID_ENV } from "./tracked-jobs.mjs";
 import { resolveWorkspaceRoot } from "./workspace.mjs";
@@ -200,18 +201,6 @@ export function readStoredJob(workspaceRoot, jobId) {
 
 function isActiveStatus(status) {
   return status === "queued" || status === "running";
-}
-
-function defaultIsPidAlive(pid) {
-  if (!Number.isFinite(pid)) {
-    return false;
-  }
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return error?.code === "EPERM";
-  }
 }
 
 function activeJobAgeMs(job, nowMs) {

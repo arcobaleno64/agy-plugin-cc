@@ -541,9 +541,16 @@ export function describeTermination(termination) {
   if (!termination || termination.attempted !== true) {
     return "no live process was attached";
   }
-  return termination.delivered
-    ? "terminated the running process"
-    : "no live process (it had already exited)";
+  if (!termination.delivered) {
+    return "no live process (it had already exited)";
+  }
+  // Windows keeps a process's parent link after the parent exits, so taskkill /T
+  // can claim descendants that are not this job's. When it cannot kill some of
+  // them the job's own process is still gone, which is what "terminated" means
+  // here — but saying only that would hide that something it named survived.
+  return termination.treeIncomplete
+    ? "terminated the running process; some processes the OS reported as its descendants could not be killed"
+    : "terminated the running process";
 }
 
 export function renderCancelReport(job, termination) {
