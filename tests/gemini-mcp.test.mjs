@@ -208,7 +208,8 @@ test("handleRequest delegates rescue and review to injected runtime dispatchers"
       write: false,
       model: undefined,
       effort: "high",
-      engine: "gemini"
+      engine: "gemini",
+      timeoutSeconds: null
     }],
     ["review", {
       cwd: path.resolve(workspace),
@@ -217,6 +218,7 @@ test("handleRequest delegates rescue and review to injected runtime dispatchers"
       model: undefined,
       engine: "agy",
       deep: true,
+      timeoutSeconds: null,
       reviewName: "Review",
       templateName: "review"
     }]
@@ -393,4 +395,70 @@ test("CLI runtime and MCP rescue dispatch persist byte-identical job prompts", a
     fs.rmSync(workspace, { recursive: true, force: true });
     fs.rmSync(dataDir, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// `--timeout` has existed on the CLI since it was added, and reached neither
+// surface a user actually drives: not the slash whitelists, not these schemas.
+// Both 2026-08-17 timeout incidents were the 120s AGY default doing its job with
+// nobody able to change it. These pin the flag as reachable *and* bounded — an
+// out-of-range value must not become a spawnSync timeout the caller never meant.
+// ---------------------------------------------------------------------------
+
+import {
+  MAX_TURN_TIMEOUT_SECONDS,
+  MIN_TURN_TIMEOUT_SECONDS
+} from "../plugins/gemini/scripts/lib/gemini.mjs";
+
+function capturingRuntime(calls) {
+  return {
+    dispatchBackgroundTask(input) {
+      calls.push(input);
+      return { jobId: "task-1", status: "queued" };
+    },
+    dispatchBackgroundReview(input) {
+      calls.push(input);
+      return { jobId: "review-1", status: "queued" };
+    }
+  };
+}
+
+test("every tool that spends a turn accepts a timeout, and declares the runtime's own bounds", () => {
+  const spending = TOOLS.filter((tool) => tool.annotations.openWorldHint);
+  assert.equal(spending.length, 3, "rescue plus the two reviews");
+
+  for (const tool of spending) {
+    const schema = tool.inputSchema.properties.timeout;
+    assert.ok(schema, `${tool.name} has no timeout argument`);
+    assert.equal(schema.type, "integer");
+    assert.equal(schema.minimum, MIN_TURN_TIMEOUT_SECONDS);
+    assert.equal(schema.maximum, MAX_TURN_TIMEOUT_SECONDS);
+  }
+});
+
+test("a timeout given to any of the three reaches the dispatcher", async () => {
+  const workspace = makeTempDir();
+  const calls = [];
+  const runtime = capturingRuntime(calls);
+
+  await handleRequest(toolRequest("gemini_rescue", { workspace, prompt: "p", timeout: 900 }), { runtime });
+  await handleRequest(toolRequest("gemini_review", { workspace, timeout: 600 }), { runtime });
+  await handleRequest(toolRequest("gemini_adversarial_review", { workspace, timeout: 300 }), { runtime });
+
+  assert.deepEqual(calls.map((call) => call.timeoutSeconds), [900, 600, 300]);
+});
+
+test("an out-of-range or non-integer timeout is refused rather than passed on", async () => {
+  const workspace = makeTempDir();
+  const calls = [];
+  const runtime = capturingRuntime(calls);
+
+  for (const bad of [MIN_TURN_TIMEOUT_SECONDS - 1, MAX_TURN_TIMEOUT_SECONDS + 1, 45.5, "soon"]) {
+    const response = await handleRequest(
+      toolRequest("gemini_rescue", { workspace, prompt: "p", timeout: bad }),
+      { runtime }
+    );
+    assert.equal(response.isError, true, `timeout ${bad} was not refused`);
+  }
+  assert.deepEqual(calls, [], "nothing reached the dispatcher");
 });

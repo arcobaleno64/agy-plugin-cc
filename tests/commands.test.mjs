@@ -264,3 +264,42 @@ test("a quota-spending invocation is gated by AskUserQuestion", () => {
     );
   }
 });
+
+// A flag the runtime accepts but no user-facing surface offers is a flag that
+// does not exist. `--timeout` was in that state through both 2026-08-17 timeout
+// incidents: the CLI parsed it, and neither the slash whitelists nor the MCP
+// schemas let anyone reach it.
+//
+// The whitelist is the load-bearing half. These commands assemble their calls
+// from checked literal flags only, so a flag absent from the list is a flag the
+// command is instructed not to pass through — the argument-hint alone would
+// advertise something that then gets dropped.
+test("the three turn-spending commands offer --timeout and allow it through", () => {
+  for (const name of ["review.md", "adversarial-review.md", "rescue.md"]) {
+    const body = readCommand(name);
+    const hint = body.split(/\r?\n/).find((line) => line.startsWith("argument-hint:")) ?? "";
+    assert.match(hint, /--timeout <seconds>/, `${name}: argument-hint omits --timeout`);
+    assert.match(
+      body,
+      /`--timeout[^`]*`[^\n]*\b(30|digits)\b/,
+      `${name}: no rule tells the model when --timeout may be passed through`
+    );
+  }
+});
+
+// The rescue slash command does not call the runtime itself; it forwards to the
+// gemini:gemini-rescue subagent, which builds the `task` call from these two
+// documents. A flag preserved by the command and unknown to the subagent is
+// preserved into nothing.
+test("the rescue subagent's own instructions know the flag it is handed", () => {
+  const skill = fs.readFileSync(
+    path.join(ROOT, "plugins", "gemini", "skills", "gemini-cli-runtime", "SKILL.md"),
+    "utf8"
+  );
+  const agent = fs.readFileSync(
+    path.join(ROOT, "plugins", "gemini", "agents", "gemini-rescue.md"),
+    "utf8"
+  );
+  assert.match(skill, /--timeout/, "the runtime skill never mentions --timeout");
+  assert.match(agent, /--timeout/, "the rescue agent never mentions --timeout");
+});

@@ -33,6 +33,24 @@ const MAX_BUFFER = 50 * 1024 * 1024; // 50 MB
 export const MIN_TURN_TIMEOUT_SECONDS = 30;
 export const MAX_TURN_TIMEOUT_SECONDS = 3600;
 
+/**
+ * The one place the accepted range is enforced, so a caller reaching the runtime
+ * through MCP is held to the same rule as one typing the flag. `label` exists
+ * only so the message names what the caller actually wrote -- `--timeout` on the
+ * command line, `timeout` in a tool call -- since an error naming a spelling the
+ * caller never used is an error they cannot act on.
+ */
+export function normalizeTurnTimeoutSeconds(value, label = "--timeout") {
+  if (value == null) return null;
+  const seconds = Number(value);
+  if (!Number.isInteger(seconds) || seconds < MIN_TURN_TIMEOUT_SECONDS || seconds > MAX_TURN_TIMEOUT_SECONDS) {
+    throw new Error(
+      `Invalid ${label} "${value}". Give whole seconds between ${MIN_TURN_TIMEOUT_SECONDS} and ${MAX_TURN_TIMEOUT_SECONDS}.`
+    );
+  }
+  return seconds;
+}
+
 export function resolveSpawnTimeoutMs(engine, requestedSeconds = null) {
   if (requestedSeconds != null) {
     return Number(requestedSeconds) * 1000;

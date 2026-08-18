@@ -13,6 +13,11 @@ import {
   getJobResult,
   getJobStatus
 } from "./gemini-companion.mjs";
+import {
+  MAX_TURN_TIMEOUT_SECONDS,
+  MIN_TURN_TIMEOUT_SECONDS,
+  normalizeTurnTimeoutSeconds
+} from "./lib/gemini.mjs";
 
 const MCP_PROTOCOL_VERSION = "2025-03-26";
 const SELF_PATH = fileURLToPath(import.meta.url);
@@ -43,6 +48,20 @@ function enumSchema(values, defaultValue) {
   return { type: "string", enum: values, ...(defaultValue ? { default: defaultValue } : {}) };
 }
 
+// The AGY default is 2 minutes, and it is this plugin's number rather than AGY's
+// own (AGY defaults --print-timeout to 5m). It doubles as a ceiling on output
+// size: a turn that produces more than it can emit inside the window is killed,
+// which is what both 2026-08-17 timeout incidents actually hit. The CLI has
+// accepted `--timeout` since it was added; only the two surfaces a user reaches
+// it through did not offer it. Bounds come from the runtime constants so the
+// declared range and the enforced one cannot drift apart.
+const timeoutSchema = () => ({
+  type: "integer",
+  minimum: MIN_TURN_TIMEOUT_SECONDS,
+  maximum: MAX_TURN_TIMEOUT_SECONDS,
+  description: `Seconds this turn may run before it is killed (default 120 on AGY, 600 on Gemini CLI). Also a ceiling on how much output can be produced: raise it for large batches or deep reviews. ${MIN_TURN_TIMEOUT_SECONDS}-${MAX_TURN_TIMEOUT_SECONDS}.`
+});
+
 export const TOOLS = [
   tool(
     "gemini_rescue",
@@ -59,7 +78,8 @@ export const TOOLS = [
       write: { type: "boolean", default: false },
       model: { type: "string" },
       effort: enumSchema(["none", "minimal", "low", "medium", "high", "xhigh"]),
-      engine: enumSchema(["auto", "gemini", "agy"])
+      engine: enumSchema(["auto", "gemini", "agy"]),
+      timeout: timeoutSchema()
     }
   ),
   tool(
@@ -77,7 +97,8 @@ export const TOOLS = [
       scope: enumSchema(["auto", "working-tree", "branch"], "auto"),
       model: { type: "string" },
       engine: enumSchema(["auto", "gemini", "agy"]),
-      deep: { type: "boolean", default: false }
+      deep: { type: "boolean", default: false },
+      timeout: timeoutSchema()
     }
   ),
   // The slash surface has had /gemini:adversarial-review since it shipped, and
@@ -103,7 +124,8 @@ export const TOOLS = [
       model: { type: "string" },
       engine: enumSchema(["auto", "gemini", "agy"]),
       deep: { type: "boolean", default: false },
-      focus: { type: "string", description: "What the review should concentrate on." }
+      focus: { type: "string", description: "What the review should concentrate on." },
+      timeout: timeoutSchema()
     }
   ),
   tool(
@@ -199,7 +221,8 @@ export async function callTool(name, args = {}, { runtime = DEFAULT_RUNTIME } = 
       write: optionalBoolean(args.write, "write") ?? false,
       model: optionalString(args.model, "model"),
       effort: optionalEnum(args.effort, "effort", ["none", "minimal", "low", "medium", "high", "xhigh"]),
-      engine: optionalEnum(args.engine, "engine", ["auto", "gemini", "agy"])
+      engine: optionalEnum(args.engine, "engine", ["auto", "gemini", "agy"]),
+      timeoutSeconds: normalizeTurnTimeoutSeconds(args.timeout, "timeout")
     });
   }
   if (name === "gemini_review" || name === "gemini_adversarial_review") {
@@ -219,6 +242,10 @@ export async function callTool(name, args = {}, { runtime = DEFAULT_RUNTIME } = 
       model: optionalString(args.model, "model"),
       engine: optionalEnum(args.engine, "engine", ["auto", "gemini", "agy"]),
       deep: optionalBoolean(args.deep, "deep") ?? false,
+      // Validated here, not left to the schema: a client is expected to enforce
+      // the declared bounds but nothing makes it, and an out-of-range value
+      // reaches spawnSync as a timeout the caller never meant.
+      timeoutSeconds: normalizeTurnTimeoutSeconds(args.timeout, "timeout"),
       // Focus text is accepted only by the adversarial tool, matching the slash
       // commands: /gemini:review takes no focus argument either.
       ...(adversarial ? { focusText: optionalString(args.focus, "focus") ?? "" } : {}),

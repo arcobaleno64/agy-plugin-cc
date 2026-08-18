@@ -1,6 +1,6 @@
 ---
 description: Run a standard Gemini code review of recent git changes
-argument-hint: '[--wait|--background] [--deep] [--base <ref>] [--scope auto|working-tree|branch] [--engine <agy|gemini>] [--model <flash|pro>]'
+argument-hint: '[--wait|--background] [--deep] [--base <ref>] [--scope auto|working-tree|branch] [--engine <agy|gemini>] [--model <flash|pro>] [--timeout <seconds>]'
 disable-model-invocation: true
 allowed-tools: Read, Glob, Grep, Bash(node:*), Bash(git:*), AskUserQuestion
 ---
@@ -20,6 +20,7 @@ its list and then wrote out yourself — chosen, never copied:
 - `--scope <value>`: `auto`, `working-tree`, `branch`
 - `--engine <value>`: `auto`, `gemini`, `agy`
 - `--model <value>`: an alias (`flash`, `pro`, `lite`, …) or an id matching `^[A-Za-z0-9][A-Za-z0-9._-]*$`
+- `--timeout <seconds>`: only if it is entirely digits and between 30 and 3600
 - `--deep`, `--wait`, `--background`, `--json`: literal flags, no value
 
 If a value is not in its set, stop and say so rather than passing it through to
@@ -60,6 +61,7 @@ Argument handling:
 - The companion script handles `--background` itself: it enqueues the review and spawns a detached `review-worker`, so the result persists even if this session ends. Do not use Claude's `run_in_background: true` for it.
 - `/gemini:review` is native-review only. It does not take custom focus text.
 - For an adversarial review that challenges design decisions, use `/gemini:adversarial-review`.
+- `--timeout <seconds>` is not only how long the run may take: it is also a ceiling on how much output can be produced, because a turn that cannot finish emitting inside the window is killed. Raise it for a large scope or a batch; the AGY default is 120 seconds.
 - `--deep` runs an **agentic** review: Gemini uses its read-only tools to inspect repo context beyond the diff (dependency manifests, untracked files, callers) before producing the same JSON findings. It is slower and uses more tokens; omit it for the fast, diff-scoped default. Pair `--deep` with `--background` for larger changes.
 
 Foreground flow:
