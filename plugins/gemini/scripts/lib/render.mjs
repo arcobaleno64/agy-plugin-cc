@@ -212,6 +212,10 @@ export function renderSetupReport(report) {
     "# Gemini Setup",
     "",
     `Status: ${statusLabel}`,
+    // Named on the report, not only in --json: the failure this answers is a
+    // session silently wired to an older cached copy, and a user who has to run
+    // a JSON command to find that out will not think to.
+    `Plugin: ${report.pluginVersion ?? "unknown"} (${report.scriptPath ?? "path unknown"})`,
     "",
     "Checks:",
     `- node: ${report.node.detail}`,
@@ -357,6 +361,24 @@ export function renderTaskResult(parsedResult, meta) {
   }
   const lines = [message, ""];
   pushFailureDetails(lines, parsedResult.failure);
+  return `${lines.join("\n").trimEnd()}\n`;
+}
+
+// A group cancel is several terminations, and which of them reached a live
+// process differs — one engine can already have finished while the other was
+// still running. Reporting a single line would hide that, so each member gets
+// its own.
+export function renderCancelGroupReport({ groupId, jobs = [], terminations = [] }) {
+  const lines = [
+    "# Gemini Cancel",
+    "",
+    `Cancelled ${jobs.length} job${jobs.length === 1 ? "" : "s"} in group ${groupId}.`,
+    ""
+  ];
+  jobs.forEach((job, index) => {
+    lines.push(`- ${job.id}${job.engine ? ` (${job.engine})` : ""}: ${describeTermination(terminations[index])}`);
+  });
+  lines.push("", "Check `/gemini:status` for the updated queue.");
   return `${lines.join("\n").trimEnd()}\n`;
 }
 

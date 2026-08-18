@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.22.0 — 2026-08-18 — Cancel a group; say which copy of the plugin is answering
+
+### `/gemini:cancel <group-id>`
+
+`status` and `result` have always accepted an adversarial-review group id and
+aggregated over its members. Cancel matched job ids only, so a group had to be
+cancelled one engine at a time, from ids the user first had to go and read out of
+a status listing — and a group id came back as "No active job found", which is
+the one thing it was not.
+
+Cancel now reuses the pattern the other two already use: try the group, fall back
+to a single job. Every member still queued or running is cancelled; members that
+already finished are left exactly as they are, because "cancel" has nothing to
+say about work that is done. The report lists each member and what its
+termination actually reached — one engine can have finished while the other was
+still running, and a single summary line would hide that.
+
+A group whose members have all finished now says so, with a pointer to
+`/gemini:result`, instead of reporting the id as unknown. The single-job path,
+its payload shape and its messages are unchanged: every existing caller reads
+`payload.jobId`, and that still means what it meant.
+
+### `/gemini:setup` names the plugin that is answering
+
+A session can stay wired to an older cached copy of the plugin after an update.
+Field note `gi-2026-08-17-a1c7` recorded one running 0.17.3 while the installed
+manifest said 0.19.0: fixes believed shipped were absent from both the MCP and
+the slash surface, and nothing in the session could say which version was live.
+It was found by reading the MCP server's process command line.
+
+The cache resolution is Claude Code's and `/reload-plugins` is the remedy —
+neither is this plugin's to fix. The silence is. `setup` now reports
+`pluginVersion` and `scriptPath`, both read relative to the running script, so
+they describe the code that is executing rather than what a manifest elsewhere
+claims. The version comes from the same `plugin.json` Claude Code consults first
+(see `docs/version-sources.md`). It is on the ordinary report, not only in
+`--json`: a user who has to ask for JSON to discover a stale copy will not think
+to ask.
+
+This does not detect the mismatch — it makes it visible in one command. The field
+note stays open.
+
 ## 0.21.1 — 2026-08-18 — A copy of someone else's list, kept by hand
 
 `lib/model-map.mjs` carried a comment listing what `agy models` returns, dated to
