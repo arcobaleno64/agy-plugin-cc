@@ -1,20 +1,23 @@
 name: Publish scorecard
 # Replays the committed cassettes and publishes the scorecard to the `results`
 # branch. It holds no secrets and reaches no network, because the half of this
-# benchmark that needs credentials cannot run here at all:
+# benchmark that needs credentials is deliberately not run here:
 #
-#   - AGY authenticates only through its interactive OAuth flow. `agy --help`
-#     offers no key, token, or login flag, so a runner has no way to hold a
-#     credential for it.
+#   - AGY can be given a credential non-interactively: since 1.1.13 it accepts
+#     GEMINI_API_KEY with `modelProvider: "gemini"` in settings.json. But that
+#     routes the turn to the Gemini API rather than through AGY's own sign-in,
+#     so a cassette recorded that way would measure a path no signed-in AGY user
+#     takes, and the scorecard would attribute it to AGY anyway. Possible is not
+#     the same as valid.
 #   - Gemini CLI's consumer tier stopped serving on 2026-06-18; refreshing
 #     `gemini.model` now needs a paid Code Assist or API-key credential.
 #   - `codex.native` needs BENCH_CODEX_COMPANION pointing at a locally installed
-#     plugin.
+#     plugin, and its agentic review exceeded the 180s cap when last attempted.
 #
-# So recording is a maintainer's local `npm run bench:live`, committed as
-# cassettes. That is not a workaround — it is what keeps this workflow free of
-# the `pull_request_target` question entirely: with no secret to expose, there is
-# no exposure to reason about.
+# So recording stays a maintainer's local `npm run bench:live`, committed as
+# cassettes. The benefit is not only fidelity: with no secret in this workflow
+# there is no `pull_request_target` question to get wrong, because there is
+# nothing here to expose.
 on:
   push:
     branches: [main]
