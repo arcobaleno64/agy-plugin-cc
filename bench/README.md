@@ -32,7 +32,7 @@ there joins both the ranking and its own lift without touching the report.
 
 ```bash
 npm run bench            # deterministic replay from cassettes — no auth, no network
-npm run bench:live       # run the real CLIs and re-record cassettes (needs auth)
+npm run bench:live -- --repeats 3   # re-record (needs auth; note the `--`, npm eats bare flags)
 
 # narrow it down
 node bench/run-bench.mjs --case auth-basic --cell gemini.model
@@ -55,34 +55,56 @@ The scorecard prints to stdout and is written to `bench/results/scorecard.md`
 ### Cassette provenance & live-refresh status
 
 A cassette recorded from a real run carries `recordedAt`, the `engineVersion` it was
-recorded against, and no `source`; a seeded one carries a `source` field. The
-scorecard prints this per cell, and **a seeded cell is excluded from every verdict
-and every harness lift** — it is an illustration kept so the table has a shape, not a
-result. Current committed state:
+recorded against, every repeat in `samples`, and no `source`; a seeded one carries a
+`source` field. The scorecard prints all of it per cell. Current committed state:
 
-- **`agy.model`, `agy.deep` — live-recorded** (2026-08-19, agy 1.1.14, single sample).
-  Both axes of the AGY column are real, which makes the AGY harness lift
-  (`agy.model` → `agy.deep`) the only lift on the scorecard measured end to end.
-- **`gemini.model`, `codex.model` — live-recorded** (2026-06-04, gemini 0.45 /
-  codex-cli 0.137, single sample) and predate the `engineVersion` field, so their
-  builds are recorded here rather than in the cassette. Gemini CLI's consumer tier
-  stopped serving on 2026-06-18, so re-recording `gemini.model` now needs a paid
-  Code Assist or API-key credential.
-- **`gemini.deep`, `codex.native` — still seeded.** They could not be driven
-  headlessly in this environment: `gemini --deep` exits non-zero with empty stdout
-  under headless agentic+JSON mode (tool approvals need a TTY), and the
-  `codex.native` app-server review exceeded the 180s cap. Refresh them with a longer
-  `BENCH_TIMEOUT_MS`, an interactive/approved session, or on a platform where the
-  agentic harness runs non-interactively.
+- **`agy.model`, `agy.deep`, `gemini.deep`, `codex.model` — live-recorded**
+  (2026-08-19, three samples each: agy 1.1.14, gemini 0.54.4, codex-cli 0.147.0).
+- **`gemini.deep` records headlessly after all.** The previous note here said it could
+  not — that `gemini --deep` exits non-zero with empty stdout because tool approvals
+  need a TTY. It recorded six times without complaint on gemini 0.54.4, so whatever
+  blocked it in this environment was not permanent. It is also the steadiest cell on
+  the board.
+- **`gemini.model` — still the 2026-06-04 single sample** (gemini 0.45). It now fails
+  to re-record for a reason that has nothing to do with credentials: the CLI prints
+  `Warning: True color (24-bit) support not detected` and `Ripgrep is not available`
+  ahead of its JSON, and the cell's parser gives up. Worth fixing before trusting
+  anything about the gemini model axis.
+- **`codex.native` — still seeded.** `BENCH_CODEX_COMPANION` was unset, so it was
+  skipped rather than recorded.
 
-`agy.deep` records headlessly where `gemini.deep` cannot, because AGY's print mode
-auto-approves tools and never waits for a TTY. That is a difference in permission
-model, not in capability, and `docs/THREAT-MODEL.md` 7.2 is where it is argued about
-rather than celebrated.
+### What three samples showed
+
+Enough to disqualify every single-sample number the scorecard has ever printed,
+including the ones this file used to quote. Composite, per repeat:
+
+| cell | `auth-basic` | `repo-context` | widest move |
+|---|---|---|:-:|
+| `gemini.deep` | 80, 81, 81 | 88, 88, 88 | **1** |
+| `agy.deep` | 81, 77, 93 | 88, 88, 83 | 16 |
+| `codex.model` | 96, 72, 98 | 0, 45, 0 | 45 |
+| `agy.model` | 81, 94, 81 | 0, 65, 65 | **65** |
+
+Two things fall out, and only one of them is about scores.
+
+1. **The agentic cells are an order of magnitude steadier than the model cells.**
+   `gemini.deep` moved by 1 point across six runs; `agy.model` moved by 65 on a single
+   case. Whatever a repo-exploring harness is doing, part of it is making the answer
+   repeatable — which is a more useful claim than any composite here, and the only one
+   the data currently supports.
+2. **The old ±2 noise band was calibrated against nothing.** It is now the measured
+   spread: a verdict is named only when the lead is wider than the widest move either
+   cell made between repeats. Under that rule no axis on this board is decidable, and
+   neither is AGY's harness lift. That is the honest reading of two cases at three
+   samples, not a defect in the runner.
+
+A cell recorded once has no spread. It is printed as `—`, meaning *unknown*, and it
+can neither win nor lose an axis — the same exclusion a seeded cell gets, for the same
+reason: there is nothing to compare against.
 
 Adding a cell means one entry in `lib/cells.mjs` and one `case` in `lib/adapters.mjs`;
-everything else — which cases get materialized, which cells need a repo, the axes,
-the lifts — reads the registry. It did not always: two hardcoded cell lists in
+everything else — which cases get materialized, which cells need a repo, the axes, the
+lifts, the bands — reads the registry. It did not always: two hardcoded cell lists in
 `run-bench.mjs` meant a newly added model cell ran with a null prompt, and on AGY that
 surfaced 180 seconds later as an engine timeout rather than as a missing diff.
 

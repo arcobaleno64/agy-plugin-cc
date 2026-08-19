@@ -46,6 +46,16 @@ function avgScores(scores) {
   return out;
 }
 
+// How far this cell's composite moved between repeats of the same recording.
+// One sample cannot answer that, and `null` is not zero: an unknown spread must
+// not read as a perfectly stable cell.
+function spreadOf(scores) {
+  if (scores.length < 2) return null;
+  const comps = scores.map((s) => s.composite).filter((n) => Number.isFinite(n));
+  if (comps.length < 2) return null;
+  return Math.round((Math.max(...comps) - Math.min(...comps)) * 10) / 10;
+}
+
 function liveCell({ caseId, cell, promptText, repeats, truth }) {
   let repoCtx = null;
   const needsRepo = CELLS[cell]?.harness === "agentic";
@@ -73,6 +83,7 @@ function liveCell({ caseId, cell, promptText, repeats, truth }) {
     return {
       status: "ok",
       score: avgScores(scores),
+      spread: spreadOf(scores),
       latencyMs: last.latencyMs,
       provenance: {
         seeded: false,
@@ -94,6 +105,7 @@ function replayCell({ caseId, cell, truth }) {
   return {
     status: "ok",
     score: avgScores(scores),
+    spread: spreadOf(scores),
     latencyMs: latencies.length
       ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length)
       : cassette.latencyMs,
