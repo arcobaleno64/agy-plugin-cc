@@ -222,8 +222,8 @@ function waitForJob(env, cwd, jobId, timeoutMs = 60_000) {
 // Waiting for the phase instead means the step demonstrates what it claims,
 // rather than cancelling during engine detection whenever the machine is slow.
 // It also stops the demo aiming at the narrowest possible window: an engine
-// killed in the moment it is being created escapes the job object it was about
-// to join, which is a real defect (v0.22.1) but not what this step is for.
+// killed in the moment it is being created can outlive the cancel that reported
+// it terminated, which is a real defect (v0.22.1) but not what this step is for.
 // "engine" — the turn has started, which is what the step wants to cancel.
 // "worker" — a worker is up but its engine never reported in; cancel still has
 // something to terminate, and the step says so rather than pretending.
