@@ -5,9 +5,9 @@
   "harnessAxisWinner": "tie",
   "harnessLifts": {
     "gemini": {
-      "lift": 11.5,
+      "lift": -0.2,
       "seeded": false,
-      "band": null,
+      "band": 55,
       "established": false
     },
     "codex": {
@@ -17,7 +17,7 @@
       "established": false
     },
     "agy": {
-      "lift": 21,
+      "lift": 10.2,
       "seeded": false,
       "band": 65,
       "established": false
@@ -26,9 +26,9 @@
   "provenance": {
     "gemini.model": {
       "seeded": false,
-      "recordedAt": "2026-06-04T14:07:48.457Z",
-      "engineVersion": null,
-      "samples": 1
+      "recordedAt": "2026-08-19T09:05:22.301Z",
+      "engineVersion": "0.55.1",
+      "samples": 3
     },
     "codex.model": {
       "seeded": false,
@@ -38,14 +38,14 @@
     },
     "agy.model": {
       "seeded": false,
-      "recordedAt": "2026-08-19T03:14:53.863Z",
-      "engineVersion": "1.1.14",
+      "recordedAt": "2026-08-19T08:23:42.915Z",
+      "engineVersion": "1.1.15",
       "samples": 3
     },
     "gemini.deep": {
       "seeded": false,
-      "recordedAt": "2026-08-19T03:16:35.276Z",
-      "engineVersion": "0.54.4",
+      "recordedAt": "2026-08-19T12:06:08.088Z",
+      "engineVersion": "0.55.1",
       "samples": 3
     },
     "codex.native": {
@@ -56,22 +56,22 @@
     },
     "agy.deep": {
       "seeded": false,
-      "recordedAt": "2026-08-19T03:18:29.495Z",
-      "engineVersion": "1.1.14",
+      "recordedAt": "2026-08-19T08:25:59.678Z",
+      "engineVersion": "1.1.15",
       "samples": 3
     }
   },
   "byCell": {
     "gemini.model": {
       "cell": "gemini.model",
-      "cases": 2,
-      "composite": 73,
-      "recall": 0.65,
-      "precision": 1,
-      "falsePositives": 0,
+      "cases": 5,
+      "composite": 75.4,
+      "recall": 0.73,
+      "precision": 0.92,
+      "falsePositives": 1,
       "bonus": 0,
-      "severityExactRate": 0.75,
-      "latencyMs": 44083
+      "severityExactRate": 0.56,
+      "latencyMs": 24866
     },
     "codex.model": {
       "cell": "codex.model",
@@ -86,25 +86,25 @@
     },
     "agy.model": {
       "cell": "agy.model",
-      "cases": 2,
-      "composite": 64,
-      "recall": 0.6,
-      "precision": 0.84,
-      "falsePositives": 0.33,
+      "cases": 5,
+      "composite": 69,
+      "recall": 0.64,
+      "precision": 0.92,
+      "falsePositives": 0.66,
       "bonus": 0,
       "severityExactRate": 0.57,
-      "latencyMs": 25679
+      "latencyMs": 23672
     },
     "gemini.deep": {
       "cell": "gemini.deep",
-      "cases": 2,
-      "composite": 84.5,
-      "recall": 0.9,
-      "precision": 0.8,
-      "falsePositives": 1.33,
-      "bonus": 0,
-      "severityExactRate": 0.54,
-      "latencyMs": 31253
+      "cases": 5,
+      "composite": 75.2,
+      "recall": 0.74,
+      "precision": 0.85,
+      "falsePositives": 2.66,
+      "bonus": 0.33,
+      "severityExactRate": 0.63,
+      "latencyMs": 34398
     },
     "codex.native": {
       "cell": "codex.native",
@@ -119,14 +119,14 @@
     },
     "agy.deep": {
       "cell": "agy.deep",
-      "cases": 2,
-      "composite": 85,
-      "recall": 0.94,
-      "precision": 0.78,
-      "falsePositives": 1.67,
+      "cases": 5,
+      "composite": 79.2,
+      "recall": 0.81,
+      "precision": 0.89,
+      "falsePositives": 2,
       "bonus": 0,
-      "severityExactRate": 0.43,
-      "latencyMs": 33105
+      "severityExactRate": 0.45,
+      "latencyMs": 28125
     }
   }
 }

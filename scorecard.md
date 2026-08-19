@@ -1,62 +1,62 @@
 # review benchmark scorecard — agy · gemini · codex
 
-> Mode: **replay** · repeats: 1 · cases: 5 · generated: 2026-08-19T08:19:34.602Z
+> Mode: **replay** · repeats: 1 · cases: 5 · generated: 2026-08-19T12:24:38.903Z
 
 ## Verdicts
 
 | Axis | Winner | Detail |
 |---|---|---|
-| **Model** (single-shot, tools off) | **tie** | lead of 12 does not clear the ±65 either cell moves between runs · gemini 73 (1 sample) · agy 64 ±65 · codex 52 ±45 |
-| **Harness** (agentic reviewers) | **tie** | lead of 0.5 does not clear the ±16 either cell moves between runs · codex 93 (seeded) · agy 85 ±16 · gemini 84.5 ±1 |
-| Harness lift — gemini | +11.5 | one end was recorded once — its noise is unknown |
+| **Model** (single-shot, tools off) | **tie** | lead of 6.4 does not clear the ±65 either cell moves between runs · gemini 75.4 ±55 · agy 69 ±65 · codex 52 ±45 |
+| **Harness** (agentic reviewers) | **tie** | lead of 4 does not clear the ±41 either cell moves between runs · codex 93 (seeded) · agy 79.2 ±24 · gemini 75.2 ±41 |
+| Harness lift — gemini | -0.2 | does not clear the ±55 its ends move between runs |
 | Harness lift — codex | +41 | one end is seeded — not a measurement |
-| Harness lift — agy | +21 | does not clear the ±65 its ends move between runs |
+| Harness lift — agy | +10.2 | does not clear the ±65 its ends move between runs |
 
 ## Per-cell aggregate
 
 | Cell | Source | Cases | Composite | Spread | Recall | Precision | FP | Bonus | Sev-exact | Latency |
 |---|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| Gemini (model, single-shot) | live 2026-06-04 | 2 | 73 | — | 0.65 | 1 | 0 | 0 | 0.75 | 44083ms |
+| Gemini (model, single-shot) | live 2026-08-19 · 0.55.1 ×3 | 5 | 75.4 | ±55 | 0.73 | 0.92 | 1 | 0 | 0.56 | 24866ms |
 | Codex (model, single-shot) | live 2026-08-19 · codex-cli 0.147.0 ×3 | 2 | 52 | ±45 | 0.52 | 0.59 | 1.67 | 0.33 | 0.4 | 18414ms |
-| AGY (model, single-shot) | live 2026-08-19 · 1.1.14 ×3 | 2 | 64 | ±65 | 0.6 | 0.84 | 0.33 | 0 | 0.57 | 25679ms |
-| Gemini (--deep, agentic) | live 2026-08-19 · 0.54.4 ×3 | 2 | 84.5 | ±1 | 0.9 | 0.8 | 1.33 | 0 | 0.54 | 31253ms |
+| AGY (model, single-shot) | live 2026-08-19 · 1.1.15 ×3 | 5 | 69 | ±65 | 0.64 | 0.92 | 0.66 | 0 | 0.57 | 23672ms |
+| Gemini (--deep, agentic) | live 2026-08-19 · 0.55.1 ×3 | 5 | 75.2 | ±41 | 0.74 | 0.85 | 2.66 | 0.33 | 0.63 | 34398ms |
 | Codex (native review, agentic) | **seeded** | 2 | 93 | — | 0.9 | 1 | 0 | 1 | 1 | 39850ms |
-| AGY (--deep, agentic) | live 2026-08-19 · 1.1.14 ×3 | 2 | 85 | ±16 | 0.94 | 0.78 | 1.67 | 0 | 0.43 | 33105ms |
+| AGY (--deep, agentic) | live 2026-08-19 · 1.1.15 ×3 | 5 | 79.2 | ±24 | 0.81 | 0.89 | 2 | 0 | 0.45 | 28125ms |
 
 ## Per-case breakdown
 
 | Case | Cell | Status | Composite | Recall | FP | Bonus | Missed |
 |---|---|:-:|:-:|:-:|:-:|:-:|---|
-| async-lifecycle | gemini.model | skipped (no cassette) | — | — | — | — | — |
+| async-lifecycle | gemini.model | ok | 75 | 0.73 | 0.33 | 0 | unbounded-map |
 | async-lifecycle | codex.model | skipped (no cassette) | — | — | — | — | — |
-| async-lifecycle | agy.model | skipped (no cassette) | — | — | — | — | — |
-| async-lifecycle | gemini.deep | skipped (no cassette) | — | — | — | — | — |
+| async-lifecycle | agy.model | ok | 72 | 0.67 | 0.33 | 0 | floating-promise |
+| async-lifecycle | gemini.deep | ok | 78 | 0.73 | 0.33 | 0 | floating-promise, unbounded-map |
 | async-lifecycle | codex.native | skipped (no cassette) | — | — | — | — | — |
-| async-lifecycle | agy.deep | skipped (no cassette) | — | — | — | — | — |
-| auth-basic | gemini.model | ok | 81 | 0.8 | 0 | 0 | null-check |
+| async-lifecycle | agy.deep | ok | 75 | 0.73 | 0 | 0 | unbounded-map |
+| auth-basic | gemini.model | ok | 88 | 0.93 | 0 | 0 | plaintext-compare |
 | auth-basic | codex.model | ok | 89 | 0.87 | 0 | 0.33 | — |
 | auth-basic | agy.model | ok | 85 | 0.87 | 0 | 0 | plaintext-compare |
-| auth-basic | gemini.deep | ok | 81 | 0.8 | 0.33 | 0 | plaintext-compare |
+| auth-basic | gemini.deep | ok | 85 | 0.87 | 0.33 | 0 | null-check |
 | auth-basic | codex.native | ok | 86 | 0.8 | 0 | 1 | json-parse |
 | auth-basic | agy.deep | ok | 84 | 0.87 | 0.67 | 0 | — |
-| path-and-input | gemini.model | skipped (no cassette) | — | — | — | — | — |
+| path-and-input | gemini.model | ok | 75 | 0.67 | 0 | 0 | unbounded-read |
 | path-and-input | codex.model | skipped (no cassette) | — | — | — | — | — |
-| path-and-input | agy.model | skipped (no cassette) | — | — | — | — | — |
-| path-and-input | gemini.deep | skipped (no cassette) | — | — | — | — | — |
+| path-and-input | agy.model | ok | 69 | 0.6 | 0 | 0 | unbounded-read, unhandled-enoent |
+| path-and-input | gemini.deep | ok | 69 | 0.6 | 0 | 0 | unbounded-read, unhandled-enoent |
 | path-and-input | codex.native | skipped (no cassette) | — | — | — | — | — |
-| path-and-input | agy.deep | skipped (no cassette) | — | — | — | — | — |
-| repo-context | gemini.model | ok | 65 | 0.5 | 0 | 0 | committed-state |
+| path-and-input | agy.deep | ok | 64 | 0.53 | 0 | 0 | unbounded-read, unhandled-enoent |
+| repo-context | gemini.model | ok | 67 | 0.67 | 0.67 | 0 | — |
 | repo-context | codex.model | ok | 15 | 0.17 | 1.67 | 0 | missing-dependency, committed-state |
 | repo-context | agy.model | ok | 43 | 0.33 | 0.33 | 0 | committed-state |
-| repo-context | gemini.deep | ok | 88 | 1 | 1 | 0 | — |
+| repo-context | gemini.deep | ok | 86 | 1 | 1 | 0 | — |
 | repo-context | codex.native | ok | 100 | 1 | 0 | 0 | — |
 | repo-context | agy.deep | ok | 86 | 1 | 1 | 0 | — |
-| vacuous-tests | gemini.model | skipped (no cassette) | — | — | — | — | — |
+| vacuous-tests | gemini.model | ok | 72 | 0.67 | 0 | 0 | no-assertion, permanent-skip |
 | vacuous-tests | codex.model | skipped (no cassette) | — | — | — | — | — |
-| vacuous-tests | agy.model | skipped (no cassette) | — | — | — | — | — |
-| vacuous-tests | gemini.deep | skipped (no cassette) | — | — | — | — | — |
+| vacuous-tests | agy.model | ok | 76 | 0.75 | 0 | 0 | permanent-skip |
+| vacuous-tests | gemini.deep | ok | 58 | 0.5 | 1 | 0.33 | no-assertion, permanent-skip |
 | vacuous-tests | codex.native | skipped (no cassette) | — | — | — | — | — |
-| vacuous-tests | agy.deep | skipped (no cassette) | — | — | — | — | — |
+| vacuous-tests | agy.deep | ok | 87 | 0.92 | 0.33 | 0 | — |
 
 ## Caveats
 
