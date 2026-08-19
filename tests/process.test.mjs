@@ -361,12 +361,11 @@ test("a target that exits a moment after taskkill returns is not called a failur
 });
 
 // ---------------------------------------------------------------------------
-// Killing the worker is usually not what kills the engine under it. The worker
-// is spawned detached and the engine is not, so libuv puts the engine in a job
-// object Windows closes with the worker. Kill the worker inside the window
-// between creating the engine and assigning it to that job, and the engine
-// escapes — measured under load on this repository at about 3% of cancels, every
-// one of them reported by taskkill as a clean kill.
+// An engine does not normally outlive its worker, and the tree walk is not why:
+// killing a worker with /F alone, no /T, takes its engine with it. What performs
+// that collection was never identified — the engines are in no job object, and it
+// is not the stand-in holding stdin — but about 3% of cancels under load escape
+// it, and taskkill reported every one of those as a clean kill.
 //
 // So the tree is measured after the kill, not inferred from an exit code. These
 // pin what that measurement may and may not do.
@@ -407,7 +406,7 @@ const JOB_STARTED = "2026-08-18T15:26:54.950Z";
 const AFTER_START = "2026-08-18T15:27:00.304Z";   // the engine, spawned by this job
 const BEFORE_START = "2026-08-18T09:00:00.000Z";  // a stranger on a reused pid
 
-test("a cancel kills the engine that outlived the worker's job object", () => {
+test("a cancel kills the engine that outlived its worker", () => {
   const scenario = sweepScenario({ children: [{ pid: 5678, createdAt: AFTER_START }] });
   const outcome = terminateProcessTree(1234, { ...scenario, notBefore: JOB_STARTED });
 
@@ -520,12 +519,10 @@ test("a child is still findable through the pid of a parent that is already dead
 test("a cancel kills a real engine the tree walk never saw", {
   skip: process.platform !== "win32" && "windows-only"
 }, async (t) => {
-  // The leak is an engine that was not in the set taskkill enumerated, because
-  // it was created inside the window between the worker starting it and Windows
-  // assigning it to the worker’s job object. Waiting for that race would make
-  // this test a 3% coin flip, so the escape is staged instead: everything is a
-  // real process and a real kill, with /T dropped from the worker’s taskkill so
-  // the child is exactly as unreachable as a newborn engine is.
+  // The leak is an engine the cancel did not reach. Waiting for the real one
+  // would make this test a 3% coin flip, so the escape is staged instead:
+  // everything is a real process and a real kill, with /T dropped from the
+  // worker's taskkill so the child is exactly as unreachable as a leaked engine.
   const { parentPid, childPid } = await spawnProbeTree();
   t.after(() => {
     for (const pid of [parentPid, childPid]) {

@@ -9,11 +9,12 @@ captured run the engine was created 484ms before the cancel finished, and was
 still alive 74 seconds later, still holding the job's workspace as its working
 directory.
 
-taskkill is not usually what kills that engine. The worker is spawned detached
-and the engine under it is not, so libuv puts the engine in a job object Windows
-closes along with the worker. Kill the worker inside the window between creating
-the engine and assigning it to that job and the engine escapes — and taskkill,
-which did kill the worker, exits 0 and says so honestly.
+taskkill's tree walk is not usually what kills that engine: killing a worker with
+`/F` alone and no `/T` takes its engine with it, measured here on a staged job.
+What performs that collection was not identified — the engines are in no job
+object, and it is not the stand-in's hold on stdin — so what a cancel escapes is
+named here only by what it does. taskkill, which did kill the worker, exits 0 and
+says so honestly.
 
 The exit code is no more useful in the other direction. Over 36 cancels under
 load, 15 reported "some processes the OS reported as its descendants could not be
