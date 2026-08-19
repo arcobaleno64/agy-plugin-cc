@@ -1,5 +1,53 @@
 # Changelog
 
+## Unreleased
+
+Changes that have landed on `main` and will ship with the next version. They are
+recorded here as they land because the alternative was cutting a release for a
+sentence, and the two entries below partly cancel: the first said a route was
+untested and the second tested it.
+
+- **AGY's non-interactive credentials are named where the plugin asks for one.**
+  `getAgyLoginStatus()` and the `--probe-agy` rejection both told the user to run
+  `agy` interactively, and that has not been the only way for a while: AGY 1.1.10
+  added ADC and Enterprise/WIF, and 1.1.13 added `GEMINI_API_KEY` through
+  `modelProvider: "gemini"` in settings.json. That last one is a settings file plus
+  an environment variable rather than a flag, so reading `agy --help` and concluding
+  the capability was absent is exactly how it was missed here — the absence was
+  checked on the wrong surface. `commands/setup.md` and both READMEs say the same
+  thing now.
+
+- **`--probe-agy` is verified against the API-key route.** Measured on AGY 1.1.15 in
+  a temporary home containing nothing but `{"modelProvider":"gemini"}`, with the
+  same home and no key as the negative control: keyed, `probeAgyLogin()` returns
+  `verified` and spends no turn; unkeyed, it returns `unknown` carrying AGY's own
+  "GEMINI_API_KEY is not set" diagnostic. Both directions are right, and in
+  particular a misconfiguration is not promoted to `logged-out` — which is the step
+  that would have made `readyState` `not-ready` for an install whose turns work.
+  ADC and Enterprise/WIF remain untested and are still marked so.
+
+- **`docs/THREAT-MODEL.md` 7.2 re-measured on AGY 1.1.14; the residual is unchanged.**
+  AGY 1.1.14's release notes say the setting that allows access outside your
+  workspace "now grants only read access", which is aimed squarely at that
+  residual. It does not reach headless print mode: five runs, and all five wrote an
+  absolute path outside the workspace they were bound to — including `--add-dir`,
+  the shape a read-only turn takes. The fifth is a positive control writing inside
+  the workspace, because without it a prompt the model never acted on and a boundary
+  that held are the same observation. Recorded limit: the machine's settings carry
+  `"toolPermission": "always-proceed"` and AGY has no flag or environment variable
+  that overrides a settings file, so that variable was not controlled.
+
+- **Known, from AGY 1.1.15's release notes rather than from a measurement here:**
+  AGY 1.1.15 fixes streamed text corrupting non-ASCII characters into replacement
+  characters in `--output-format stream-json` text deltas. The plugin uses
+  stream-json from AGY 1.1.12 up, but takes a completed turn's text from the
+  terminal envelope; the concatenated deltas are read only when the envelope
+  carries no text (`lib/gemini.mjs`, the salvage path for a run that was cut off).
+  So on AGY 1.1.12 through 1.1.14 the text salvaged from an interrupted run could
+  lose non-ASCII characters, while completed runs were unaffected. This was not
+  reproduced — AGY updated itself to 1.1.15 mid-investigation and 1.1.14 was no
+  longer available to test against.
+
 ## 0.22.1 — 2026-08-19 — A cancel that checks what it killed
 
 `/gemini:cancel` kills the worker with `taskkill /PID <worker> /T /F` and described
