@@ -46,11 +46,22 @@ function avgScores(scores) {
   return out;
 }
 
+// How far this cell's composite moved between repeats of the same recording.
+// One sample cannot answer that, and `null` is not zero: an unknown spread must
+// not read as a perfectly stable cell.
+function spreadOf(scores) {
+  if (scores.length < 2) return null;
+  const comps = scores.map((s) => s.composite).filter((n) => Number.isFinite(n));
+  if (comps.length < 2) return null;
+  return Math.round((Math.max(...comps) - Math.min(...comps)) * 10) / 10;
+}
+
 function liveCell({ caseId, cell, promptText, repeats, truth }) {
   let repoCtx = null;
   const needsRepo = CELLS[cell]?.harness === "agentic";
   try {
     const scores = [];
+    const results = [];
     let last = null;
     for (let r = 0; r < repeats; r += 1) {
       if (CELLS[cell]?.track === "model-isolated" && !promptText) {
@@ -65,14 +76,21 @@ function liveCell({ caseId, cell, promptText, repeats, truth }) {
       if (needsRepo && repoCtx) { repoCtx.cleanup(); repoCtx = null; }
       if (!result.ok) return { status: "skipped", note: result.error, latencyMs: result.latencyMs };
       last = result;
+      results.push(result);
       scores.push(scoreReview(result.findings, truth));
     }
-    writeCassette(caseId, cell, last);
+    writeCassette(caseId, cell, last, results);
     return {
       status: "ok",
       score: avgScores(scores),
+      spread: spreadOf(scores),
       latencyMs: last.latencyMs,
-      provenance: { seeded: false, recordedAt: new Date().toISOString(), engineVersion: last.engineVersion ?? null }
+      provenance: {
+        seeded: false,
+        recordedAt: new Date().toISOString(),
+        engineVersion: last.engineVersion ?? null,
+        samples: results.length
+      }
     };
   } finally {
     if (repoCtx) repoCtx.cleanup();
@@ -82,14 +100,20 @@ function liveCell({ caseId, cell, promptText, repeats, truth }) {
 function replayCell({ caseId, cell, truth }) {
   const cassette = readCassette(caseId, cell);
   if (!cassette) return { status: "skipped", note: "no cassette" };
+  const scores = cassette.samples.map((run) => scoreReview(run.findings, truth));
+  const latencies = cassette.samples.map((run) => run.latencyMs).filter((n) => Number.isFinite(n));
   return {
     status: "ok",
-    score: scoreReview(cassette.findings, truth),
-    latencyMs: cassette.latencyMs,
+    score: avgScores(scores),
+    spread: spreadOf(scores),
+    latencyMs: latencies.length
+      ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length)
+      : cassette.latencyMs,
     provenance: {
       seeded: Boolean(cassette.source),
       recordedAt: cassette.recordedAt ?? null,
-      engineVersion: cassette.engineVersion ?? null
+      engineVersion: cassette.engineVersion ?? null,
+      samples: cassette.samples.length
     }
   };
 }
@@ -144,4 +168,11 @@ function main() {
   process.stderr.write(`\nScorecard written to ${mdOut}\n`);
 }
 
-main();
+// Run only when invoked as the CLI. Importing this file used to run the whole
+// benchmark, which is why `replayCell` had no test — and replay is where the
+// published number comes from.
+const invokedDirectly =
+  process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+if (invokedDirectly) main();
+
+export const _internal = { replayCell, avgScores };

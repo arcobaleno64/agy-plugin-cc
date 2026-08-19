@@ -1,41 +1,225 @@
 {
   "caseId": "auth-basic",
   "cell": "codex.model",
-  "recordedAt": "2026-06-04T14:08:20.842Z",
+  "recordedAt": "2026-08-19T03:13:16.223Z",
   "verdict": "needs-attention",
-  "summary": "Authentication code introduces exploitable SQL injection and unsafe secret handling.",
+  "summary": "Authentication is vulnerable to SQL injection, credential compromise, and forged or indefinitely reusable tokens.",
   "findings": [
     {
       "severity": "critical",
       "title": "SQL injection in user lookup",
-      "body": "findUser builds the SQL statement by concatenating username directly into the WHERE clause, so crafted input can alter the query and bypass or exfiltrate user data.",
+      "body": "The username is concatenated directly into the SQL query, allowing attacker-controlled input to alter the statement and potentially bypass authentication or access/modify database data.",
       "file": "src/auth.js",
       "line_start": 6,
       "line_end": 8,
-      "confidence": 0.98,
-      "recommendation": "Use a parameterized query or the project's query builder, e.g. pass username as a bound parameter instead of interpolating it."
+      "confidence": 1,
+      "recommendation": "Use a parameterized query or prepared statement and pass username as a bound parameter."
     },
     {
       "severity": "high",
-      "title": "JWT signing secret is hardcoded",
-      "body": "JWT_SECRET is committed as a literal string, so every deployment using this code shares a known signing key; anyone with source access can forge valid tokens.",
+      "title": "Hardcoded JWT signing secret",
+      "body": "The signing key is embedded in source code, so anyone with source or artifact access can forge valid authentication tokens; rotating the compromised key also requires a code change and redeployment.",
       "file": "src/auth.js",
       "line_start": 4,
       "line_end": 4,
-      "confidence": 0.96,
-      "recommendation": "Load the signing secret from a secure environment/config secret and fail startup if it is missing or too weak."
+      "confidence": 1,
+      "recommendation": "Load a high-entropy signing key from a secret manager or protected environment variable, fail startup when it is absent, and rotate the exposed key."
+    },
+    {
+      "severity": "high",
+      "title": "Passwords are compared directly",
+      "body": "The submitted password is compared directly with the stored value, indicating plaintext or equivalently reusable password storage instead of a slow password-hash verification flow; a database disclosure would expose user credentials.",
+      "file": "src/auth.js",
+      "line_start": 11,
+      "line_end": 14,
+      "confidence": 0.98,
+      "recommendation": "Store passwords using Argon2id, bcrypt, or scrypt with per-password salts and verify them using the library's comparison function."
     },
     {
       "severity": "medium",
-      "title": "Missing user existence handling",
-      "body": "login dereferences user.password without checking whether findUser returned a user, causing an exception for unknown usernames instead of a controlled authentication failure.",
+      "title": "JWTs never expire",
+      "body": "Tokens are signed without an expiration claim, so a stolen token remains valid indefinitely unless all tokens are invalidated through signing-key rotation.",
       "file": "src/auth.js",
-      "line_start": 12,
-      "line_end": 16,
-      "confidence": 0.9,
-      "recommendation": "Return null when no user is found before reading password, and keep error behavior consistent for invalid credentials."
+      "line_start": 15,
+      "line_end": 15,
+      "confidence": 0.99,
+      "recommendation": "Set a short explicit expiresIn value and implement refresh-token rotation or another bounded session-renewal mechanism."
+    },
+    {
+      "severity": "medium",
+      "title": "Malformed session input throws uncaught exception",
+      "body": "parseSession calls JSON.parse without handling malformed input or validating the decoded shape, so attacker-controlled invalid JSON can propagate an exception through request processing and potentially cause repeated request failures.",
+      "file": "src/auth.js",
+      "line_start": 20,
+      "line_end": 23,
+      "confidence": 0.96,
+      "recommendation": "Catch JSON parsing failures, validate that the result is an object with an acceptable userId, and return or throw a controlled authentication error."
     }
   ],
-  "latencyMs": 32382,
-  "raw": "{\"verdict\":\"needs-attention\",\"summary\":\"Authentication code introduces exploitable SQL injection and unsafe secret handling.\",\"findings\":[{\"severity\":\"critical\",\"title\":\"SQL injection in user lookup\",\"body\":\"findUser builds the SQL statement by concatenating username directly into the WHERE clause, so crafted input can alter the query and bypass or exfiltrate user data.\",\"file\":\"src/auth.js\",\"line_start\":6,\"line_end\":8,\"confidence\":0.98,\"recommendation\":\"Use a parameterized query or the project's query builder, e.g. pass username as a bound parameter instead of interpolating it.\"},{\"severity\":\"high\",\"title\":\"JWT signing secret is hardcoded\",\"body\":\"JWT_SECRET is committed as a literal string, so every deployment using this code shares a known signing key; anyone with source access can forge valid tokens.\",\"file\":\"src/auth.js\",\"line_start\":4,\"line_end\":4,\"confidence\":0.96,\"recommendation\":\"Load the signing secret from a secure environment/config secret and fail startup if it is missing or too weak.\"},{\"severity\":\"medium\",\"title\":\"Missing user existence handling\",\"body\":\"login dereferences user.password without checking whether findUser returned a user, causing an exception for unknown usernames instead of a controlled authentication failure.\",\"file\":\"src/auth.js\",\"line_start\":12,\"line_end\":16,\"confidence\":0.9,\"recommendation\":\"Return null when no user is found before reading password, and keep error behavior consistent for invalid credentials.\"}],\"next_steps\":[\"Parameterize the database lookup.\",\"Move JWT_SECRET to managed secret configuration.\",\"Handle missing users before password checks.\"]}\n"
+  "latencyMs": 20209,
+  "engineVersion": "codex-cli 0.147.0",
+  "samples": [
+    {
+      "verdict": "needs-attention",
+      "summary": "Authentication is vulnerable to SQL injection, credential compromise, token forgery, and malformed-input crashes.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "SQL injection in user lookup",
+          "body": "The username is concatenated directly into the SQL statement, allowing attacker-controlled input to alter the query and potentially bypass authentication or access database data.",
+          "file": "src/auth.js",
+          "line_start": 6,
+          "line_end": 8,
+          "confidence": 1,
+          "recommendation": "Use a parameterized query with the username supplied as a bound parameter."
+        },
+        {
+          "severity": "critical",
+          "title": "Hardcoded JWT signing secret",
+          "body": "The signing key is embedded in source code, so anyone who obtains the code can forge valid authentication tokens; the same key is also likely to be reused across deployments.",
+          "file": "src/auth.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 1,
+          "recommendation": "Load a strong, deployment-specific secret from a protected secret store or environment variable, fail startup if absent, and rotate the exposed key."
+        },
+        {
+          "severity": "high",
+          "title": "Passwords compared as plaintext",
+          "body": "The supplied password is compared directly with the stored value, implying plaintext or reversibly stored credentials and exposing all accounts if the database is compromised.",
+          "file": "src/auth.js",
+          "line_start": 12,
+          "line_end": 16,
+          "confidence": 0.98,
+          "recommendation": "Store passwords using a password-hashing algorithm such as Argon2id or bcrypt and verify them with the library's constant-time comparison function."
+        },
+        {
+          "severity": "medium",
+          "title": "Unknown users can crash login",
+          "body": "The code dereferences user.password without checking whether findUser returned a user, so an unknown username can cause an exception instead of a controlled authentication failure.",
+          "file": "src/auth.js",
+          "line_start": 13,
+          "line_end": 14,
+          "confidence": 0.94,
+          "recommendation": "Validate that exactly one user was returned before accessing its fields and return a uniform authentication failure otherwise."
+        },
+        {
+          "severity": "medium",
+          "title": "Malformed session input throws uncaught exception",
+          "body": "JSON.parse is called on untrusted raw input without error handling or schema validation, so malformed JSON can propagate an exception and potentially terminate or disrupt the request path.",
+          "file": "src/auth.js",
+          "line_start": 20,
+          "line_end": 23,
+          "confidence": 0.97,
+          "recommendation": "Catch parse failures, reject non-object payloads, and validate userId before returning it."
+        }
+      ],
+      "latencyMs": 19094
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Authentication is vulnerable to SQL injection, credential exposure, and JWT forgery.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Username enables SQL injection",
+          "body": "findUser concatenates attacker-controlled username directly into the SQL statement, allowing authentication bypass, data disclosure, or database modification depending on driver and account permissions.",
+          "file": "src/auth.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 1,
+          "recommendation": "Use a parameterized query with a bound username value."
+        },
+        {
+          "severity": "high",
+          "title": "JWT signing secret is hardcoded",
+          "body": "The signing key is committed in source, so anyone who obtains the code can forge valid authentication tokens for arbitrary user IDs.",
+          "file": "src/auth.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 1,
+          "recommendation": "Load a high-entropy secret from protected runtime configuration, fail startup if absent, and rotate the exposed key."
+        },
+        {
+          "severity": "high",
+          "title": "Passwords are compared as plaintext",
+          "body": "login directly compares the submitted password with the stored value, implying plaintext or equivalently reversible credential storage and exposing every account if the database is compromised.",
+          "file": "src/auth.js",
+          "line_start": 14,
+          "line_end": 16,
+          "confidence": 0.99,
+          "recommendation": "Store salted password hashes using a password-specific algorithm such as Argon2id or bcrypt and verify them with the library's constant-time verification function."
+        },
+        {
+          "severity": "medium",
+          "title": "Issued tokens never expire",
+          "body": "jwt.sign is called without an expiration, so stolen tokens remain usable indefinitely unless the signing key is rotated.",
+          "file": "src/auth.js",
+          "line_start": 17,
+          "line_end": 17,
+          "confidence": 0.98,
+          "recommendation": "Set a short explicit expiresIn value and implement an appropriate refresh or revocation mechanism."
+        }
+      ],
+      "latencyMs": 18171
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Authentication is vulnerable to SQL injection, credential compromise, and forged or indefinitely reusable tokens.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "SQL injection in user lookup",
+          "body": "The username is concatenated directly into the SQL query, allowing attacker-controlled input to alter the statement and potentially bypass authentication or access/modify database data.",
+          "file": "src/auth.js",
+          "line_start": 6,
+          "line_end": 8,
+          "confidence": 1,
+          "recommendation": "Use a parameterized query or prepared statement and pass username as a bound parameter."
+        },
+        {
+          "severity": "high",
+          "title": "Hardcoded JWT signing secret",
+          "body": "The signing key is embedded in source code, so anyone with source or artifact access can forge valid authentication tokens; rotating the compromised key also requires a code change and redeployment.",
+          "file": "src/auth.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 1,
+          "recommendation": "Load a high-entropy signing key from a secret manager or protected environment variable, fail startup when it is absent, and rotate the exposed key."
+        },
+        {
+          "severity": "high",
+          "title": "Passwords are compared directly",
+          "body": "The submitted password is compared directly with the stored value, indicating plaintext or equivalently reusable password storage instead of a slow password-hash verification flow; a database disclosure would expose user credentials.",
+          "file": "src/auth.js",
+          "line_start": 11,
+          "line_end": 14,
+          "confidence": 0.98,
+          "recommendation": "Store passwords using Argon2id, bcrypt, or scrypt with per-password salts and verify them using the library's comparison function."
+        },
+        {
+          "severity": "medium",
+          "title": "JWTs never expire",
+          "body": "Tokens are signed without an expiration claim, so a stolen token remains valid indefinitely unless all tokens are invalidated through signing-key rotation.",
+          "file": "src/auth.js",
+          "line_start": 15,
+          "line_end": 15,
+          "confidence": 0.99,
+          "recommendation": "Set a short explicit expiresIn value and implement refresh-token rotation or another bounded session-renewal mechanism."
+        },
+        {
+          "severity": "medium",
+          "title": "Malformed session input throws uncaught exception",
+          "body": "parseSession calls JSON.parse without handling malformed input or validating the decoded shape, so attacker-controlled invalid JSON can propagate an exception through request processing and potentially cause repeated request failures.",
+          "file": "src/auth.js",
+          "line_start": 20,
+          "line_end": 23,
+          "confidence": 0.96,
+          "recommendation": "Catch JSON parsing failures, validate that the result is an object with an acceptable userId, and return or throw a controlled authentication error."
+        }
+      ],
+      "latencyMs": 20209
+    }
+  ],
+  "raw": "{\"verdict\":\"needs-attention\",\"summary\":\"Authentication is vulnerable to SQL injection, credential compromise, and forged or indefinitely reusable tokens.\",\"findings\":[{\"severity\":\"critical\",\"title\":\"SQL injection in user lookup\",\"body\":\"The username is concatenated directly into the SQL query, allowing attacker-controlled input to alter the statement and potentially bypass authentication or access/modify database data.\",\"file\":\"src/auth.js\",\"line_start\":6,\"line_end\":8,\"confidence\":1.0,\"recommendation\":\"Use a parameterized query or prepared statement and pass username as a bound parameter.\"},{\"severity\":\"high\",\"title\":\"Hardcoded JWT signing secret\",\"body\":\"The signing key is embedded in source code, so anyone with source or artifact access can forge valid authentication tokens; rotating the compromised key also requires a code change and redeployment.\",\"file\":\"src/auth.js\",\"line_start\":4,\"line_end\":4,\"confidence\":1.0,\"recommendation\":\"Load a high-entropy signing key from a secret manager or protected environment variable, fail startup when it is absent, and rotate the exposed key.\"},{\"severity\":\"high\",\"title\":\"Passwords are compared directly\",\"body\":\"The submitted password is compared directly with the stored value, indicating plaintext or equivalently reusable password storage instead of a slow password-hash verification flow; a database disclosure would expose user credentials.\",\"file\":\"src/auth.js\",\"line_start\":11,\"line_end\":14,\"confidence\":0.98,\"recommendation\":\"Store passwords using Argon2id, bcrypt, or scrypt with per-password salts and verify them using the library's comparison function.\"},{\"severity\":\"medium\",\"title\":\"JWTs never expire\",\"body\":\"Tokens are signed without an expiration claim, so a stolen token remains valid indefinitely unless all tokens are invalidated through signing-key rotation.\",\"file\":\"src/auth.js\",\"line_start\":15,\"line_end\":15,\"confidence\":0.99,\"recommendation\":\"Set a short explicit expiresIn value and implement refresh-token rotation or another bounded session-renewal mechanism.\"},{\"severity\":\"medium\",\"title\":\"Malformed session input throws uncaught exception\",\"body\":\"parseSession calls JSON.parse without handling malformed input or validating the decoded shape, so attacker-controlled invalid JSON can propagate an exception through request processing and potentially cause repeated request failures.\",\"file\":\"src/auth.js\",\"line_start\":20,\"line_end\":23,\"confidence\":0.96,\"recommendation\":\"Catch JSON parsing failures, validate that the result is an object with an acceptable userId, and return or throw a controlled authentication error.\"}],\"next_steps\":[\"Parameterize the database query and add SQL-injection regression tests.\",\"Replace direct password comparison with password-hash verification and migrate existing credentials safely.\",\"Move the JWT key to protected configuration, rotate it, and enforce token expiration.\",\"Validate session input and convert malformed data into a controlled authentication failure.\"]}\n"
 }

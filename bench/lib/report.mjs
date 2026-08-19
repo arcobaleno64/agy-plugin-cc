@@ -35,6 +35,21 @@ function provenanceByCell(rows) {
   return out;
 }
 
+// The widest movement any one case showed, because a cell is only as trustworthy
+// as its least stable case. `null` means at least one case never repeated.
+function spreadByCell(rows) {
+  const out = {};
+  for (const cell of CELL_IDS) {
+    const own = rows.filter((r) => r.cell === cell && r.status === "ok");
+    if (own.length === 0 || own.some((r) => r.spread == null)) {
+      out[cell] = null;
+      continue;
+    }
+    out[cell] = Math.max(...own.map((r) => r.spread));
+  }
+  return out;
+}
+
 function cellsOn(axis) {
   const key = axis === "model" ? "model-isolated" : "plugin-native";
   return CELL_IDS.filter((c) => CELLS[c].track === key);
@@ -44,39 +59,80 @@ function describeSource(p) {
   if (!p) return "—";
   if (p.seeded) return "**seeded**";
   const day = p.recordedAt ? p.recordedAt.slice(0, 10) : "?";
-  return p.engineVersion ? `live ${day} · ${p.engineVersion}` : `live ${day}`;
+  // The sample count travels with the number. A composite from one run and a
+  // composite averaged over five read identically without it, and on this corpus
+  // they are not comparable.
+  const n = Number.isFinite(p.samples) && p.samples > 1 ? ` ×${p.samples}` : "";
+  return p.engineVersion ? `live ${day} · ${p.engineVersion}${n}` : `live ${day}${n}`;
 }
 
 // A seeded cassette is an illustration, not a measurement, so it cannot win an
 // axis and cannot anchor a lift. Scoring it anyway is how an invented number
 // reaches a reader as a result — the axis says what it has instead.
-function axisVerdict(cells, agg, prov) {
+// Two ways a number can be present and still unable to win an axis, and they are
+// the same objection: it is not evidence anyone can compare against.
+//
+//   - it was never run (seeded), or
+//   - it was run once, so how far it moves between runs is unknown.
+//
+// The second is not pedantry on this corpus. Recording `agy.model` three times
+// gave 0, 65, 65 on one case; `codex.model` gave 0, 45, 0. A single sample from
+// either could have been anything, and the hardcoded 2-point noise band that used
+// to guard these comparisons was calibrated against nothing at all.
+function axisVerdict(cells, agg, prov, spreads) {
   const scored = cells
-    .map((cell) => ({ cell, tool: CELLS[cell].tool, score: agg[cell]?.composite, seeded: Boolean(prov[cell]?.seeded) }))
+    .map((cell) => ({
+      cell,
+      tool: CELLS[cell].tool,
+      score: agg[cell]?.composite,
+      seeded: Boolean(prov[cell]?.seeded),
+      samples: prov[cell]?.samples ?? 1,
+      spread: spreads[cell]
+    }))
     .filter((e) => e.score != null);
   if (scored.length === 0) return { name: "—", note: "no data" };
+  const label = (e) =>
+    `${e.tool} ${e.score}${e.seeded ? " (seeded)" : e.spread == null ? " (1 sample)" : ` ±${e.spread}`}`;
   const detail = scored
     .slice()
     .sort((a, b) => b.score - a.score)
-    .map((e) => `${e.tool} ${e.score}${e.seeded ? " (seeded)" : ""}`)
+    .map(label)
     .join(" · ");
-  const measured = scored.filter((e) => !e.seeded);
-  if (measured.length < 2) {
-    return { name: "—", note: `not decidable: ${measured.length} of ${scored.length} cells measured · ${detail}` };
+  const comparable = scored.filter((e) => !e.seeded && e.spread != null);
+  if (comparable.length < 2) {
+    return {
+      name: "—",
+      note: `not decidable: ${comparable.length} of ${scored.length} cells carry repeated measurements · ${detail}`
+    };
   }
-  const ranked = measured.slice().sort((a, b) => b.score - a.score);
-  if (ranked[0].score - ranked[1].score < 2) return { name: "tie", note: `within noise · ${detail}` };
+  const ranked = comparable.slice().sort((a, b) => b.score - a.score);
+  const lead = ranked[0].score - ranked[1].score;
+  // Beat the movement, not a constant. If the gap is no wider than either cell's
+  // own run-to-run range, the next recording could reverse it.
+  const band = Math.max(ranked[0].spread, ranked[1].spread);
+  if (lead <= band) {
+    return {
+      name: "tie",
+      note: `lead of ${Math.round(lead * 10) / 10} does not clear the ±${band} either cell moves between runs · ${detail}`
+    };
+  }
   return { name: ranked[0].tool, note: detail };
 }
 
-function harnessLifts(agg, prov) {
+// A lift is a comparison like any other, and was the last place still exempt from
+// having to clear its own noise. `+21` between a cell that moves ±65 and one that
+// moves ±16 is not a lift anyone has measured.
+function harnessLifts(agg, prov, spreads) {
   const tools = [...new Set(CELL_IDS.map((c) => CELLS[c].tool))];
   return tools.map((tool) => {
     const from = CELL_IDS.find((c) => CELLS[c].tool === tool && CELLS[c].track === "model-isolated");
     const to = CELL_IDS.find((c) => CELLS[c].tool === tool && CELLS[c].track === "plugin-native");
     const lift = from && to ? liftOf(agg, from, to) : null;
     const seeded = Boolean(prov[from]?.seeded || prov[to]?.seeded);
-    return { tool, from, to, lift, seeded };
+    const ends = [spreads[from], spreads[to]];
+    const band = ends.some((v) => v == null) ? null : Math.max(...ends);
+    const established = lift != null && !seeded && band != null && Math.abs(lift) > band;
+    return { tool, from, to, lift, seeded, band, established };
   });
 }
 
@@ -95,9 +151,10 @@ function winner(a, b, agg) {
 export function buildScorecard(rows, meta = {}) {
   const agg = aggregateByCell(rows);
   const prov = provenanceByCell(rows);
-  const modelAxis = axisVerdict(cellsOn("model"), agg, prov);
-  const harnessAxis = axisVerdict(cellsOn("harness"), agg, prov);
-  const lifts = harnessLifts(agg, prov);
+  const spreads = spreadByCell(rows);
+  const modelAxis = axisVerdict(cellsOn("model"), agg, prov, spreads);
+  const harnessAxis = axisVerdict(cellsOn("harness"), agg, prov, spreads);
+  const lifts = harnessLifts(agg, prov, spreads);
 
   const lines = [];
   lines.push("# review benchmark scorecard — agy · gemini · codex");
@@ -112,18 +169,24 @@ export function buildScorecard(rows, meta = {}) {
   lines.push(`| **Harness** (agentic reviewers) | **${harnessAxis.name}** | ${harnessAxis.note} |`);
   for (const l of lifts) {
     if (l.lift == null) continue;
-    const note = l.seeded ? "one end is seeded — not a measurement" : `${l.from} → ${l.to} composite`;
+    const note = l.seeded
+      ? "one end is seeded — not a measurement"
+      : l.band == null
+        ? "one end was recorded once — its noise is unknown"
+        : l.established
+          ? `${l.from} → ${l.to} composite, clear of the ±${l.band} its ends move`
+          : `does not clear the ±${l.band} its ends move between runs`;
     lines.push(`| Harness lift — ${l.tool} | ${fmtLift(l.lift)} | ${note} |`);
   }
   lines.push("");
   lines.push("## Per-cell aggregate");
   lines.push("");
-  lines.push("| Cell | Source | Cases | Composite | Recall | Precision | FP | Bonus | Sev-exact | Latency |");
-  lines.push("|---|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|");
+  lines.push("| Cell | Source | Cases | Composite | Spread | Recall | Precision | FP | Bonus | Sev-exact | Latency |");
+  lines.push("|---|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|");
   for (const cell of CELL_IDS) {
     const a = agg[cell];
     lines.push(
-      `| ${CELLS[cell].label} | ${describeSource(prov[cell])} | ${a.cases} | ${fmt(a.composite)} | ${fmt(a.recall)} | ${fmt(a.precision)} | ${a.falsePositives} | ${a.bonus} | ${fmt(a.severityExactRate)} | ${a.latencyMs == null ? "—" : `${a.latencyMs}ms`} |`
+      `| ${CELLS[cell].label} | ${describeSource(prov[cell])} | ${a.cases} | ${fmt(a.composite)} | ${spreads[cell] == null ? "—" : `±${spreads[cell]}`} | ${fmt(a.recall)} | ${fmt(a.precision)} | ${a.falsePositives} | ${a.bonus} | ${fmt(a.severityExactRate)} | ${a.latencyMs == null ? "—" : `${a.latencyMs}ms`} |`
     );
   }
   lines.push("");
@@ -145,6 +208,7 @@ export function buildScorecard(rows, meta = {}) {
   lines.push("- The **model axis** isolates raw single-shot quality (diff embedded, tools forbidden); the **harness axis** is each tool's repo-exploring reviewer. Most real-world gap lives on the harness axis — see `docs/MODEL_COMPARISON.md`.");
   lines.push("- Composite = `recall*70 + precision*20 + severityExact*10` (0–100); it is a summary, not a verdict — read the columns.");
   lines.push("- In `--live` mode model output is non-deterministic; treat single-digit composite gaps as noise. Use `--repeats N` to average.");
+  lines.push("- **Spread** is the widest gap between repeats of the same recording, on the least stable case. It is the noise band: a verdict is only named when the lead is wider than it. A cell recorded once has no spread and cannot win or lose an axis — `—` there means unknown, not stable.");
   lines.push("- A cell marked **seeded** was never run: its cassette is an illustration kept so the table has a shape, and it is excluded from every verdict and lift above.");
   lines.push("- A finding outside the planted set but on the case's `allowed_extras` list counts as **bonus** (a legitimate unique catch), not a false positive.");
   lines.push("");
@@ -154,7 +218,9 @@ export function buildScorecard(rows, meta = {}) {
     caseCount: meta.caseCount ?? null,
     modelAxisWinner: modelAxis.name,
     harnessAxisWinner: harnessAxis.name,
-    harnessLifts: Object.fromEntries(lifts.map((l) => [l.tool, { lift: l.lift, seeded: l.seeded }])),
+    harnessLifts: Object.fromEntries(
+      lifts.map((l) => [l.tool, { lift: l.lift, seeded: l.seeded, band: l.band, established: l.established }])
+    ),
     provenance: prov,
     byCell: agg
   };
