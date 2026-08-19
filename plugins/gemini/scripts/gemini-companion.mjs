@@ -1621,7 +1621,11 @@ function cancelOneJob(workspaceRoot, job, terminateProcessTreeFn) {
   // Be honest about whether a live process was actually killed: the detached
   // worker is unref()-ed, so by cancel time its PID may already be gone. The job
   // is still marked cancelled (the user's intent is recorded) in every case.
-  const termination = terminateProcessTreeFn(job.pid ?? Number.NaN);
+  // startedAt is what tells a surviving engine apart from a stranger that
+  // inherited the worker's reused pid; without it the sweep declines to kill.
+  const termination = terminateProcessTreeFn(job.pid ?? Number.NaN, {
+    notBefore: existing.startedAt ?? job.startedAt ?? null
+  });
   appendLogLine(job.logFile, `Cancelled by user — ${describeTermination(termination)}.`);
 
   const completedAt = nowIso();

@@ -46,7 +46,7 @@ function cleanupSessionJobs(cwd, sessionId) {
       continue;
     }
     try {
-      terminateProcessTree(job.pid ?? Number.NaN);
+      terminateProcessTree(job.pid ?? Number.NaN, { notBefore: job.startedAt ?? null });
     } catch {
       // Ignore teardown failures during session shutdown.
     }

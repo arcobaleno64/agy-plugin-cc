@@ -3,9 +3,13 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { spawn } from "node:child_process";
+import { setTimeout as delay } from "node:timers/promises";
 
 import {
   terminateProcessTree,
+  listChildProcesses,
+  isPidAlive,
   binaryAvailable,
   formatCommandFailure,
   resolveBinaryPath,
@@ -354,4 +358,232 @@ test("a target that exits a moment after taskkill returns is not called a failur
 
   assert.equal(outcome.delivered, true);
   assert.ok(looks >= 3, "it gave up before the process had a chance to exit");
+});
+
+// ---------------------------------------------------------------------------
+// An engine does not normally outlive its worker, and the tree walk is not why:
+// killing a worker with /F alone, no /T, takes its engine with it. What performs
+// that collection was never identified — the engines are in no job object, and it
+// is not the stand-in holding stdin — but about 3% of cancels under load escape
+// it, and taskkill reported every one of those as a clean kill.
+//
+// So the tree is measured after the kill, not inferred from an exit code. These
+// pin what that measurement may and may not do.
+// ---------------------------------------------------------------------------
+
+const FAKE_POWERSHELL = "C:\\fake\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+
+function sweepScenario({ children = [], childSurvives = false, listingFails = false } = {}) {
+  const calls = [];
+  return {
+    calls,
+    platform: "win32",
+    powerShellPath: FAKE_POWERSHELL,
+    runCommandImpl(command, args) {
+      calls.push({ command, args });
+      if (command === FAKE_POWERSHELL) {
+        return listingFails
+          ? { command, args, status: 1, signal: null, stdout: "", stderr: "denied", error: null }
+          : {
+            command,
+            args,
+            status: 0,
+            signal: null,
+            stdout: children.map((child) => `${child.pid}|${child.createdAt}`).join("\n"),
+            stderr: "",
+            error: null
+          };
+      }
+      return { command, args, status: 0, signal: null, stdout: "", stderr: "", error: null };
+    },
+    isPidAlive(pid) {
+      return pid === 1234 ? false : childSurvives;
+    }
+  };
+}
+
+const JOB_STARTED = "2026-08-18T15:26:54.950Z";
+const AFTER_START = "2026-08-18T15:27:00.304Z";   // the engine, spawned by this job
+const BEFORE_START = "2026-08-18T09:00:00.000Z";  // a stranger on a reused pid
+
+test("a cancel kills the engine that outlived its worker", () => {
+  const scenario = sweepScenario({ children: [{ pid: 5678, createdAt: AFTER_START }] });
+  const outcome = terminateProcessTree(1234, { ...scenario, notBefore: JOB_STARTED });
+
+  assert.deepEqual(outcome.orphansKilled, [5678]);
+  assert.ok(!outcome.treeIncomplete, "nothing of this job's was left running");
+  assert.deepEqual(
+    scenario.calls.map((call) => call.command === FAKE_POWERSHELL ? "list" : call.args.join(" ")),
+    ["/PID 1234 /T /F", "list", "/PID 5678 /T /F"],
+    "the worker is killed, its children measured, and the survivor killed"
+  );
+});
+
+test("a cancel asks what the worker left only once the worker is gone", () => {
+  // A worker that is still being torn down can still start an engine, so a
+  // listing taken before it goes can be out of date by the time it is read.
+  const events = [];
+  let looks = 0;
+  const outcome = terminateProcessTree(1234, {
+    platform: "win32",
+    powerShellPath: FAKE_POWERSHELL,
+    notBefore: JOB_STARTED,
+    runCommandImpl(command, args) {
+      events.push(command === FAKE_POWERSHELL ? "list" : `kill ${args[1]}`);
+      return command === FAKE_POWERSHELL
+        ? { command, args, status: 0, signal: null, stdout: "", stderr: "", error: null }
+        : { command, args, status: 0, signal: null, stdout: "", stderr: "", error: null };
+    },
+    isPidAlive() {
+      looks += 1;
+      const stillThere = looks < 3;
+      events.push(stillThere ? "worker still there" : "worker gone");
+      return stillThere;
+    }
+  });
+
+  assert.deepEqual(events, [
+    "kill 1234",
+    "worker still there",
+    "worker still there",
+    "worker gone",
+    "list"
+  ]);
+  assert.ok(!outcome.treeIncomplete, "the worker did go, so the listing is final");
+});
+
+test("a worker that outlives its own kill is not reported as a finished tree", () => {
+  // taskkill exited 0 and the process is still there: whatever the listing says,
+  // it can still change, so the report may not claim the tree is done.
+  const scenario = sweepScenario();
+  const outcome = terminateProcessTree(1234, {
+    ...scenario,
+    notBefore: JOB_STARTED,
+    isPidAlive: () => true
+  });
+
+  assert.equal(outcome.delivered, true, "taskkill said it killed it");
+  assert.equal(outcome.treeIncomplete, true, "but nothing here can say the tree is finished");
+});
+
+test("a cancel does not kill a process that predates the job it is cancelling", () => {
+  // Windows never clears a parent link, so a reused pid inherits processes that
+  // belonged to an earlier owner of that number. They are older than this job,
+  // and killing them would be killing a stranger.
+  const scenario = sweepScenario({ children: [{ pid: 4242, createdAt: BEFORE_START }] });
+  const outcome = terminateProcessTree(1234, { ...scenario, notBefore: JOB_STARTED });
+
+  assert.equal(outcome.orphansKilled, undefined, "nothing of this job's was found");
+  assert.deepEqual(
+    scenario.calls.filter((call) => call.command === "taskkill").map((call) => call.args[1]),
+    ["1234"],
+    "only the worker was killed"
+  );
+});
+
+test("a cancel reports a tree it could not finish killing even when taskkill exited 0", () => {
+  const scenario = sweepScenario({ children: [{ pid: 5678, createdAt: AFTER_START }], childSurvives: true });
+  const outcome = terminateProcessTree(1234, { ...scenario, notBefore: JOB_STARTED });
+
+  assert.equal(outcome.delivered, true, "the job's own worker is gone");
+  assert.equal(outcome.treeIncomplete, true, "but something it started is not");
+  assert.deepEqual(outcome.orphansRemaining, [5678]);
+});
+
+test("a cancel that cannot measure the tree keeps the caveat it used to give", () => {
+  const scenario = sweepScenario({ listingFails: true });
+  const outcome = terminateProcessTree(1234, {
+    ...taskkillPartialFailure(),
+    powerShellPath: FAKE_POWERSHELL,
+    runCommandImpl(command, args) {
+      return command === FAKE_POWERSHELL
+        ? scenario.runCommandImpl(command, args)
+        : taskkillPartialFailure().runCommandImpl(command, args);
+    },
+    isPidAlive: () => false,
+    notBefore: JOB_STARTED
+  });
+
+  assert.equal(outcome.delivered, true);
+  assert.equal(outcome.treeIncomplete, true, "unmeasured is reported as incomplete, not as clean");
+});
+
+test("a cancel with no job start time does not go looking for children at all", () => {
+  // Without a start time there is nothing to tell this job's processes apart
+  // from a stranger's, so the sweep must not run — not even to look.
+  const scenario = sweepScenario({ children: [{ pid: 5678, createdAt: AFTER_START }] });
+  terminateProcessTree(1234, scenario);
+
+  assert.deepEqual(scenario.calls.map((call) => call.command), ["taskkill"]);
+});
+
+// The two below use real processes. Both are spawned detached: undetached, the
+// probe joins the test runner’s own job object and Windows collects the child
+// along with its parent, leaving nothing to measure.
+
+function spawnProbeTree() {
+  const parent = spawn(process.execPath, ["-e", [
+    'const { spawn } = require("node:child_process");',
+    'const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "ignore", detached: true });',
+    "child.unref();",
+    "console.log(child.pid);",
+    "setTimeout(() => {}, 30000);"
+  ].join("\n")], { stdio: ["ignore", "pipe", "ignore"], detached: true });
+
+  return new Promise((resolve, reject) => {
+    parent.stdout.on("data", (chunk) => resolve({ parentPid: parent.pid, childPid: Number(String(chunk).trim()) }));
+    parent.on("error", reject);
+    setTimeout(() => reject(new Error("the probe never reported its child")), 10_000).unref();
+  });
+}
+
+test("a child is still findable through the pid of a parent that is already dead", {
+  skip: process.platform !== "win32" && "windows-only"
+}, async (t) => {
+  // The whole design rests on this: Windows keeps the parent link, so a cancel
+  // can ask what its worker started after killing that worker. If a future
+  // Windows or Node stops answering, everything below silently finds nothing —
+  // so it is pinned here rather than assumed.
+  const { parentPid, childPid } = await spawnProbeTree();
+  t.after(() => {
+    for (const pid of [parentPid, childPid]) {
+      try { process.kill(pid); } catch { /* already gone */ }
+    }
+  });
+
+  // No /T: the child must outlive its parent for there to be anything to find.
+  runCommand("taskkill", ["/PID", String(parentPid), "/F"]);
+  await delay(800);
+  assert.equal(isPidAlive(parentPid), false, "the parent is gone");
+  assert.equal(isPidAlive(childPid), true, "the child outlived it");
+
+  const listing = listChildProcesses(parentPid);
+  assert.equal(listing.available, true, "the query ran");
+  assert.deepEqual(listing.children.map((child) => child.pid), [childPid]);
+  assert.ok(Number.isFinite(listing.children[0].createdAt), "with a creation time to judge it by");
+});
+
+test("a cancel kills a real engine the tree walk never saw", {
+  skip: process.platform !== "win32" && "windows-only"
+}, async (t) => {
+  // The leak is an engine the cancel did not reach. Waiting for the real one
+  // would make this test a 3% coin flip, so the escape is staged instead:
+  // everything is a real process and a real kill, with /T dropped from the
+  // worker's taskkill so the child is exactly as unreachable as a leaked engine.
+  const { parentPid, childPid } = await spawnProbeTree();
+  t.after(() => {
+    for (const pid of [parentPid, childPid]) {
+      try { process.kill(pid); } catch { /* already gone */ }
+    }
+  });
+
+  const outcome = terminateProcessTree(parentPid, {
+    notBefore: new Date(Date.now() - 60_000).toISOString(),
+    runCommandImpl: (command, args, options) => runCommand(command, args.filter((arg) => arg !== "/T"), options)
+  });
+
+  assert.equal(outcome.delivered, true, "the worker is gone");
+  assert.deepEqual(outcome.orphansKilled, [childPid], "and so is what it left behind");
+  assert.ok(!outcome.treeIncomplete, "with nothing left to warn about");
+  assert.equal(isPidAlive(childPid), false);
 });

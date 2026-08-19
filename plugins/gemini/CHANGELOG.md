@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.22.1 — 2026-08-19 — A cancel that checks what it killed
+
+`/gemini:cancel` kills the worker with `taskkill /PID <worker> /T /F` and described
+the result from that command's exit code. Under load it could report "terminated
+the running process" while the engine the job started kept running: in one
+captured run the engine was created 484ms before the cancel finished, and was
+still alive 74 seconds later, still holding the job's workspace as its working
+directory.
+
+taskkill's tree walk is not usually what kills that engine: killing a worker with
+`/F` alone and no `/T` takes its engine with it, measured here on a staged job.
+What performs that collection was not identified — the engines are in no job
+object, and it is not the stand-in's hold on stdin — so what a cancel escapes is
+named here only by what it does. taskkill, which did kill the worker, exits 0 and
+says so honestly.
+
+The exit code is no more useful in the other direction. Over 36 cancels under
+load, 15 reported "some processes the OS reported as its descendants could not be
+killed" and exactly one leaked an engine: that message is mostly strangers
+inherited through a reused pid, which Windows lets go on naming a dead parent.
+
+So the tree is measured after the kill rather than read off an exit code — the
+same move 0.20.1 made for the target pid itself. Once the worker is gone its
+children are queried by pid, anything created after the job started is killed,
+and the report describes what is left. What keeps that safe is the comparison
+against the job's start time: pids are reused and the parent link is never
+cleared, so the query can name processes belonging to an earlier owner of that
+number, and those predate the job. Given no start time the sweep does nothing at
+all.
+
+"Once the worker is gone" is load-bearing. `taskkill /F` returns before the kernel
+has finished the teardown, and a worker that is still running can still start an
+engine — the very moment this is trying to catch — so a listing taken then can be
+stale before it is read. The pid is waited out first, and a process that no longer
+exists cannot start anything: the set of children it left is final, so one query
+sees all of it and no second pass or settle delay could add to it. A worker that
+somehow outlives its own kill still gets swept, but its tree is no longer called
+finished.
+
+Which of the two existing messages a run gets is now decided by measurement, so
+the caveat appears when something of the job's really is still running and stays
+away when it is not. Both now carry a count, because the sweep knows one: a
+cancel that had to clean up says "terminated the running process, and 1 process
+it had left running", and one that could not says how many it could not kill
+rather than "some processes". The wording for a tree that could not be measured
+at all is unchanged, and so is every other message. A cancel with a live
+worker costs about 350ms more than it did — 335ms to 688ms measured, all of it
+the one child-process query. `wmic` is gone from Windows 11 26200, so that query
+is PowerShell, resolved absolutely like `where.exe` and `taskkill.exe` already
+are.
+
 ## 0.22.0 — 2026-08-18 — Cancel a group; say which copy of the plugin is answering
 
 ### `/gemini:cancel <group-id>`
