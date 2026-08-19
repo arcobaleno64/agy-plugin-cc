@@ -1,6 +1,6 @@
 # review benchmark scorecard — agy · gemini · codex
 
-> Mode: **replay** · repeats: 1 · cases: 2 · generated: 2026-08-19T08:08:44.544Z
+> Mode: **replay** · repeats: 1 · cases: 5 · generated: 2026-08-19T08:19:34.602Z
 
 ## Verdicts
 
@@ -27,18 +27,36 @@
 
 | Case | Cell | Status | Composite | Recall | FP | Bonus | Missed |
 |---|---|:-:|:-:|:-:|:-:|:-:|---|
+| async-lifecycle | gemini.model | skipped (no cassette) | — | — | — | — | — |
+| async-lifecycle | codex.model | skipped (no cassette) | — | — | — | — | — |
+| async-lifecycle | agy.model | skipped (no cassette) | — | — | — | — | — |
+| async-lifecycle | gemini.deep | skipped (no cassette) | — | — | — | — | — |
+| async-lifecycle | codex.native | skipped (no cassette) | — | — | — | — | — |
+| async-lifecycle | agy.deep | skipped (no cassette) | — | — | — | — | — |
 | auth-basic | gemini.model | ok | 81 | 0.8 | 0 | 0 | null-check |
 | auth-basic | codex.model | ok | 89 | 0.87 | 0 | 0.33 | — |
 | auth-basic | agy.model | ok | 85 | 0.87 | 0 | 0 | plaintext-compare |
 | auth-basic | gemini.deep | ok | 81 | 0.8 | 0.33 | 0 | plaintext-compare |
 | auth-basic | codex.native | ok | 86 | 0.8 | 0 | 1 | json-parse |
 | auth-basic | agy.deep | ok | 84 | 0.87 | 0.67 | 0 | — |
+| path-and-input | gemini.model | skipped (no cassette) | — | — | — | — | — |
+| path-and-input | codex.model | skipped (no cassette) | — | — | — | — | — |
+| path-and-input | agy.model | skipped (no cassette) | — | — | — | — | — |
+| path-and-input | gemini.deep | skipped (no cassette) | — | — | — | — | — |
+| path-and-input | codex.native | skipped (no cassette) | — | — | — | — | — |
+| path-and-input | agy.deep | skipped (no cassette) | — | — | — | — | — |
 | repo-context | gemini.model | ok | 65 | 0.5 | 0 | 0 | committed-state |
 | repo-context | codex.model | ok | 15 | 0.17 | 1.67 | 0 | missing-dependency, committed-state |
 | repo-context | agy.model | ok | 43 | 0.33 | 0.33 | 0 | committed-state |
 | repo-context | gemini.deep | ok | 88 | 1 | 1 | 0 | — |
 | repo-context | codex.native | ok | 100 | 1 | 0 | 0 | — |
 | repo-context | agy.deep | ok | 86 | 1 | 1 | 0 | — |
+| vacuous-tests | gemini.model | skipped (no cassette) | — | — | — | — | — |
+| vacuous-tests | codex.model | skipped (no cassette) | — | — | — | — | — |
+| vacuous-tests | agy.model | skipped (no cassette) | — | — | — | — | — |
+| vacuous-tests | gemini.deep | skipped (no cassette) | — | — | — | — | — |
+| vacuous-tests | codex.native | skipped (no cassette) | — | — | — | — | — |
+| vacuous-tests | agy.deep | skipped (no cassette) | — | — | — | — | — |
 
 ## Caveats
 
