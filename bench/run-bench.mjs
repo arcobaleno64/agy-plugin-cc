@@ -11,7 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { CELL_IDS } from "./lib/cells.mjs";
+import { CELLS, CELL_IDS } from "./lib/cells.mjs";
 import { listCases, loadCase, materializeCase } from "./lib/corpus.mjs";
 import { readCassette, writeCassette } from "./lib/cassette.mjs";
 import { runCell } from "./lib/adapters.mjs";
@@ -48,11 +48,14 @@ function avgScores(scores) {
 
 function liveCell({ caseId, cell, promptText, repeats, truth }) {
   let repoCtx = null;
-  const needsRepo = cell === "gemini.deep" || cell === "codex.native";
+  const needsRepo = CELLS[cell]?.harness === "agentic";
   try {
     const scores = [];
     let last = null;
     for (let r = 0; r < repeats; r += 1) {
+      if (CELLS[cell]?.track === "model-isolated" && !promptText) {
+        return { status: "skipped", note: "no diff materialized for this case" };
+      }
       const ctx = { promptText };
       if (needsRepo) {
         repoCtx = materializeCase(caseId);
@@ -65,7 +68,12 @@ function liveCell({ caseId, cell, promptText, repeats, truth }) {
       scores.push(scoreReview(result.findings, truth));
     }
     writeCassette(caseId, cell, last);
-    return { status: "ok", score: avgScores(scores), latencyMs: last.latencyMs };
+    return {
+      status: "ok",
+      score: avgScores(scores),
+      latencyMs: last.latencyMs,
+      provenance: { seeded: false, recordedAt: new Date().toISOString(), engineVersion: last.engineVersion ?? null }
+    };
   } finally {
     if (repoCtx) repoCtx.cleanup();
   }
@@ -74,7 +82,16 @@ function liveCell({ caseId, cell, promptText, repeats, truth }) {
 function replayCell({ caseId, cell, truth }) {
   const cassette = readCassette(caseId, cell);
   if (!cassette) return { status: "skipped", note: "no cassette" };
-  return { status: "ok", score: scoreReview(cassette.findings, truth), latencyMs: cassette.latencyMs };
+  return {
+    status: "ok",
+    score: scoreReview(cassette.findings, truth),
+    latencyMs: cassette.latencyMs,
+    provenance: {
+      seeded: Boolean(cassette.source),
+      recordedAt: cassette.recordedAt ?? null,
+      engineVersion: cassette.engineVersion ?? null
+    }
+  };
 }
 
 function main() {
@@ -97,7 +114,7 @@ function main() {
   for (const caseId of cases) {
     const { truth, promptTemplate } = loadCase(caseId);
     let diffText = null;
-    if (opts.live && cells.some((c) => c === "gemini.model" || c === "codex.model")) {
+    if (opts.live && cells.some((c) => CELLS[c]?.track === "model-isolated")) {
       const mat = materializeCase(caseId);
       diffText = mat.diffText;
       mat.cleanup();

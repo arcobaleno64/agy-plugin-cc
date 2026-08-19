@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { scoreReview, findingMatchesPlanted, normalizeFile } from "./lib/score.mjs";
 import { _internal as adapters } from "./lib/adapters.mjs";
+import { buildScorecard } from "./lib/report.mjs";
 
 const TRUTH = {
   planted: [
@@ -148,4 +149,85 @@ test("scoreReview flags severity miscalibration without dropping the catch", () 
   assert.equal(s.found, 2);
   assert.equal(s.severity.mismatch, 1); // low vs critical
   assert.equal(s.severity.exact, 1); // high vs high
+});
+
+// --- scorecard provenance ---------------------------------------------------
+// A cassette that was never run still produces a composite, and the composite
+// looks exactly like a measured one. These pin the one thing that separates them.
+
+function scoreOf(composite) {
+  return {
+    composite,
+    recall: 1,
+    precision: 1,
+    falsePositives: 0,
+    bonus: 0,
+    severityExactRate: 1,
+    missed: []
+  };
+}
+
+function row(cell, composite, seeded, caseId = "c1") {
+  return {
+    caseId,
+    cell,
+    status: "ok",
+    score: scoreOf(composite),
+    latencyMs: 1000,
+    provenance: { seeded, recordedAt: "2026-08-19T00:00:00.000Z", engineVersion: seeded ? null : "1.1.14" }
+  };
+}
+
+test("a seeded cell cannot win an axis, however high it scores", () => {
+  const { summary, markdown } = buildScorecard([
+    row("agy.deep", 50, false),
+    row("codex.native", 99, true)
+  ]);
+
+  assert.notEqual(summary.harnessAxisWinner, "codex", "a cassette nobody ran must not win");
+  assert.equal(summary.harnessAxisWinner, "—");
+  assert.match(markdown, /not decidable: 1 of 2 cells measured/);
+  assert.match(markdown, /codex 99 \(seeded\)/, "the seeded number is still shown, just labelled");
+});
+
+test("an axis names a winner once two measured cells disagree beyond noise", () => {
+  const { summary } = buildScorecard([
+    row("agy.deep", 90, false),
+    row("codex.native", 60, false)
+  ]);
+  assert.equal(summary.harnessAxisWinner, "agy");
+});
+
+test("two measured cells within noise tie rather than crowning one", () => {
+  const { summary } = buildScorecard([
+    row("agy.deep", 90, false),
+    row("codex.native", 89, false)
+  ]);
+  assert.equal(summary.harnessAxisWinner, "tie");
+});
+
+test("a harness lift with a seeded end is not reported as a measurement", () => {
+  const { markdown, summary } = buildScorecard([
+    row("gemini.model", 70, false),
+    row("gemini.deep", 90, true)
+  ]);
+
+  assert.equal(summary.harnessLifts.gemini.seeded, true);
+  assert.match(markdown, /Harness lift — gemini \| \+20 \| one end is seeded — not a measurement/);
+});
+
+test("a harness lift measured end to end says what it is", () => {
+  const { markdown, summary } = buildScorecard([
+    row("agy.model", 73, false),
+    row("agy.deep", 90.5, false)
+  ]);
+
+  assert.equal(summary.harnessLifts.agy.seeded, false);
+  assert.equal(summary.harnessLifts.agy.lift, 17.5);
+  assert.match(markdown, /Harness lift — agy \| \+17.5 \| agy.model → agy.deep composite/);
+});
+
+test("the per-cell table carries the build a live cell was recorded against", () => {
+  const { markdown } = buildScorecard([row("agy.deep", 90.5, false)]);
+  assert.match(markdown, /live 2026-08-19 · 1.1.14/);
 });

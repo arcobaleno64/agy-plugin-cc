@@ -1,16 +1,16 @@
-# bench — codex vs gemini review benchmark
+# bench — agy vs gemini vs codex review benchmark
 
-A reproducible harness that pits **Codex** and **Gemini** against each other on
-code review, scored automatically against planted ground truth. It operationalizes
+A reproducible harness that pits **AGY**, **Gemini** and **Codex** against each other
+on code review, scored automatically against planted ground truth. It operationalizes
 the manual comparison in [`docs/MODEL_COMPARISON.md`](../docs/MODEL_COMPARISON.md):
 the interesting question is **model vs harness**, so the benchmark measures both.
 
-## Two axes, four cells
+## Two axes, six cells
 
-Both tools emit the **same** structured review JSON (see
+All three tools emit the **same** structured review JSON (see
 [`review-output.schema.json`](review-output.schema.json), identical to the gemini
 `prompts/review.md` contract and the codex `schemas/review-output.schema.json`), so
-one scorer grades both.
+one scorer grades all of them.
 
 | Cell | What it is | Isolates |
 |---|---|---|
@@ -18,10 +18,15 @@ one scorer grades both.
 | `codex.model` | `codex exec --output-schema …` on the same neutral prompt + diff | model (single-shot) |
 | `gemini.deep` | `gemini-companion review --deep` (agentic repo exploration) | harness |
 | `codex.native` | codex's native agentic reviewer via its companion | harness |
+| `agy.model` | `agy` on the same neutral prompt + diff, unoriented, tools forbidden | model (single-shot) |
+| `agy.deep` | `gemini-companion review --deep --engine agy` (agentic repo exploration) | harness |
 
-- **Model axis** = `gemini.model` vs `codex.model` (same prompt, no tools).
-- **Harness axis** = `gemini.deep` vs `codex.native` (each tool's repo-exploring reviewer).
+- **Model axis** = every `*.model` cell (same prompt, no tools).
+- **Harness axis** = every agentic cell (each tool's repo-exploring reviewer).
 - **Harness lift** = within a tool, `model → agentic` composite delta.
+
+The axes are read off `lib/cells.mjs`, not off a list of tool names, so a cell added
+there joins both the ranking and its own lift without touching the report.
 
 ## Running
 
@@ -49,20 +54,37 @@ The scorecard prints to stdout and is written to `bench/results/scorecard.md`
 
 ### Cassette provenance & live-refresh status
 
-A cassette recorded from a real run carries `recordedAt` and no `source`; a seeded
-one carries a `source` field. Current committed state:
+A cassette recorded from a real run carries `recordedAt`, the `engineVersion` it was
+recorded against, and no `source`; a seeded one carries a `source` field. The
+scorecard prints this per cell, and **a seeded cell is excluded from every verdict
+and every harness lift** — it is an illustration kept so the table has a shape, not a
+result. Current committed state:
 
-- **Model cells (`*.model`) — live-recorded** (2026-06-04, gemini 0.45 / codex-cli
-  0.137, single sample). On this corpus the real single-shot result was Gemini-ahead
-  on the model axis (Codex hallucinated a false positive on `repo-context` and missed
-  more in-diff defects). Single samples are noisy — re-run with `--repeats N`.
-- **Agentic cells (`gemini.deep`, `codex.native`) — still seeded.** They could not be
-  driven headlessly in this environment: `gemini --deep` exits non-zero with empty
-  stdout under headless agentic+JSON mode (tool approvals need a TTY), and the
+- **`agy.model`, `agy.deep` — live-recorded** (2026-08-19, agy 1.1.14, single sample).
+  Both axes of the AGY column are real, which makes the AGY harness lift
+  (`agy.model` → `agy.deep`) the only lift on the scorecard measured end to end.
+- **`gemini.model`, `codex.model` — live-recorded** (2026-06-04, gemini 0.45 /
+  codex-cli 0.137, single sample) and predate the `engineVersion` field, so their
+  builds are recorded here rather than in the cassette. Gemini CLI's consumer tier
+  stopped serving on 2026-06-18, so re-recording `gemini.model` now needs a paid
+  Code Assist or API-key credential.
+- **`gemini.deep`, `codex.native` — still seeded.** They could not be driven
+  headlessly in this environment: `gemini --deep` exits non-zero with empty stdout
+  under headless agentic+JSON mode (tool approvals need a TTY), and the
   `codex.native` app-server review exceeded the 180s cap. Refresh them with a longer
   `BENCH_TIMEOUT_MS`, an interactive/approved session, or on a platform where the
-  agentic harness runs non-interactively. Until then the harness-axis numbers come
-  from the `MODEL_COMPARISON.md`-grounded seeds.
+  agentic harness runs non-interactively.
+
+`agy.deep` records headlessly where `gemini.deep` cannot, because AGY's print mode
+auto-approves tools and never waits for a TTY. That is a difference in permission
+model, not in capability, and `docs/THREAT-MODEL.md` 7.2 is where it is argued about
+rather than celebrated.
+
+Adding a cell means one entry in `lib/cells.mjs` and one `case` in `lib/adapters.mjs`;
+everything else — which cases get materialized, which cells need a repo, the axes,
+the lifts — reads the registry. It did not always: two hardcoded cell lists in
+`run-bench.mjs` meant a newly added model cell ran with a null prompt, and on AGY that
+surfaced 180 seconds later as an engine timeout rather than as a missing diff.
 
 ## Scoring (`lib/score.mjs`, pure & unit-tested)
 

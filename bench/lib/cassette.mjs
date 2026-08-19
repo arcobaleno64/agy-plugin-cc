@@ -29,6 +29,7 @@ export function writeCassette(caseId, cell, data) {
     summary: data.summary ?? null,
     findings: Array.isArray(data.findings) ? data.findings : [],
     latencyMs: data.latencyMs ?? null,
+    engineVersion: data.engineVersion ?? null,
     ...(data.raw !== undefined ? { raw: data.raw } : {})
   };
   fs.writeFileSync(file, `${JSON.stringify(payload, null, 2)}\n`);

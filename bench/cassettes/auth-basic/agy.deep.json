@@ -1,0 +1,52 @@
+{
+  "caseId": "auth-basic",
+  "cell": "agy.deep",
+  "recordedAt": "2026-08-19T02:15:34.060Z",
+  "verdict": "needs-attention",
+  "summary": "Authentication module contains critical SQL injection, unhandled null reference on non-existent users, hardcoded secrets, and unsafe JSON parsing.",
+  "findings": [
+    {
+      "severity": "critical",
+      "title": "SQL Injection via String Concatenation in findUser",
+      "body": "The findUser function constructs a SQL query by directly concatenating user-supplied input into the query string. This allows attackers to perform SQL injection attacks, bypass authentication, or exfiltrate database contents.",
+      "file": "src/auth.js",
+      "line_start": 7,
+      "line_end": 9,
+      "confidence": 1,
+      "recommendation": "Use parameterized queries or prepared statements (e.g., db.query('SELECT * FROM users WHERE name = ?', [username])) instead of raw string concatenation."
+    },
+    {
+      "severity": "high",
+      "title": "Unhandled Null User and Insecure Plaintext Password Comparison",
+      "body": "If findUser returns null or undefined when a user is not found, accessing user.password throws an unhandled TypeError that crashes the request. Additionally, passwords are validated using plaintext comparison with loose equality (==) rather than secure password hashing.",
+      "file": "src/auth.js",
+      "line_start": 14,
+      "line_end": 18,
+      "confidence": 1,
+      "recommendation": "Verify that user exists before inspecting properties (e.g., if (!user) return null;), and use a secure hashing algorithm (such as bcrypt or argon2) with constant-time comparison for password verification."
+    },
+    {
+      "severity": "high",
+      "title": "Hardcoded JWT Secret Key",
+      "body": "JWT_SECRET is hardcoded in source code with a static plaintext value. If source code is compromised, any attacker can forge arbitrary JWT tokens and impersonate users.",
+      "file": "src/auth.js",
+      "line_start": 4,
+      "line_end": 4,
+      "confidence": 1,
+      "recommendation": "Load the JWT secret from environment variables (e.g., process.env.JWT_SECRET) and throw an error at startup if the secret is not configured."
+    },
+    {
+      "severity": "medium",
+      "title": "Unhandled SyntaxError on Malformed Input in parseSession",
+      "body": "JSON.parse(raw) throws an uncaught SyntaxError when provided with invalid JSON input, and subsequent property access (session.userId) will throw a TypeError if raw parses to null.",
+      "file": "src/auth.js",
+      "line_start": 21,
+      "line_end": 24,
+      "confidence": 0.95,
+      "recommendation": "Wrap JSON.parse in a try/catch block and handle null or non-object results safely, returning null or undefined when parsing fails."
+    }
+  ],
+  "latencyMs": 32167,
+  "engineVersion": "1.1.14",
+  "raw": "{\n  \"review\": \"Review\",\n  \"target\": {\n    \"mode\": \"working-tree\",\n    \"label\": \"working tree diff\",\n    \"explicit\": true\n  },\n  \"gemini\": {\n    \"status\": 0,\n    \"stdout\": \"{\\n  \\\"verdict\\\": \\\"needs-attention\\\",\\n  \\\"summary\\\": \\\"Authentication module contains critical SQL injection, unhandled null reference on non-existent users, hardcoded secrets, and unsafe JSON parsing.\\\",\\n  \\\"findings\\\": [\\n    {\\n      \\\"severity\\\": \\\"critical\\\",\\n      \\\"title\\\": \\\"SQL Injection via String Concatenation in findUser\\\",\\n      \\\"body\\\": \\\"The findUser function constructs a SQL query by directly concatenating user-supplied input into the query string. This allows attackers to perform SQL injection attacks, bypass authentication, or exfiltrate database contents.\\\",\\n      \\\"file\\\": \\\"src/auth.js\\\",\\n      \\\"line_start\\\": 7,\\n      \\\"line_end\\\": 9,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Use parameterized queries or prepared statements (e.g., db.query('SELECT * FROM users WHERE name = ?', [username])) instead of raw string concatenation.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"high\\\",\\n      \\\"title\\\": \\\"Unhandled Null User and Insecure Plaintext Password Comparison\\\",\\n      \\\"body\\\": \\\"If findUser returns null or undefined when a user is not found, accessing user.password throws an unhandled TypeError that crashes the request. Additionally, passwords are validated using plaintext comparison with loose equality (==) rather than secure password hashing.\\\",\\n      \\\"file\\\": \\\"src/auth.js\\\",\\n      \\\"line_start\\\": 14,\\n      \\\"line_end\\\": 18,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Verify that user exists before inspecting properties (e.g., if (!user) return null;), and use a secure hashing algorithm (such as bcrypt or argon2) with constant-time comparison for password verification.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"high\\\",\\n      \\\"title\\\": \\\"Hardcoded JWT Secret Key\\\",\\n      \\\"body\\\": \\\"JWT_SECRET is hardcoded in source code with a static plaintext value. If source code is compromised, any attacker can forge arbitrary JWT tokens and impersonate users.\\\",\\n      \\\"file\\\": \\\"src/auth.js\\\",\\n      \\\"line_start\\\": 4,\\n      \\\"line_end\\\": 4,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Load the JWT secret from environment variables (e.g., process.env.JWT_SECRET) and throw an error at startup if the secret is not configured.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"medium\\\",\\n      \\\"title\\\": \\\"Unhandled SyntaxError on Malformed Input in parseSession\\\",\\n      \\\"body\\\": \\\"JSON.parse(raw) throws an uncaught SyntaxError when provided with invalid JSON input, and subsequent property access (session.userId) will throw a TypeError if raw parses to null.\\\",\\n      \\\"file\\\": \\\"src/auth.js\\\",\\n      \\\"line_start\\\": 21,\\n      \\\"line_end\\\": 24,\\n      \\\"confidence\\\": 0.95,\\n      \\\"recommendation\\\": \\\"Wrap JSON.parse in a try/catch block and handle null or non-object results safely, returning null or undefined when parsing fails.\\\"\\n    }\\n  ],\\n  \\\"next_steps\\\": [\\n    \\\"Refactor findUser to use parameterized SQL queries.\\\",\\n    \\\"Add null checks and hash verification in login.\\\",\\n    \\\"Move JWT_SECRET to environment variables.\\\",\\n    \\\"Add error handling around JSON.parse in parseSession.\\\"\\n  ]\\n}\",\n    \"stderr\": \"\"\n  },\n  \"result\": {\n    \"verdict\": \"needs-attention\",\n    \"summary\": \"Authentication module contains critical SQL injection, unhandled null reference on non-existent users, hardcoded secrets, and unsafe JSON parsing.\",\n    \"findings\": [\n      {\n        \"severity\": \"critical\",\n        \"title\": \"SQL Injection via String Concatenation in findUser\",\n        \"body\": \"The findUser function constructs a SQL query by directly concatenating user-supplied input into the query string. This allows attackers to perform SQL injection attacks, bypass authentication, or exfiltrate database contents.\",\n        \"file\": \"src/auth.js\",\n        \"line_start\": 7,\n        \"line_end\": 9,\n        \"confidence\": 1,\n"
+}
