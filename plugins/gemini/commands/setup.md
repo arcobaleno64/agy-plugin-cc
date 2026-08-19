@@ -108,11 +108,16 @@ once interactively — or to use one of AGY's non-interactive credentials (ADC a
 Enterprise/WIF on 1.1.10+, `GEMINI_API_KEY` with `modelProvider: "gemini"` on
 1.1.13+).
 
-The probe has only been verified against an interactive login. It asks `/quota`,
-which the AGY account answers; whether an account authenticated by API key
-answers it the same way is **untested**. If your AGY turns work and `--probe-agy`
-still reports `logged-out`, that is a defect here rather than a real logout —
-please report it.
+The probe asks `/quota`, which the account answers without starting a turn. It is
+verified on two routes: an interactive login, and `GEMINI_API_KEY` with
+`modelProvider: "gemini"` — measured on AGY 1.1.15 in a temporary home containing
+nothing else, against the same home with no key as a control. Keyed it reports
+`verified`; unkeyed it reports `unknown` and passes through AGY's own message
+about the missing variable, rather than calling a misconfiguration a logout.
+
+ADC and Enterprise/WIF are not tested. If your AGY turns work on one of those and
+`--probe-agy` reports `logged-out`, that is a defect here rather than a real
+logout — please report it.
 
 There is a matching `--probe-gemini`, and **it is not free**. Gemini CLI has no
 question the account answers without generating, so the probe makes a real
