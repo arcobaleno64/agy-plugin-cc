@@ -42,6 +42,16 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      # Deterministic replay of the committed cassettes. This guards the
+      # orchestrator, the scorer, and the scorecard's verdict rules — including
+      # the rule that a seeded cassette cannot win an axis.
+      #
+      # It does NOT tell you whether a change made reviews better or worse. No
+      # engine runs here: replay reads recorded outputs, so a PR that rewrites a
+      # prompt or reroutes an engine passes this untouched. Reviewing quality is
+      # measured by re-recording (`npm run bench:live`), which needs credentials
+      # and a TTY and therefore happens on a maintainer's machine.
+      - run: npm run bench
       - run: npm run check-version
       - run: npm run verify-contracts
       # verify-contracts checks version lockstep and the command surface; it does

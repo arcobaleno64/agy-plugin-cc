@@ -1,0 +1,94 @@
+name: Publish scorecard
+# Replays the committed cassettes and publishes the scorecard to the `results`
+# branch. It holds no secrets and reaches no network, because the half of this
+# benchmark that needs credentials cannot run here at all:
+#
+#   - AGY authenticates only through its interactive OAuth flow. `agy --help`
+#     offers no key, token, or login flag, so a runner has no way to hold a
+#     credential for it.
+#   - Gemini CLI's consumer tier stopped serving on 2026-06-18; refreshing
+#     `gemini.model` now needs a paid Code Assist or API-key credential.
+#   - `codex.native` needs BENCH_CODEX_COMPANION pointing at a locally installed
+#     plugin.
+#
+# So recording is a maintainer's local `npm run bench:live`, committed as
+# cassettes. That is not a workaround — it is what keeps this workflow free of
+# the `pull_request_target` question entirely: with no secret to expose, there is
+# no exposure to reason about.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "bench/**"
+  workflow_dispatch: {}
+
+# Deliberately no `schedule`. A monthly run would republish byte-identical
+# numbers under a fresh commit date, which is worse than not running: the
+# published timestamp is the credibility signal, and a schedule would turn it
+# into a claim that stale numbers were just re-measured. The scorecard's own
+# per-cell `recordedAt` and `engineVersion` are the honest timestamps, and they
+# move only when someone actually re-records.
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-scorecard
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # Deterministic replay: no engine is invoked, so this cannot spend a turn
+      # or touch a credential even if one were present.
+      - run: npm run bench
+
+      - name: Publish to the results branch
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # A worktree, so the branch is built without disturbing this checkout.
+          git fetch --depth=1 origin results || true
+          if git show-ref --verify --quiet refs/remotes/origin/results; then
+            git worktree add ../results origin/results
+          else
+            git worktree add --detach ../results
+            git -C ../results checkout --orphan results
+            git -C ../results rm -rf --cached . >/dev/null
+            find ../results -mindepth 1 -maxdepth 1 -not -name .git -exec rm -rf {} +
+          fi
+
+          cp bench/results/scorecard.md bench/results/scorecard.json ../results/
+          git -C ../results add scorecard.md scorecard.json
+
+          # Nothing changed means nothing to say. Publishing an identical
+          # scorecard would move the branch's last-updated date without moving a
+          # single measurement behind it.
+          if git -C ../results diff --cached --quiet; then
+            echo "scorecard unchanged; nothing published"
+            exit 0
+          fi
+
+          # The subject names the builds the numbers came from, so `git log` on
+          # the results branch reads as a record of what was measured against
+          # what — not of when a workflow happened to run.
+          subject=$(node -e '
+            const s = require("./bench/results/scorecard.json");
+            const live = Object.entries(s.provenance ?? {})
+              .filter(([, p]) => p && !p.seeded)
+              .map(([cell, p]) => `${cell}@${p.engineVersion ?? "unknown"}`)
+              .sort();
+            process.stdout.write(`scorecard: ${live.length ? live.join(" ") : "no measured cells"}`);
+          ')
+          git -C ../results commit -m "$subject"
+          git -C ../results push origin HEAD:results

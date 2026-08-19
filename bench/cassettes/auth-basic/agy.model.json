@@ -1,0 +1,52 @@
+{
+  "caseId": "auth-basic",
+  "cell": "agy.model",
+  "recordedAt": "2026-08-19T02:15:01.570Z",
+  "verdict": "needs-attention",
+  "summary": "The authentication module contains critical security vulnerabilities including SQL injection, hardcoded secrets, unsafe password validation, and missing error handling.",
+  "findings": [
+    {
+      "severity": "critical",
+      "title": "SQL injection vulnerability via concatenated query",
+      "body": "The username input is directly concatenated into the SQL query string in findUser without sanitization or parameterization, allowing an attacker to bypass authentication or extract/modify database contents.",
+      "file": "src/auth.js",
+      "line_start": 7,
+      "line_end": 9,
+      "confidence": 1,
+      "recommendation": "Use parameterized queries or prepared statements (e.g., db.query('SELECT * FROM users WHERE name = ?', [username]))."
+    },
+    {
+      "severity": "critical",
+      "title": "Hardcoded JWT secret key",
+      "body": "A static secret key is committed directly in the source file, which exposes token signing keys and enables attackers to forge valid authentication tokens.",
+      "file": "src/auth.js",
+      "line_start": 4,
+      "line_end": 4,
+      "confidence": 1,
+      "recommendation": "Load the JWT secret from an environment variable (e.g., process.env.JWT_SECRET) and ensure a fallback error if not configured."
+    },
+    {
+      "severity": "high",
+      "title": "Unchecked null dereference and plaintext password comparison in login",
+      "body": "If findUser returns null or undefined for nonexistent users, accessing user.password throws an unhandled TypeError. Furthermore, passwords are treated as plaintext using loose equality instead of a secure cryptographic hash comparison.",
+      "file": "src/auth.js",
+      "line_start": 14,
+      "line_end": 17,
+      "confidence": 1,
+      "recommendation": "Verify that user exists before accessing properties (if (!user) return null;) and compare hashed passwords using a timing-safe hash library such as bcrypt or argon2."
+    },
+    {
+      "severity": "medium",
+      "title": "Unhandled JSON parsing failure in parseSession",
+      "body": "Calling JSON.parse(raw) without error handling will throw an uncaught SyntaxError on malformed session input, potentially crashing the application process.",
+      "file": "src/auth.js",
+      "line_start": 21,
+      "line_end": 24,
+      "confidence": 0.95,
+      "recommendation": "Wrap JSON.parse in a try-catch block and validate the parsed object before accessing session.userId."
+    }
+  ],
+  "latencyMs": 26738,
+  "engineVersion": "1.1.14",
+  "raw": "{\"conversation_id\":\"ee616018-1386-44d3-9d70-6b8546ddaa1e\",\"status\":\"SUCCESS\",\"response\":\"{\\n  \\\"verdict\\\": \\\"needs-attention\\\",\\n  \\\"summary\\\": \\\"The authentication module contains critical security vulnerabilities including SQL injection, hardcoded secrets, unsafe password validation, and missing error handling.\\\",\\n  \\\"findings\\\": [\\n    {\\n      \\\"severity\\\": \\\"critical\\\",\\n      \\\"title\\\": \\\"SQL injection vulnerability via concatenated query\\\",\\n      \\\"body\\\": \\\"The username input is directly concatenated into the SQL query string in findUser without sanitization or parameterization, allowing an attacker to bypass authentication or extract/modify database contents.\\\",\\n      \\\"file\\\": \\\"src/auth.js\\\",\\n      \\\"line_start\\\": 7,\\n      \\\"line_end\\\": 9,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Use parameterized queries or prepared statements (e.g., db.query('SELECT * FROM users WHERE name = ?', [username])).\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"critical\\\",\\n      \\\"title\\\": \\\"Hardcoded JWT secret key\\\",\\n      \\\"body\\\": \\\"A static secret key is committed directly in the source file, which exposes token signing keys and enables attackers to forge valid authentication tokens.\\\",\\n      \\\"file\\\": \\\"src/auth.js\\\",\\n      \\\"line_start\\\": 4,\\n      \\\"line_end\\\": 4,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Load the JWT secret from an environment variable (e.g., process.env.JWT_SECRET) and ensure a fallback error if not configured.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"high\\\",\\n      \\\"title\\\": \\\"Unchecked null dereference and plaintext password comparison in login\\\",\\n      \\\"body\\\": \\\"If findUser returns null or undefined for nonexistent users, accessing user.password throws an unhandled TypeError. Furthermore, passwords are treated as plaintext using loose equality instead of a secure cryptographic hash comparison.\\\",\\n      \\\"file\\\": \\\"src/auth.js\\\",\\n      \\\"line_start\\\": 14,\\n      \\\"line_end\\\": 17,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Verify that user exists before accessing properties (if (!user) return null;) and compare hashed passwords using a timing-safe hash library such as bcrypt or argon2.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"medium\\\",\\n      \\\"title\\\": \\\"Unhandled JSON parsing failure in parseSession\\\",\\n      \\\"body\\\": \\\"Calling JSON.parse(raw) without error handling will throw an uncaught SyntaxError on malformed session input, potentially crashing the application process.\\\",\\n      \\\"file\\\": \\\"src/auth.js\\\",\\n      \\\"line_start\\\": 21,\\n      \\\"line_end\\\": 24,\\n      \\\"confidence\\\": 0.95,\\n      \\\"recommendation\\\": \\\"Wrap JSON.parse in a try-catch block and validate the parsed object before accessing session.userId.\\\"\\n    }\\n  ],\\n  \\\"next_steps\\\": [\\n    \\\"Refactor db.query to use parameterized queries across the database layer.\\\",\\n    \\\"Move JWT_SECRET to environment configuration and validate presence at startup.\\\",\\n    \\\"Implement password hashing with bcrypt/argon2 and add null checks for user queries.\\\",\\n    \\\"Add try-catch error handling to parseSession.\\\"\\n  ]\\n}\\n\",\"duration_seconds\":22.1291657,\"num_turns\":1,\"usage\":{\"input_tokens\":19012,\"output_tokens\":2433,\"thinking_tokens\":1756,\"cache_read_tokens\":0,\"total_tokens\":21445}}\n"
+}

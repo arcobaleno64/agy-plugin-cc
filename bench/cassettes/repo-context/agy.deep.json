@@ -1,0 +1,42 @@
+{
+  "caseId": "repo-context",
+  "cell": "agy.deep",
+  "recordedAt": "2026-08-19T02:16:28.914Z",
+  "verdict": "needs-attention",
+  "summary": "Found undeclared dependency on jsonwebtoken, unvalidated secret configuration, and an ephemeral runtime state file added to git.",
+  "findings": [
+    {
+      "severity": "high",
+      "title": "Undeclared dependency 'jsonwebtoken'",
+      "body": "src/token.js requires 'jsonwebtoken', but it is missing from dependencies in package.json, which will cause a MODULE_NOT_FOUND error in production.",
+      "file": "src/token.js",
+      "line_start": 1,
+      "line_end": 1,
+      "confidence": 1,
+      "recommendation": "Add \"jsonwebtoken\" to dependencies in package.json."
+    },
+    {
+      "severity": "medium",
+      "title": "Unvalidated JWT_SECRET environment variable",
+      "body": "jwt.sign is called with process.env.JWT_SECRET without checking if it is defined; an unset secret causes jwt.sign to throw a runtime error.",
+      "file": "src/token.js",
+      "line_start": 3,
+      "line_end": 5,
+      "confidence": 0.9,
+      "recommendation": "Validate that process.env.JWT_SECRET is present before signing or provide an explicit configuration check."
+    },
+    {
+      "severity": "medium",
+      "title": "Stray runtime state file tracked in git",
+      "body": ".omc/state/job.json contains ephemeral process metadata and should not be committed to the repository.",
+      "file": ".omc/state/job.json",
+      "line_start": 1,
+      "line_end": 1,
+      "confidence": 1,
+      "recommendation": "Remove .omc/state/job.json from git and add .omc/ to .gitignore."
+    }
+  ],
+  "latencyMs": 34829,
+  "engineVersion": "1.1.14",
+  "raw": "{\n  \"review\": \"Review\",\n  \"target\": {\n    \"mode\": \"working-tree\",\n    \"label\": \"working tree diff\",\n    \"explicit\": true\n  },\n  \"gemini\": {\n    \"status\": 0,\n    \"stdout\": \"{\\n  \\\"verdict\\\": \\\"needs-attention\\\",\\n  \\\"summary\\\": \\\"Found undeclared dependency on jsonwebtoken, unvalidated secret configuration, and an ephemeral runtime state file added to git.\\\",\\n  \\\"findings\\\": [\\n    {\\n      \\\"severity\\\": \\\"high\\\",\\n      \\\"title\\\": \\\"Undeclared dependency 'jsonwebtoken'\\\",\\n      \\\"body\\\": \\\"src/token.js requires 'jsonwebtoken', but it is missing from dependencies in package.json, which will cause a MODULE_NOT_FOUND error in production.\\\",\\n      \\\"file\\\": \\\"src/token.js\\\",\\n      \\\"line_start\\\": 1,\\n      \\\"line_end\\\": 1,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Add \\\\\\\"jsonwebtoken\\\\\\\" to dependencies in package.json.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"medium\\\",\\n      \\\"title\\\": \\\"Unvalidated JWT_SECRET environment variable\\\",\\n      \\\"body\\\": \\\"jwt.sign is called with process.env.JWT_SECRET without checking if it is defined; an unset secret causes jwt.sign to throw a runtime error.\\\",\\n      \\\"file\\\": \\\"src/token.js\\\",\\n      \\\"line_start\\\": 3,\\n      \\\"line_end\\\": 5,\\n      \\\"confidence\\\": 0.9,\\n      \\\"recommendation\\\": \\\"Validate that process.env.JWT_SECRET is present before signing or provide an explicit configuration check.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"medium\\\",\\n      \\\"title\\\": \\\"Stray runtime state file tracked in git\\\",\\n      \\\"body\\\": \\\".omc/state/job.json contains ephemeral process metadata and should not be committed to the repository.\\\",\\n      \\\"file\\\": \\\".omc/state/job.json\\\",\\n      \\\"line_start\\\": 1,\\n      \\\"line_end\\\": 1,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Remove .omc/state/job.json from git and add .omc/ to .gitignore.\\\"\\n    }\\n  ],\\n  \\\"next_steps\\\": [\\n    \\\"Add jsonwebtoken to package.json dependencies\\\",\\n    \\\"Add a check for process.env.JWT_SECRET before issuing tokens in src/token.js\\\",\\n    \\\"Remove .omc/state/job.json from git and ignore .omc/ via .gitignore\\\"\\n  ]\\n}\",\n    \"stderr\": \"\"\n  },\n  \"result\": {\n    \"verdict\": \"needs-attention\",\n    \"summary\": \"Found undeclared dependency on jsonwebtoken, unvalidated secret configuration, and an ephemeral runtime state file added to git.\",\n    \"findings\": [\n      {\n        \"severity\": \"high\",\n        \"title\": \"Undeclared dependency 'jsonwebtoken'\",\n        \"body\": \"src/token.js requires 'jsonwebtoken', but it is missing from dependencies in package.json, which will cause a MODULE_NOT_FOUND error in production.\",\n        \"file\": \"src/token.js\",\n        \"line_start\": 1,\n        \"line_end\": 1,\n        \"confidence\": 1,\n        \"recommendation\": \"Add \\\"jsonwebtoken\\\" to dependencies in package.json.\"\n      },\n      {\n        \"severity\": \"medium\",\n        \"title\": \"Unvalidated JWT_SECRET environment variable\",\n        \"body\": \"jwt.sign is called with process.env.JWT_SECRET without checking if it is defined; an unset secret causes jwt.sign to throw a runtime error.\",\n        \"file\": \"src/token.js\",\n        \"line_start\": 3,\n        \"line_end\": 5,\n        \"confidence\": 0.9,\n        \"recommendation\": \"Validate that process.env.JWT_SECRET is present before signing or provide an explicit configuration check.\"\n      },\n      {\n        \"severity\": \"medium\",\n        \"title\": \"Stray runtime state file tracked in git\",\n        \"body\": \".omc/state/job.json contains ephemeral process metadata and should not be committed to the repository.\",\n        \"file\": \".omc/state/job.json\",\n        \"line_start\": 1,\n        \"line_end\": 1,\n        \"confidence\": 1,\n        \"recommendation\": \"Remove .omc/state/job.json from git and add .omc/ to .gitignore.\"\n      }\n    ],\n    \"next_steps\": [\n      \"Add jsonwebtoken to package.json dependencies\",\n      \"Add a check for process.env.JWT_SECRET before issuing tokens in src/token.js\",\n      \"Remove .omc/state/job.json from git and ignore .omc/ via .gitignore\"\n    ]\n  }\n}\n"
+}

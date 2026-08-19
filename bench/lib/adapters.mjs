@@ -4,6 +4,8 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import { CELLS } from "./cells.mjs";
+
 // Live cell invocations. Each returns a normalized result; deterministic mode
 // never calls these (it replays cassettes). Cells degrade to {ok:false} with a
 // reason rather than throwing, so one unavailable tool does not sink the run.
@@ -16,6 +18,29 @@ const TIMEOUT_MS = Number(process.env.BENCH_TIMEOUT_MS ?? 180_000);
 // codex-companion lives in the installed codex plugin; its path is environment
 // specific, so it is opt-in via env. codex.model only needs the `codex` binary.
 const CODEX_COMPANION = process.env.BENCH_CODEX_COMPANION || null;
+
+// Which build produced a cassette is the thing that decides, months later,
+// whether its numbers still describe the product. A date alone cannot: the
+// engines ship faster than the benchmark reruns.
+const versionCache = new Map();
+function probeVersion(bin, useShell = false) {
+  if (versionCache.has(bin)) return versionCache.get(bin);
+  const res = spawnSync(bin, ["--version"], { encoding: "utf8", timeout: 15_000, shell: useShell });
+  const line = (res.stdout ?? "").split("\n")[0].trim();
+  const version = res.error || !line ? null : line;
+  versionCache.set(bin, version);
+  return version;
+}
+
+function engineVersionFor(tool) {
+  if (tool === "gemini") return probeVersion("gemini", process.platform === "win32");
+  if (tool === "codex") return probeVersion("codex", process.platform === "win32");
+  if (tool === "agy") {
+    const bin = resolveAgyBinary();
+    return bin ? probeVersion(bin) : null;
+  }
+  return null;
+}
 
 function extractJsonObject(text) {
   if (text == null) return null;
@@ -100,6 +125,51 @@ function runGeminiModel(promptText) {
   });
 }
 
+let agyBinaryCache;
+function resolveAgyBinary() {
+  if (agyBinaryCache !== undefined) return agyBinaryCache;
+  const finder = process.platform === "win32" ? "where" : "which";
+  const res = spawnSync(finder, ["agy"], { encoding: "utf8" });
+  const candidates = (res.stdout ?? "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const picked = process.platform === "win32"
+    ? candidates.find((c) => path.extname(c).toLowerCase() === ".exe")
+    : candidates[0];
+  agyBinaryCache = picked && path.isAbsolute(picked) ? picked : null;
+  return agyBinaryCache;
+}
+
+function runAgyModel(promptText) {
+  return timed(() => {
+    // AGY >=1.1.2 enters print mode from a piped prompt, so --print is omitted:
+    // passing it here would make the next flag AGY's positional prompt.
+    //
+    // No --add-dir. This is the model axis, and AGY's headless print mode
+    // auto-approves tools, so leaving the turn unoriented is what keeps the cell
+    // comparable to gemini's toolless default: the prompt forbids tools in both,
+    // but only one of them is also structurally unable to find the repository.
+    const printTimeout = `${Math.max(1, Math.round((TIMEOUT_MS * 0.9) / 1000))}s`;
+    // Not `shell: true` like the neighbouring cells: routing agy through cmd.exe
+    // never delivered the piped prompt, so the turn sat until the 180s cap and the
+    // cell reported ETIMEDOUT. Spawned directly with a resolved path it answers in
+    // ~9s. That also matches what the plugin insists on for agy (engine.mjs:51):
+    // an absolute .exe, so a planted `agy.bat` on PATH cannot take the call.
+    const bin = resolveAgyBinary();
+    if (!bin) return fail("agy: no agy executable on PATH");
+    const res = spawnSync(
+      bin,
+      ["--disable-slash-commands", "--output-format", "json", "--print-timeout", printTimeout],
+      { input: promptText, encoding: "utf8", timeout: TIMEOUT_MS }
+    );
+    if (res.error) return fail(`agy spawn: ${res.error.message}`);
+    // AGY 1.1.8+ answers with one envelope: { conversation_id, status, response, ... }.
+    const envelope = extractJsonObject(res.stdout);
+    const text = envelope?.response ?? envelope?.result?.response ?? res.stdout;
+    const review = normalizeReview(extractJsonObject(text));
+    if (!review) return fail(`agy: could not parse review JSON (${(res.stderr || "").slice(0, 160)})`);
+    return { ok: true, ...review, raw: res.stdout?.slice(0, 4000) };
+  });
+}
+
 function runCodexModel(promptText) {
   return timed(() => {
     const outFile = path.join(os.tmpdir(), `bench-codex-${Date.now()}.json`);
@@ -137,15 +207,25 @@ function runCompanionReview(companionPath, repoDir, extraArgs) {
 }
 
 export function runCell(cell, ctx) {
+  const out = dispatchCell(cell, ctx);
+  if (!out.ok) return out;
+  return { ...out, engineVersion: engineVersionFor(CELLS[cell]?.tool) };
+}
+
+function dispatchCell(cell, ctx) {
   switch (cell) {
     case "gemini.model":
       return runGeminiModel(ctx.promptText);
     case "codex.model":
       return runCodexModel(ctx.promptText);
+    case "agy.model":
+      return runAgyModel(ctx.promptText);
     case "gemini.deep":
       return runCompanionReview(GEMINI_COMPANION, ctx.repoDir, ["--deep"]);
     case "codex.native":
       return runCompanionReview(CODEX_COMPANION, ctx.repoDir, []);
+    case "agy.deep":
+      return runCompanionReview(GEMINI_COMPANION, ctx.repoDir, ["--deep", "--engine", "agy"]);
     default:
       return fail(`unknown cell ${cell}`);
   }
