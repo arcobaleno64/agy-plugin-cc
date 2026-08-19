@@ -1,0 +1,120 @@
+{
+  "mode": "replay",
+  "caseCount": 2,
+  "modelAxisWinner": "tie",
+  "harnessAxisWinner": "—",
+  "harnessLifts": {
+    "gemini": {
+      "lift": 9.5,
+      "seeded": true
+    },
+    "codex": {
+      "lift": 57,
+      "seeded": true
+    },
+    "agy": {
+      "lift": 15,
+      "seeded": false
+    }
+  },
+  "provenance": {
+    "gemini.model": {
+      "seeded": false,
+      "recordedAt": "2026-06-04T14:07:48.457Z",
+      "engineVersion": null
+    },
+    "codex.model": {
+      "seeded": false,
+      "recordedAt": "2026-06-04T14:08:20.842Z",
+      "engineVersion": null
+    },
+    "agy.model": {
+      "seeded": false,
+      "recordedAt": "2026-08-19T02:15:01.570Z",
+      "engineVersion": "1.1.14"
+    },
+    "gemini.deep": {
+      "seeded": true,
+      "recordedAt": null,
+      "engineVersion": null
+    },
+    "codex.native": {
+      "seeded": true,
+      "recordedAt": null,
+      "engineVersion": null
+    },
+    "agy.deep": {
+      "seeded": false,
+      "recordedAt": "2026-08-19T02:15:34.060Z",
+      "engineVersion": "1.1.14"
+    }
+  },
+  "byCell": {
+    "gemini.model": {
+      "cell": "gemini.model",
+      "cases": 2,
+      "composite": 73,
+      "recall": 0.65,
+      "precision": 1,
+      "falsePositives": 0,
+      "bonus": 0,
+      "severityExactRate": 0.75,
+      "latencyMs": 44083
+    },
+    "codex.model": {
+      "cell": "codex.model",
+      "cases": 2,
+      "composite": 36,
+      "recall": 0.3,
+      "precision": 0.5,
+      "falsePositives": 1,
+      "bonus": 0,
+      "severityExactRate": 0.5,
+      "latencyMs": 28356
+    },
+    "agy.model": {
+      "cell": "agy.model",
+      "cases": 2,
+      "composite": 72,
+      "recall": 0.65,
+      "precision": 1,
+      "falsePositives": 0,
+      "bonus": 0,
+      "severityExactRate": 0.63,
+      "latencyMs": 22672
+    },
+    "gemini.deep": {
+      "cell": "gemini.deep",
+      "cases": 2,
+      "composite": 82.5,
+      "recall": 0.75,
+      "precision": 1,
+      "falsePositives": 0,
+      "bonus": 0,
+      "severityExactRate": 1,
+      "latencyMs": 25950
+    },
+    "codex.native": {
+      "cell": "codex.native",
+      "cases": 2,
+      "composite": 93,
+      "recall": 0.9,
+      "precision": 1,
+      "falsePositives": 0,
+      "bonus": 1,
+      "severityExactRate": 1,
+      "latencyMs": 39850
+    },
+    "agy.deep": {
+      "cell": "agy.deep",
+      "cases": 2,
+      "composite": 87,
+      "recall": 0.9,
+      "precision": 0.84,
+      "falsePositives": 1,
+      "bonus": 0,
+      "severityExactRate": 0.75,
+      "latencyMs": 33498
+    }
+  }
+}
