@@ -58,6 +58,9 @@ export function writeCassette(caseId, cell, data, samples = null) {
     findings: Array.isArray(data.findings) ? data.findings : [],
     latencyMs: data.latencyMs ?? null,
     engineVersion: data.engineVersion ?? null,
+    // What the run reported, beside what the cell claims. When those two can
+    // disagree, only the reported one is evidence.
+    engineObserved: data.engineObserved ?? null,
     samples: runs,
     ...(data.raw !== undefined ? { raw: data.raw } : {})
   };

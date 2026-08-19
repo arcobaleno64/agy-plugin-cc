@@ -128,10 +128,20 @@ What follows from it:
   the cassette says. This one could not run without the Gemini credential, which is the
   observation the cassette's `engineVersion` field cannot make.
 
-The remaining hole is that a cassette still asserts its engine rather than observing
-it: the companion's `--json` payload does not report which engine ran, so the runner
-has nothing to check the pin against. Pinning makes the cell right; it does not make
-the cassette self-describing.
+**The pin is no longer the only defence.** The companion's `--json` payload now carries
+`engine` — the engine it *resolved*, not the one it was asked for — and each companion
+cell declares what it expects. A run from the wrong engine fails the cell instead of
+being recorded, and a companion too old to report the field fails it too: reading "no
+answer" as "the right answer" is how the original defect survived every green run. New
+cassettes carry `engineObserved`, read back from the run. Cassettes recorded before
+this change do not have the field, and no number on the board depends on re-recording
+them — the cells they came from are now checked.
+
+Three tests hold it, and each was made to fail before being believed: one on a
+mismatch, one on a companion that says nothing, and one on whether anything calls the
+check at all. That third one exists because deleting the two lines at the call site
+left the helper correct, unreachable, and the suite green — the same shape as the
+defect, wearing a different hat.
 
 #### Two failure explanations that were wrong
 

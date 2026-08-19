@@ -764,6 +764,12 @@ async function executeReviewRun(request) {
   const payload = {
     review: reviewName,
     target: context.target,
+    // The engine that ran, resolved — not the one the caller asked for. Under
+    // `--engine auto` (or GEMINI_ENGINE) those differ, and a consumer had no way to
+    // tell them apart: the request-side value was already recorded on the job
+    // record, and this payload said nothing at all. A benchmark cell downstream
+    // spent its whole life labelling AGY runs as gemini for exactly that reason.
+    engine: result.engine ?? null,
     gemini: { status: result.status, stdout: result.reviewText, stderr: result.stderr ?? "" },
     result: parsed.parsed,
     ...(truncation ? { truncation } : {}),

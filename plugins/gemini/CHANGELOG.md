@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- **`review --json` reports the engine that ran.** The payload carried the review, the
+  target and the engine's raw stdout, but never which engine produced them. Under
+  `--engine auto` — or `GEMINI_ENGINE`, which applies to every process a session
+  spawns — the engine that ran and the one the caller asked for are different values,
+  and only the requested one was ever recorded (on the job record, not in the payload).
+  A consumer had no way to ask.
+
+  Found from downstream: `bench`'s `gemini.deep` cell had been recording AGY for its
+  entire life, because it passed no `--engine` and this machine sets
+  `GEMINI_ENGINE=agy` in `~/.claude/settings.json`. Its cassettes were stamped
+  `gemini --version` regardless, so the harness axis was comparing AGY against AGY and
+  a README claim that "`gemini.deep` is the steadiest cell on the board" was AGY twice.
+  Pinning the flag fixes that cell; a payload that names the engine is what lets any
+  consumer detect the next one. Additive field, `engine: "gemini" | "agy" | null`.
+
 ## 0.22.2 — 2026-08-19 — Which credentials AGY actually accepts
 
 `/gemini:setup` and `--probe-agy` both told a user with a working AGY account to go
