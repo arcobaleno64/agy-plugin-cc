@@ -115,6 +115,23 @@ The plugin's function is to take content it did not author and hand it to an age
 
 Conclusion 4 above therefore stands unchanged on 1.1.13: **AGY still has no read-only mode.** `--mode plan` is tested and not adopted. The after-the-fact workspace comparison the review and task paths run (`lib/readonly-guard.mjs`, v0.18.0) remains the honest answer — it reports what a turn wrote, because nothing available prevents it from writing.
 
+**Re-measured on AGY 1.1.14, 2026-08-19.** Five headless runs, prompt on stdin, `--output-format json`, matching how the plugin invokes the engine. AGY 1.1.14's release notes say the setting that allows access outside your workspace "now grants only read access", which is aimed squarely at the residual below. It does not reach headless print mode.
+
+Every path lived under one disposable root on `D:\`, deliberately: this machine's `trustedWorkspaces` includes all of `C:\Users\<user>`, so a probe anywhere under the home directory would have measured that trust entry rather than AGY's workspace boundary.
+
+| Orientation | Action | Target | Outcome |
+|---|---|---|---|
+| `--new-project` | edit tool | outside the workspace | wrote, exit 0 |
+| `--new-project --sandbox` | shell command | outside the workspace | wrote, exit 0 |
+| none | edit tool | outside the workspace | wrote, exit 0 |
+| `--add-dir` (**the plugin's read-only shape**) | edit tool | outside the workspace | wrote, exit 0 |
+| `--new-project` | edit tool | in the workspace | wrote, exit 0 — positive control |
+
+1. **The residual stands, unchanged, on 1.1.14.** Every configuration wrote an absolute path outside the workspace it was bound to, including the shape the plugin uses for a read-only turn. Whatever setting the release note refers to, it is not what governs a headless `-p` run.
+2. **The control is why the other four rows can be read at all.** A run that does not write and a prompt that never asked look identical from the outside, and the last row is the one that fails if the probe is broken rather than if AGY is permissive.
+
+**Known limit of this measurement.** The machine's `settings.json` carries `"toolPermission": "always-proceed"`, and AGY offers no flag or environment variable to override a settings file, so that variable was not controlled. It does not explain the result — conclusion 2 of the 1.1.10 block already found headless print mode auto-approving without `--dangerously-skip-permissions` — but it does mean these rows describe a machine whose approval policy is permissive. Controlling it needs a temporary home directory holding a copy of `~/.gemini/oauth_creds.json` beside a minimal settings file, which is worth doing before any claim about AGY's *defaults* rather than about its behaviour here.
+
 **Measured on gemini CLI 0.53.1, 2026-08-05**, against the same disposable repository and the same stdin transport, on a temporary API key. The gemini engine behaves the *opposite* way to AGY, so nothing above transfers between them.
 
 | `--yolo` | other flags | Action | Outcome |
