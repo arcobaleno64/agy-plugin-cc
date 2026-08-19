@@ -59,7 +59,7 @@ Compared with AGY-only, multi-host plugins, this project keeps the Gemini CLI pa
 
 **Install AGY** (required for `--engine agy`): `curl -fsSL https://antigravity.google/cli/install.sh | bash`
 
-**Authentication**: Each engine authenticates independently. Run `gemini` once for the Gemini engine, or run `agy` once interactively for the AGY engine. AGY 1.1.10+ also supports Application Default Credentials (ADC) and Gemini Enterprise / Workforce Identity Federation (WIF). AGY OAuth authentication cannot be verified reliably from a headless setup probe, so `/gemini:setup --engine agy` reports it as unknown until a real AGY command succeeds.
+**Authentication**: Each engine authenticates independently. Run `gemini` once for the Gemini engine, or run `agy` once interactively for the AGY engine. AGY 1.1.10+ also supports Application Default Credentials (ADC) and Gemini Enterprise / Workforce Identity Federation (WIF), and 1.1.13+ accepts `GEMINI_API_KEY` with `modelProvider: "gemini"` in its `settings.json` — a settings-file route, which is why it appears in no `agy --help` output. AGY OAuth authentication cannot be verified reliably from a headless setup probe, so `/gemini:setup --engine agy` reports it as unknown until a real AGY command succeeds. `--probe-agy` settles it for an interactive login; it has not been tested against the non-interactive credentials, so treat a `logged-out` verdict on a working account as a bug worth reporting.
 
 > **The Gemini engine now needs a Standard/Enterprise account or an API key.** Google ended consumer Gemini CLI access on 2026-06-18. On a personal account, gemini CLI 0.53.1 still installs and answers `--version`, but every request returns `API key not valid` (`API_KEY_INVALID`) — verified 2026-08-04. The AGY engine is unaffected and is the practical default; pass `--engine agy`, or set `GEMINI_ENGINE=agy`, if `auto` selects an unauthenticated gemini binary.
 
@@ -339,7 +339,7 @@ Override via `--engine` flag or the `GEMINI_ENGINE` environment variable.
 | Windows: command resolves but fails | `.cmd` wrapper / PATH | Confirm `where gemini` resolves; the plugin spawns bare names through `shell: true` to find `.cmd` shims |
 | `--engine agy` reports no brain root | AGY has not created its brain directory yet, or it lives in an unknown location | Run `agy` once so it creates the brain dir. Known roots: `~/.gemini/antigravity-cli/brain` (verified on Windows, macOS AGY 1.0.7, and Linux AGY 1.1.2) and `~/.antigravity-cli/brain` (older Linux 1.0.2, reported); if yours differs, open an issue with its location |
 
-For the Gemini engine, run **`!gemini`** once — the plugin completes OAuth by invoking `gemini` itself. There is **no** `gemini login` subcommand. For the AGY engine, run `agy` interactively once; its separate OAuth state is not inferred from Gemini's `~/.gemini/oauth_creds.json`. `setup` reports AGY as `partial` while the binary is present but auth remains unverifiable.
+For the Gemini engine, run **`!gemini`** once — the plugin completes OAuth by invoking `gemini` itself. There is **no** `gemini login` subcommand. For the AGY engine, run `agy` interactively once, or give it a non-interactive credential (ADC/WIF on 1.1.10+, `GEMINI_API_KEY` with `modelProvider: "gemini"` on 1.1.13+); its separate OAuth state is not inferred from Gemini's `~/.gemini/oauth_creds.json`. `setup` reports AGY as `partial` while the binary is present but auth remains unverifiable.
 
 ---
 

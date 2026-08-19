@@ -989,11 +989,18 @@ export function getAgyLoginStatus() {
   // evidence of AGY authentication. Keep `loggedIn` for JSON compatibility, but
   // pair it with an explicit unknown state so callers do not interpret it as a
   // verified logout.
+  //
+  // The remedy is no longer only an interactive login. AGY 1.1.10 added ADC and
+  // Enterprise/WIF, and 1.1.13 added GEMINI_API_KEY through `modelProvider:
+  // "gemini"` in settings.json — a file and an environment variable rather than a
+  // flag, which is why `agy --help` shows nothing about it. Naming only the
+  // interactive path told a user who had already authenticated to go and do it
+  // again.
   return {
     loggedIn: false,
     state: "unknown",
     verifiable: false,
-    detail: `AGY ${status.detail ?? ""} present; authentication cannot be verified non-interactively. Run \`agy\` once interactively to authenticate or refresh credentials.`.trim(),
+    detail: `AGY ${status.detail ?? ""} present; authentication cannot be verified non-interactively. Run \`agy\` once interactively, or use a non-interactive credential: ADC and Enterprise/WIF on 1.1.10+, or GEMINI_API_KEY with \`modelProvider: "gemini"\` in settings.json on 1.1.13+. \`--probe-agy\` can settle this, and has itself only been verified against an interactive login.`.trim(),
   };
 }
 
@@ -1065,7 +1072,7 @@ export function probeAgyLogin({ runCommandFn = runCommand, detectEngineFn = dete
       loggedIn: false,
       state: "logged-out",
       verifiable: true,
-      detail: `AGY ${version} rejected the \`/quota\` probe as unauthenticated. Run \`agy\` interactively once to sign in.${reason ? ` (${reason})` : ""}`
+      detail: `AGY ${version} rejected the \`/quota\` probe as unauthenticated. Run \`agy\` interactively once to sign in, or use a non-interactive credential (ADC/WIF on 1.1.10+, GEMINI_API_KEY with \`modelProvider: "gemini"\` on 1.1.13+). This probe has not been tested against those routes: if your AGY turns work and this still says unauthenticated, that is a bug here, not a logout.${reason ? ` (${reason})` : ""}`
     };
   }
   return {
