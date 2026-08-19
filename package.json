@@ -1,6 +1,6 @@
 {
   "name": "@arcobaleno64/gemini-plugin-cc",
-  "version": "0.22.1",
+  "version": "0.22.2",
   "private": true,
   "type": "module",
   "description": "Use Gemini CLI or Antigravity CLI (agy) inside Claude Code for task delegation, code review, and adversarial review.",

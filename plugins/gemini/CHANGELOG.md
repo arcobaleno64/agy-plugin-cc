@@ -1,11 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.22.2 — 2026-08-19 — Which credentials AGY actually accepts
 
-Changes that have landed on `main` and will ship with the next version. They are
-recorded here as they land because the alternative was cutting a release for a
-sentence, and the two entries below partly cancel: the first said a route was
-untested and the second tested it.
+`/gemini:setup` and `--probe-agy` both told a user with a working AGY account to go
+and authenticate. AGY has taken non-interactive credentials since 1.1.10 (ADC,
+Enterprise/WIF) and since 1.1.13 a `GEMINI_API_KEY` routed through
+`modelProvider: "gemini"` in settings.json — a settings file plus an environment
+variable rather than a flag, which is why reading `agy --help` and concluding the
+capability was absent is exactly how it was missed. The absence was checked on the
+wrong surface.
+
+Two of the entries below partly cancel each other: the first said a route was
+untested, the second tested it.
 
 - **AGY's non-interactive credentials are named where the plugin asks for one.**
   `getAgyLoginStatus()` and the `--probe-agy` rejection both told the user to run
@@ -26,8 +32,18 @@ untested and the second tested it.
   that would have made `readyState` `not-ready` for an install whose turns work.
   ADC and Enterprise/WIF remain untested and are still marked so.
 
-- **`docs/THREAT-MODEL.md` 7.2 re-measured on AGY 1.1.14; the residual is unchanged.**
-  AGY 1.1.14's release notes say the setting that allows access outside your
+- **`docs/THREAT-MODEL.md` 7.2 re-measured on AGY 1.1.14 and 1.1.15; the residual is
+  unchanged.** 1.1.15 ran the same five rows as 1.1.14 — same probe, same disposable
+  root on `D:\`, one variable — and four of four configurations again wrote an absolute
+  path outside the workspace they were bound to, the plugin's read-only `--add-dir`
+  shape included. Three consecutive releases now. One thing the 1.1.15 pass turned up
+  and could not reproduce: two rows returned `status: ERROR` in the envelope while
+  writing the file and exiting 0, and re-run immediately both returned `SUCCESS`. No
+  mechanism is claimed; it is recorded because it points the wrong way — a turn
+  reporting an error may still have changed the tree, which is why
+  `lib/readonly-guard.mjs` compares the workspace instead of reading `status`.
+
+  On 1.1.14: its release notes say the setting that allows access outside your
   workspace "now grants only read access", which is aimed squarely at that
   residual. It does not reach headless print mode: five runs, and all five wrote an
   absolute path outside the workspace they were bound to — including `--add-dir`,
