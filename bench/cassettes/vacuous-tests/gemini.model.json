@@ -1,0 +1,135 @@
+{
+  "caseId": "vacuous-tests",
+  "cell": "gemini.model",
+  "recordedAt": "2026-08-19T09:10:17.333Z",
+  "verdict": "needs-attention",
+  "summary": "The test suite contains a vacuous test with no assertions and an improperly managed asynchronous execution that escapes the test runner's lifecycle.",
+  "findings": [
+    {
+      "severity": "high",
+      "title": "Vacuous test lacking assertions",
+      "body": "The test 'parseSession handles a malformed payload' invokes 'parseSession' but fails to assert any outcomes. This test will falsely pass unless the function synchronously throws an error, resulting in misleading test coverage.",
+      "file": "test/session.test.js",
+      "line_start": 6,
+      "line_end": 8,
+      "confidence": 1,
+      "recommendation": "Implement explicit assertions (such as 'assert.throws' or checking the return value) to validate how the function handles malformed payloads."
+    },
+    {
+      "severity": "high",
+      "title": "Unawaited asynchronous execution escapes test scope",
+      "body": "The test 'deleting a session empties the store' schedules an assertion inside 'process.nextTick' but does not return a Promise or use a done callback. The node:test runner will mark the test as passed synchronously before the assertion executes. If the assertion fails later, it will trigger an unhandled exception.",
+      "file": "test/session.test.js",
+      "line_start": 20,
+      "line_end": 25,
+      "confidence": 1,
+      "recommendation": "Pass a 'done' callback to the test function and invoke it after the assertion, or return a Promise so the runner correctly waits for the asynchronous block to complete."
+    }
+  ],
+  "latencyMs": 20496,
+  "engineVersion": "0.55.1",
+  "samples": [
+    {
+      "verdict": "needs-attention",
+      "summary": "The test suite contains fundamentally flawed tests, including unawaited async assertions and missing assertions.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Unawaited asynchronous assertion",
+          "body": "The test 'deleting a session empties the store' uses `process.nextTick` to wrap its assertion, but does not return a Promise or use a test callback to await its completion. The test will exit synchronously (and pass) before the assertion ever runs. If the assertion fails later, it will cause an unhandled exception rather than a tracked test failure.",
+          "file": "test/session.test.js",
+          "line_start": 20,
+          "line_end": 25,
+          "confidence": 1,
+          "recommendation": "Use a `done` callback provided by the test runner (e.g., `test('...', (t, done) => { ... })`) or return a Promise so the test runner waits for the async assertion to execute."
+        },
+        {
+          "severity": "high",
+          "title": "Missing assertions in parseSession test",
+          "body": "The test 'parseSession handles a malformed payload' invokes the function but contains absolutely no assertions. This test will always pass as long as the function doesn't crash the process, making it a vacuous test that provides zero coverage guarantees.",
+          "file": "test/session.test.js",
+          "line_start": 6,
+          "line_end": 8,
+          "confidence": 1,
+          "recommendation": "Add specific assertions to verify the expected behavior, such as `assert.throws()` or checking the returned object/state."
+        },
+        {
+          "severity": "medium",
+          "title": "Missing test arrangement and fragile assertion",
+          "body": "The test 'an expired session is listed before a fresh one' calls `render()` without first inserting mock sessions. It either relies on polluted global state from other tests or operates on an empty store. Additionally, if the strings aren't found, `indexOf` returns -1, making the comparison `-1 < -1` (false) or potentially passing if only 'expired' is missing (`-1 < indexOf('fresh')`), leading to false confidence.",
+          "file": "test/session.test.js",
+          "line_start": 10,
+          "line_end": 13,
+          "confidence": 0.95,
+          "recommendation": "Explicitly populate the `sessions` store with predictable test data before calling `render()`, and assert that both strings are actually present (index > -1) before comparing their positions."
+        }
+      ],
+      "latencyMs": 26819
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "The test suite contains a vacuous test with no assertions, tests with missing setup data, and an improperly synchronized asynchronous test that will falsely pass and crash the runner.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Unsynchronized async assertion and missing deletion logic",
+          "body": "The test 'deleting a session empties the store' runs an assertion in `process.nextTick` but does not return a Promise or accept a callback, causing the test to complete synchronously before the assertion. Furthermore, no actual function is called to delete the session, meaning the assertion will fail out-of-band and likely crash the process.",
+          "file": "test/session.test.js",
+          "line_start": 20,
+          "line_end": 25,
+          "confidence": 1,
+          "recommendation": "Make the test function `async`, actually perform the session deletion before asserting, and remove the `process.nextTick` wrapper."
+        },
+        {
+          "severity": "medium",
+          "title": "Vacuous test with no assertions",
+          "body": "The test 'parseSession handles a malformed payload' invokes `parseSession` but does not assert the return value or catch expected exceptions. It will silently pass as long as `parseSession` does not throw an unexpected error.",
+          "file": "test/session.test.js",
+          "line_start": 6,
+          "line_end": 8,
+          "confidence": 1,
+          "recommendation": "Add assertions to verify the expected outcome of `parseSession`."
+        },
+        {
+          "severity": "medium",
+          "title": "Missing test setup for shared state",
+          "body": "The test 'an expired session is listed before a fresh one' calls `render()` without adding any sessions to the store. If both 'expired' and 'fresh' are not found, `indexOf` returns -1 for both, resulting in an `assert.ok(-1 < -1)` failure.",
+          "file": "test/session.test.js",
+          "line_start": 10,
+          "line_end": 13,
+          "confidence": 0.9,
+          "recommendation": "Populate the `sessions` state with mock 'expired' and 'fresh' items before calling `render()`."
+        }
+      ],
+      "latencyMs": 33484
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "The test suite contains a vacuous test with no assertions and an improperly managed asynchronous execution that escapes the test runner's lifecycle.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Vacuous test lacking assertions",
+          "body": "The test 'parseSession handles a malformed payload' invokes 'parseSession' but fails to assert any outcomes. This test will falsely pass unless the function synchronously throws an error, resulting in misleading test coverage.",
+          "file": "test/session.test.js",
+          "line_start": 6,
+          "line_end": 8,
+          "confidence": 1,
+          "recommendation": "Implement explicit assertions (such as 'assert.throws' or checking the return value) to validate how the function handles malformed payloads."
+        },
+        {
+          "severity": "high",
+          "title": "Unawaited asynchronous execution escapes test scope",
+          "body": "The test 'deleting a session empties the store' schedules an assertion inside 'process.nextTick' but does not return a Promise or use a done callback. The node:test runner will mark the test as passed synchronously before the assertion executes. If the assertion fails later, it will trigger an unhandled exception.",
+          "file": "test/session.test.js",
+          "line_start": 20,
+          "line_end": 25,
+          "confidence": 1,
+          "recommendation": "Pass a 'done' callback to the test function and invoke it after the assertion, or return a Promise so the runner correctly waits for the asynchronous block to complete."
+        }
+      ],
+      "latencyMs": 20496
+    }
+  ],
+  "raw": "{\n  \"session_id\": \"0ff37620-fc22-44f8-8600-b05b33e3ad54\",\n  \"response\": \"{\\n  \\\"verdict\\\": \\\"needs-attention\\\",\\n  \\\"summary\\\": \\\"The test suite contains a vacuous test with no assertions and an improperly managed asynchronous execution that escapes the test runner's lifecycle.\\\",\\n  \\\"findings\\\": [\\n    {\\n      \\\"severity\\\": \\\"high\\\",\\n      \\\"title\\\": \\\"Vacuous test lacking assertions\\\",\\n      \\\"body\\\": \\\"The test 'parseSession handles a malformed payload' invokes 'parseSession' but fails to assert any outcomes. This test will falsely pass unless the function synchronously throws an error, resulting in misleading test coverage.\\\",\\n      \\\"file\\\": \\\"test/session.test.js\\\",\\n      \\\"line_start\\\": 6,\\n      \\\"line_end\\\": 8,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Implement explicit assertions (such as 'assert.throws' or checking the return value) to validate how the function handles malformed payloads.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"high\\\",\\n      \\\"title\\\": \\\"Unawaited asynchronous execution escapes test scope\\\",\\n      \\\"body\\\": \\\"The test 'deleting a session empties the store' schedules an assertion inside 'process.nextTick' but does not return a Promise or use a done callback. The node:test runner will mark the test as passed synchronously before the assertion executes. If the assertion fails later, it will trigger an unhandled exception.\\\",\\n      \\\"file\\\": \\\"test/session.test.js\\\",\\n      \\\"line_start\\\": 20,\\n      \\\"line_end\\\": 25,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Pass a 'done' callback to the test function and invoke it after the assertion, or return a Promise so the runner correctly waits for the asynchronous block to complete.\\\"\\n    }\\n  ],\\n  \\\"next_steps\\\": [\\n    \\\"Fix the vacuous test by adding assertions for the malformed payload.\\\",\\n    \\\"Correct the lifecycle of the async test using either a done callback or a Promise wrapper.\\\",\\n    \\\"Review the test suite for the reasoning behind the skipped 'expire() removes the session' test and implement it if necessary.\\\"\\n  ]\\n}\",\n  \"stats\": {\n    \"models\": {\n      \"gemini-3.1-pro-preview\": {\n        \"api\": {\n          \"totalRequests\": 1,\n          \"totalErrors\": 0,\n          \"totalLatencyMs\": 18790,\n          \"errorsByType\": {}\n        },\n        \"tokens\": {\n          \"input\": 5157,\n          \"prompt\": 17376,\n          \"candidates\": 413,\n          \"total\": 19348,\n          \"cached\": 12219,\n          \"thoughts\": 1559,\n          \"tool\": 0\n        },\n        \"roles\": {\n          \"main\": {\n            \"totalRequests\": 1,\n            \"totalErrors\": 0,\n            \"totalLatencyMs\": 18790,\n            \"tokens\": {\n              \"input\": 5157,\n              \"prompt\": 17376,\n              \"candidates\": 413,\n              \"total\": 19348,\n              \"cached\": 12219,\n              \"thoughts\": 1559,\n              \"tool\": 0\n            }\n          }\n        }\n      }\n    },\n    \"tools\": {\n      \"totalCalls\": 0,\n      \"totalSuccess\": 0,\n      \"totalFail\": 0,\n      \"totalDurationMs\": 0,\n      \"totalDecisions\": {\n        \"accept\": 0,\n        \"reject\": 0,\n        \"modify\": 0,\n        \"auto_accept\": 0\n      },\n      \"byName\": {}\n    },\n    \"files\": {\n      \"totalLinesAdded\": 0,\n      \"totalLinesRemoved\": 0\n    }\n  }\n}"
+}

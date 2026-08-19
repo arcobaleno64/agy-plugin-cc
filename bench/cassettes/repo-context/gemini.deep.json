@@ -1,155 +1,155 @@
 {
   "caseId": "repo-context",
   "cell": "gemini.deep",
-  "recordedAt": "2026-08-19T03:21:52.316Z",
+  "recordedAt": "2026-08-19T12:10:51.341Z",
   "verdict": "needs-attention",
-  "summary": "The change introduces an undeclared dependency on jsonwebtoken, unvalidated JWT_SECRET environment variable usage, and commits a transient runtime state file.",
+  "summary": "Found an undeclared dependency on jsonwebtoken, a lack of JWT secret validation, and tracked ephemeral process files in git.",
   "findings": [
     {
-      "severity": "critical",
-      "title": "Undeclared dependency `jsonwebtoken`",
-      "body": "src/token.js requires `jsonwebtoken`, but this package is not declared under `dependencies` in package.json. This will cause a `MODULE_NOT_FOUND` crash in fresh environments and CI/CD pipelines.",
-      "file": "src/token.js",
-      "line_start": 1,
-      "line_end": 1,
+      "severity": "high",
+      "title": "Undeclared dependency 'jsonwebtoken' in package.json",
+      "body": "The module 'src/token.js' imports and uses the 'jsonwebtoken' package, but it is not listed in the 'dependencies' of package.json. This will cause clean installations or production deployments to fail with a 'Cannot find module' error.",
+      "file": "package.json",
+      "line_start": 5,
+      "line_end": 7,
       "confidence": 1,
-      "recommendation": "Add `jsonwebtoken` to `dependencies` in package.json (e.g., via `npm install jsonwebtoken`)."
+      "recommendation": "Run 'npm install jsonwebtoken' or manually add 'jsonwebtoken' (e.g., '^9.0.0') to the dependencies section in package.json."
     },
     {
-      "severity": "high",
-      "title": "Unvalidated `JWT_SECRET` environment variable",
-      "body": "`issue()` passes `process.env.JWT_SECRET` directly to `jwt.sign()` without verifying that it is defined. If the environment variable is missing, `jwt.sign()` will throw an uncaught exception (`\"secretOrPrivateKey\" must have a value`), failing token issuance at runtime.",
+      "severity": "medium",
+      "title": "Missing validation for process.env.JWT_SECRET",
+      "body": "In 'src/token.js', 'jwt.sign' is called with 'process.env.JWT_SECRET' without validating that it is set. If this environment variable is missing, the signing call will throw an unhandled 'secretOrPrivateKey must have a value' exception at runtime.",
       "file": "src/token.js",
       "line_start": 3,
       "line_end": 5,
       "confidence": 0.95,
-      "recommendation": "Validate that `process.env.JWT_SECRET` is defined before signing, throwing a clear configuration error if it is missing."
+      "recommendation": "Add a check to ensure 'process.env.JWT_SECRET' is defined before calling 'jwt.sign', or throw a clear initialization error if it is not set."
     },
     {
-      "severity": "medium",
-      "title": "Stray runtime state file committed",
-      "body": "`.omc/state/job.json` contains transient execution metadata (PID and job status) that should not be tracked in version control.",
+      "severity": "low",
+      "title": "Committing ephemeral state file .omc/state/job.json",
+      "body": "The file '.omc/state/job.json' contains runtime-specific job information (such as pid and running status). Tracking active process/runner state in git leads to noisy commits, potential merge conflicts, and leakage of transient local environment details.",
       "file": ".omc/state/job.json",
       "line_start": 1,
       "line_end": 1,
       "confidence": 1,
-      "recommendation": "Remove `.omc/state/job.json` from git and add `.omc/` to `.gitignore`."
+      "recommendation": "Remove '.omc/state/job.json' from git tracking and create a '.gitignore' file that excludes '.omc/' or '.omc/state/'."
     }
   ],
-  "latencyMs": 26885,
-  "engineVersion": "0.54.4",
+  "latencyMs": 31736,
+  "engineVersion": "0.55.1",
   "samples": [
     {
       "verdict": "needs-attention",
-      "summary": "The changes introduce an undeclared dependency, unvalidated secret access during token signing, and a stray runtime state file.",
+      "summary": "Identified undeclared dependency on jsonwebtoken, missing validation of process.env.JWT_SECRET, and accidental staging of a transient runtime state file.",
       "findings": [
         {
           "severity": "high",
-          "title": "Undeclared dependency 'jsonwebtoken'",
-          "body": "src/token.js requires 'jsonwebtoken', but the package is not listed under dependencies in package.json. In fresh environments or production deployments, importing or executing this module will throw MODULE_NOT_FOUND.",
-          "file": "src/token.js",
-          "line_start": 1,
-          "line_end": 1,
+          "title": "Undeclared dependency on jsonwebtoken in package.json",
+          "body": "The new file `src/token.js` imports the `jsonwebtoken` library via `require('jsonwebtoken')`, but this dependency is not declared in `package.json`. At runtime, attempting to load this file will fail with a `Cannot find module 'jsonwebtoken'` exception, causing the application to crash.",
+          "file": "package.json",
+          "line_start": 5,
+          "line_end": 7,
           "confidence": 1,
-          "recommendation": "Add 'jsonwebtoken' to package.json dependencies via 'npm install jsonwebtoken'."
+          "recommendation": "Add `\"jsonwebtoken\"` with an appropriate version range (e.g., `\"^9.0.0\"`) to the `\"dependencies\"` block in `package.json`."
         },
         {
           "severity": "medium",
-          "title": "Missing validation for JWT_SECRET environment variable",
-          "body": "issue() passes process.env.JWT_SECRET directly to jwt.sign without verifying it is defined. If the environment variable is missing, jsonwebtoken throws a runtime error ('secretOrPrivateKey must have a value').",
+          "title": "Missing validation of JWT_SECRET environment variable",
+          "body": "In `src/token.js`, the function `issue(payload)` directly accesses `process.env.JWT_SECRET` to sign tokens. If `process.env.JWT_SECRET` is undefined or not set, `jwt.sign()` will synchronously throw a fatal `Error: secretOrPrivateKey must have a value`. Without error handling, this will cause unhandled promise rejections or process crashes in the calling code.",
           "file": "src/token.js",
           "line_start": 3,
           "line_end": 5,
-          "confidence": 0.95,
-          "recommendation": "Validate that process.env.JWT_SECRET is non-empty before signing, throwing a clear configuration error if unset."
+          "confidence": 1,
+          "recommendation": "Add validation to check if `process.env.JWT_SECRET` is defined before calling `jwt.sign()`. For example:\n\n```js\nfunction issue(payload) {\n  if (!process.env.JWT_SECRET) {\n    throw new Error('JWT_SECRET environment variable is not defined');\n  }\n  return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });\n}\n```"
         },
         {
           "severity": "low",
-          "title": "Stray runtime state file tracked in working tree",
-          "body": "The file .omc/state/job.json contains ephemeral process state (jobId and pid) and was added to the working tree instead of being excluded from version control.",
+          "title": "Staging of transient job state file",
+          "body": "The local/runtime job state file `.omc/state/job.json` containing active execution state (`\"status\": \"running\"`, `\"pid\": 4242`) has been added/staged for tracking in git. Committing dynamic process state files to source control is bad practice as it causes git history pollution and potential merge conflicts.",
           "file": ".omc/state/job.json",
           "line_start": 1,
           "line_end": 1,
           "confidence": 1,
-          "recommendation": "Remove .omc/state/job.json from git tracking and add .omc/ to .gitignore."
+          "recommendation": "Unstage `.omc/state/job.json` using `git reset HEAD .omc/state/job.json`, and add `.omc/` or `.omc/state/` to the project's `.gitignore` file to prevent accidental future commits of transient state."
         }
       ],
-      "latencyMs": 30930
+      "latencyMs": 36148
     },
     {
       "verdict": "needs-attention",
-      "summary": "Found undeclared jsonwebtoken dependency, unvalidated JWT_SECRET environment variable, and committed transient job state file.",
-      "findings": [
-        {
-          "severity": "high",
-          "title": "Undeclared jsonwebtoken dependency",
-          "body": "src/token.js requires 'jsonwebtoken', but the package is not listed in dependencies in package.json. This will result in a MODULE_NOT_FOUND runtime failure during fresh deployments or clean installs.",
-          "file": "src/token.js",
-          "line_start": 1,
-          "line_end": 1,
-          "confidence": 1,
-          "recommendation": "Add jsonwebtoken to dependencies in package.json (e.g. `npm install jsonwebtoken`)."
-        },
-        {
-          "severity": "medium",
-          "title": "Unchecked process.env.JWT_SECRET",
-          "body": "src/token.js passes process.env.JWT_SECRET directly to jwt.sign without validating that the secret is set. If JWT_SECRET is undefined, jwt.sign throws a runtime error ('secretOrPrivateKey must have a value').",
-          "file": "src/token.js",
-          "line_start": 3,
-          "line_end": 5,
-          "confidence": 0.95,
-          "recommendation": "Validate that process.env.JWT_SECRET is defined before signing, or throw an explicit configuration error."
-        },
-        {
-          "severity": "low",
-          "title": "Ephemeral job state file tracked in git",
-          "body": ".omc/state/job.json contains runtime process state (jobId, status, pid) from local tooling that should not be committed to version control.",
-          "file": ".omc/state/job.json",
-          "line_start": 1,
-          "line_end": 1,
-          "confidence": 1,
-          "recommendation": "Remove .omc/state/job.json from git and add .omc/ to .gitignore."
-        }
-      ],
-      "latencyMs": 30552
-    },
-    {
-      "verdict": "needs-attention",
-      "summary": "The change introduces an undeclared dependency on jsonwebtoken, unvalidated JWT_SECRET environment variable usage, and commits a transient runtime state file.",
+      "summary": "The code has a missing runtime dependency, lacks environment variable validation, and contains a runtime state file that should be gitignored.",
       "findings": [
         {
           "severity": "critical",
-          "title": "Undeclared dependency `jsonwebtoken`",
-          "body": "src/token.js requires `jsonwebtoken`, but this package is not declared under `dependencies` in package.json. This will cause a `MODULE_NOT_FOUND` crash in fresh environments and CI/CD pipelines.",
+          "title": "Missing 'jsonwebtoken' dependency in package.json",
+          "body": "The file `src/token.js` requires the `jsonwebtoken` module, but it is not listed in `package.json` under `dependencies`. This will result in a runtime `Cannot find module 'jsonwebtoken'` crash.",
           "file": "src/token.js",
           "line_start": 1,
           "line_end": 1,
           "confidence": 1,
-          "recommendation": "Add `jsonwebtoken` to `dependencies` in package.json (e.g., via `npm install jsonwebtoken`)."
+          "recommendation": "Add `jsonwebtoken` to the `dependencies` block in `package.json` (e.g., by running `npm install jsonwebtoken`)."
         },
         {
           "severity": "high",
-          "title": "Unvalidated `JWT_SECRET` environment variable",
-          "body": "`issue()` passes `process.env.JWT_SECRET` directly to `jwt.sign()` without verifying that it is defined. If the environment variable is missing, `jwt.sign()` will throw an uncaught exception (`\"secretOrPrivateKey\" must have a value`), failing token issuance at runtime.",
+          "title": "Missing validation for process.env.JWT_SECRET",
+          "body": "In `src/token.js`, `process.env.JWT_SECRET` is passed directly to `jwt.sign()` without validation. If the environment variable is not defined, `jwt.sign()` will throw a synchronous error: 'secretOrPrivateKey must have a value'.",
           "file": "src/token.js",
           "line_start": 3,
           "line_end": 5,
-          "confidence": 0.95,
-          "recommendation": "Validate that `process.env.JWT_SECRET` is defined before signing, throwing a clear configuration error if it is missing."
+          "confidence": 1,
+          "recommendation": "Validate that `process.env.JWT_SECRET` is defined and has sufficient entropy before calling `jwt.sign()`, throwing a clear initialization or configuration error if it is missing."
         },
         {
-          "severity": "medium",
-          "title": "Stray runtime state file committed",
-          "body": "`.omc/state/job.json` contains transient execution metadata (PID and job status) that should not be tracked in version control.",
+          "severity": "low",
+          "title": "Runtime state file (.omc/state/job.json) is tracked",
+          "body": "The state file `.omc/state/job.json` contains transient, machine-specific execution state (like `pid` and status 'running'). This file should not be committed to the repository.",
           "file": ".omc/state/job.json",
           "line_start": 1,
           "line_end": 1,
           "confidence": 1,
-          "recommendation": "Remove `.omc/state/job.json` from git and add `.omc/` to `.gitignore`."
+          "recommendation": "Remove `.omc/state/job.json` from Git tracking and add `.omc/` or `.omc/state/` to a `.gitignore` file to prevent tracking of dynamic runtime state."
         }
       ],
-      "latencyMs": 26885
+      "latencyMs": 27264
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Found an undeclared dependency on jsonwebtoken, a lack of JWT secret validation, and tracked ephemeral process files in git.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Undeclared dependency 'jsonwebtoken' in package.json",
+          "body": "The module 'src/token.js' imports and uses the 'jsonwebtoken' package, but it is not listed in the 'dependencies' of package.json. This will cause clean installations or production deployments to fail with a 'Cannot find module' error.",
+          "file": "package.json",
+          "line_start": 5,
+          "line_end": 7,
+          "confidence": 1,
+          "recommendation": "Run 'npm install jsonwebtoken' or manually add 'jsonwebtoken' (e.g., '^9.0.0') to the dependencies section in package.json."
+        },
+        {
+          "severity": "medium",
+          "title": "Missing validation for process.env.JWT_SECRET",
+          "body": "In 'src/token.js', 'jwt.sign' is called with 'process.env.JWT_SECRET' without validating that it is set. If this environment variable is missing, the signing call will throw an unhandled 'secretOrPrivateKey must have a value' exception at runtime.",
+          "file": "src/token.js",
+          "line_start": 3,
+          "line_end": 5,
+          "confidence": 0.95,
+          "recommendation": "Add a check to ensure 'process.env.JWT_SECRET' is defined before calling 'jwt.sign', or throw a clear initialization error if it is not set."
+        },
+        {
+          "severity": "low",
+          "title": "Committing ephemeral state file .omc/state/job.json",
+          "body": "The file '.omc/state/job.json' contains runtime-specific job information (such as pid and running status). Tracking active process/runner state in git leads to noisy commits, potential merge conflicts, and leakage of transient local environment details.",
+          "file": ".omc/state/job.json",
+          "line_start": 1,
+          "line_end": 1,
+          "confidence": 1,
+          "recommendation": "Remove '.omc/state/job.json' from git tracking and create a '.gitignore' file that excludes '.omc/' or '.omc/state/'."
+        }
+      ],
+      "latencyMs": 31736
     }
   ],
-  "raw": "{\n  \"review\": \"Review\",\n  \"target\": {\n    \"mode\": \"working-tree\",\n    \"label\": \"working tree diff\",\n    \"explicit\": true\n  },\n  \"gemini\": {\n    \"status\": 0,\n    \"stdout\": \"{\\n  \\\"verdict\\\": \\\"needs-attention\\\",\\n  \\\"summary\\\": \\\"The change introduces an undeclared dependency on jsonwebtoken, unvalidated JWT_SECRET environment variable usage, and commits a transient runtime state file.\\\",\\n  \\\"findings\\\": [\\n    {\\n      \\\"severity\\\": \\\"critical\\\",\\n      \\\"title\\\": \\\"Undeclared dependency `jsonwebtoken`\\\",\\n      \\\"body\\\": \\\"src/token.js requires `jsonwebtoken`, but this package is not declared under `dependencies` in package.json. This will cause a `MODULE_NOT_FOUND` crash in fresh environments and CI/CD pipelines.\\\",\\n      \\\"file\\\": \\\"src/token.js\\\",\\n      \\\"line_start\\\": 1,\\n      \\\"line_end\\\": 1,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Add `jsonwebtoken` to `dependencies` in package.json (e.g., via `npm install jsonwebtoken`).\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"high\\\",\\n      \\\"title\\\": \\\"Unvalidated `JWT_SECRET` environment variable\\\",\\n      \\\"body\\\": \\\"`issue()` passes `process.env.JWT_SECRET` directly to `jwt.sign()` without verifying that it is defined. If the environment variable is missing, `jwt.sign()` will throw an uncaught exception (`\\\\\\\"secretOrPrivateKey\\\\\\\" must have a value`), failing token issuance at runtime.\\\",\\n      \\\"file\\\": \\\"src/token.js\\\",\\n      \\\"line_start\\\": 3,\\n      \\\"line_end\\\": 5,\\n      \\\"confidence\\\": 0.95,\\n      \\\"recommendation\\\": \\\"Validate that `process.env.JWT_SECRET` is defined before signing, throwing a clear configuration error if it is missing.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"medium\\\",\\n      \\\"title\\\": \\\"Stray runtime state file committed\\\",\\n      \\\"body\\\": \\\"`.omc/state/job.json` contains transient execution metadata (PID and job status) that should not be tracked in version control.\\\",\\n      \\\"file\\\": \\\".omc/state/job.json\\\",\\n      \\\"line_start\\\": 1,\\n      \\\"line_end\\\": 1,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Remove `.omc/state/job.json` from git and add `.omc/` to `.gitignore`.\\\"\\n    }\\n  ],\\n  \\\"next_steps\\\": [\\n    \\\"Add jsonwebtoken to package.json dependencies.\\\",\\n    \\\"Add environment variable validation for JWT_SECRET in src/token.js.\\\",\\n    \\\"Untrack .omc/state/job.json and add .omc/ to .gitignore.\\\"\\n  ]\\n}\",\n    \"stderr\": \"\"\n  },\n  \"result\": {\n    \"verdict\": \"needs-attention\",\n    \"summary\": \"The change introduces an undeclared dependency on jsonwebtoken, unvalidated JWT_SECRET environment variable usage, and commits a transient runtime state file.\",\n    \"findings\": [\n      {\n        \"severity\": \"critical\",\n        \"title\": \"Undeclared dependency `jsonwebtoken`\",\n        \"body\": \"src/token.js requires `jsonwebtoken`, but this package is not declared under `dependencies` in package.json. This will cause a `MODULE_NOT_FOUND` crash in fresh environments and CI/CD pipelines.\",\n        \"file\": \"src/token.js\",\n        \"line_start\": 1,\n        \"line_end\": 1,\n        \"confidence\": 1,\n        \"recommendation\": \"Add `jsonwebtoken` to `dependencies` in package.json (e.g., via `npm install jsonwebtoken`).\"\n      },\n      {\n        \"severity\": \"high\",\n        \"title\": \"Unvalidated `JWT_SECRET` environment variable\",\n        \"body\": \"`issue()` passes `process.env.JWT_SECRET` directly to `jwt.sign()` without verifying that it is defined. If the environment variable is missing, `jwt.sign()` will throw an uncaught exception (`\\\"secretOrPrivateKey\\\" must have a value`), failing token issuance at runtime.\",\n        \"file\": \"src/token.js\",\n        \"line_start\": 3,\n        \"line_end\": 5,\n        \"confidence\": 0.95,\n        \"recommendation\": \"Validate that `process.env.JWT_SECRET` is defined before signing, throwing a clear configuration error if it is missing.\"\n      },\n      {\n        \"severity\": \"medium\",\n        \"title\": \"Stray runtime state file committed\",\n        \"body\": \"`.omc/state/job.json` contains transient execution m"
+  "raw": "{\n  \"review\": \"Review\",\n  \"target\": {\n    \"mode\": \"working-tree\",\n    \"label\": \"working tree diff\",\n    \"explicit\": true\n  },\n  \"gemini\": {\n    \"status\": 0,\n    \"stdout\": \"{\\n  \\\"verdict\\\": \\\"needs-attention\\\",\\n  \\\"summary\\\": \\\"Found an undeclared dependency on jsonwebtoken, a lack of JWT secret validation, and tracked ephemeral process files in git.\\\",\\n  \\\"findings\\\": [\\n    {\\n      \\\"severity\\\": \\\"high\\\",\\n      \\\"title\\\": \\\"Undeclared dependency 'jsonwebtoken' in package.json\\\",\\n      \\\"body\\\": \\\"The module 'src/token.js' imports and uses the 'jsonwebtoken' package, but it is not listed in the 'dependencies' of package.json. This will cause clean installations or production deployments to fail with a 'Cannot find module' error.\\\",\\n      \\\"file\\\": \\\"package.json\\\",\\n      \\\"line_start\\\": 5,\\n      \\\"line_end\\\": 7,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Run 'npm install jsonwebtoken' or manually add 'jsonwebtoken' (e.g., '^9.0.0') to the dependencies section in package.json.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"medium\\\",\\n      \\\"title\\\": \\\"Missing validation for process.env.JWT_SECRET\\\",\\n      \\\"body\\\": \\\"In 'src/token.js', 'jwt.sign' is called with 'process.env.JWT_SECRET' without validating that it is set. If this environment variable is missing, the signing call will throw an unhandled 'secretOrPrivateKey must have a value' exception at runtime.\\\",\\n      \\\"file\\\": \\\"src/token.js\\\",\\n      \\\"line_start\\\": 3,\\n      \\\"line_end\\\": 5,\\n      \\\"confidence\\\": 0.95,\\n      \\\"recommendation\\\": \\\"Add a check to ensure 'process.env.JWT_SECRET' is defined before calling 'jwt.sign', or throw a clear initialization error if it is not set.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"low\\\",\\n      \\\"title\\\": \\\"Committing ephemeral state file .omc/state/job.json\\\",\\n      \\\"body\\\": \\\"The file '.omc/state/job.json' contains runtime-specific job information (such as pid and running status). Tracking active process/runner state in git leads to noisy commits, potential merge conflicts, and leakage of transient local environment details.\\\",\\n      \\\"file\\\": \\\".omc/state/job.json\\\",\\n      \\\"line_start\\\": 1,\\n      \\\"line_end\\\": 1,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Remove '.omc/state/job.json' from git tracking and create a '.gitignore' file that excludes '.omc/' or '.omc/state/'.\\\"\\n    }\\n  ],\\n  \\\"next_steps\\\": [\\n    \\\"Add 'jsonwebtoken' to package.json dependencies.\\\",\\n    \\\"Add startup or runtime validation for 'process.env.JWT_SECRET' in 'src/token.js'.\\\",\\n    \\\"Remove '.omc/state/job.json' from git tracking and configure '.gitignore' to ignore the '.omc/' directory.\\\"\\n  ]\\n}\",\n    \"stderr\": \"Warning: True color (24-bit) support not detected. Using a terminal with true color enabled will result in a better visual experience.\\nRipgrep is not available. Falling back to GrepTool.\\n\"\n  },\n  \"result\": {\n    \"verdict\": \"needs-attention\",\n    \"summary\": \"Found an undeclared dependency on jsonwebtoken, a lack of JWT secret validation, and tracked ephemeral process files in git.\",\n    \"findings\": [\n      {\n        \"severity\": \"high\",\n        \"title\": \"Undeclared dependency 'jsonwebtoken' in package.json\",\n        \"body\": \"The module 'src/token.js' imports and uses the 'jsonwebtoken' package, but it is not listed in the 'dependencies' of package.json. This will cause clean installations or production deployments to fail with a 'Cannot find module' error.\",\n        \"file\": \"package.json\",\n        \"line_start\": 5,\n        \"line_end\": 7,\n        \"confidence\": 1,\n        \"recommendation\": \"Run 'npm install jsonwebtoken' or manually add 'jsonwebtoken' (e.g., '^9.0.0') to the dependencies section in package.json.\"\n      },\n      {\n        \"severity\": \"medium\",\n        \"title\": \"Missing validation for process.env.JWT_SECRET\",\n        \"body\": \"In 'src/token.js', 'jwt.sign' is called with 'process.env.JWT_SECRET' without validating that it is set. If this environment variable is missing, the signing call w"
 }

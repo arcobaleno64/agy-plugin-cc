@@ -1,0 +1,155 @@
+{
+  "caseId": "vacuous-tests",
+  "cell": "agy.model",
+  "recordedAt": "2026-08-19T08:30:38.456Z",
+  "verdict": "needs-attention",
+  "summary": "The test suite contains asynchronous assertion leakage, flawed index comparison logic causing false positives, and missing assertions.",
+  "findings": [
+    {
+      "severity": "high",
+      "title": "Asynchronous assertion in synchronous test escapes test runner lifecycle",
+      "body": "The test function is synchronous and completes before the process.nextTick callback executes. Consequently, any assertion failure throws as an unhandled exception outside the test lifecycle instead of registering as a test failure, and no deletion operation is performed before asserting the size.",
+      "file": "test/session.test.js",
+      "line_start": 20,
+      "line_end": 25,
+      "confidence": 0.95,
+      "recommendation": "Return a Promise or await the async operation, and invoke the deletion function before asserting store size."
+    },
+    {
+      "severity": "medium",
+      "title": "indexOf comparison yields false positive when substring is missing",
+      "body": "If 'expired' is absent from lines, indexOf returns -1. If 'fresh' is found at index >= 0, the comparison -1 < lines.indexOf('fresh') evaluates to true, causing the assertion to pass even when 'expired' is not present.",
+      "file": "test/session.test.js",
+      "line_start": 10,
+      "line_end": 13,
+      "confidence": 0.95,
+      "recommendation": "Verify that both 'expired' and 'fresh' exist in lines (indexOf !== -1) before comparing their positions."
+    },
+    {
+      "severity": "low",
+      "title": "Malformed payload test passes valid JSON and lacks assertions",
+      "body": "The test titled for malformed payload testing supplies valid JSON and contains no assertions to verify error handling or return values.",
+      "file": "test/session.test.js",
+      "line_start": 6,
+      "line_end": 8,
+      "confidence": 0.9,
+      "recommendation": "Pass invalid JSON input and assert expected error handling using assert.throws or return value checks."
+    }
+  ],
+  "latencyMs": 24400,
+  "engineVersion": "1.1.15",
+  "samples": [
+    {
+      "verdict": "needs-attention",
+      "summary": "The test suite contains unhandled asynchronous assertions, false-positive index assertions, and incomplete test cases.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Unhandled asynchronous assertion escapes test lifecycle",
+          "body": "The test performs assertions inside `process.nextTick()` without returning a Promise or accepting a callback parameter. The test runner marks the test as passed before the assertion runs, and no deletion logic is invoked prior to asserting `sessions.size === 0`.",
+          "file": "test/session.test.js",
+          "line_start": 20,
+          "line_end": 25,
+          "confidence": 0.95,
+          "recommendation": "Make the test function async (or return a Promise), invoke the deletion/expiration logic, and await the operation before asserting that the store is empty."
+        },
+        {
+          "severity": "medium",
+          "title": "Flawed indexOf comparison produces false positives",
+          "body": "At line 12, `lines.indexOf('expired') < lines.indexOf('fresh')` evaluates to true if 'expired' is missing from `lines` (returning -1) and 'fresh' is found at index 0 or higher, allowing the test to pass when expired sessions are omitted.",
+          "file": "test/session.test.js",
+          "line_start": 10,
+          "line_end": 13,
+          "confidence": 0.9,
+          "recommendation": "Assert that both `lines.indexOf('expired') !== -1` and `lines.indexOf('fresh') !== -1` before checking relative ordering."
+        },
+        {
+          "severity": "medium",
+          "title": "Malformed payload test provides valid JSON without assertions",
+          "body": "The test claims to handle a malformed payload but passes a well-formed JSON string with no assertion checking the returned result or verifying error handling.",
+          "file": "test/session.test.js",
+          "line_start": 6,
+          "line_end": 8,
+          "confidence": 0.85,
+          "recommendation": "Pass an actual malformed payload (e.g. invalid JSON or invalid schema) and assert that `parseSession` throws or returns an expected error/fallback value."
+        }
+      ],
+      "latencyMs": 23288
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "The test suite contains unawaited asynchronous assertions, false-positive index comparisons, and vacuous test cases lacking assertions.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Unawaited asynchronous assertion and missing deletion call",
+          "body": "The test function runs synchronously while placing the assertion inside process.nextTick. In node:test, the test completes immediately with a pass before the callback runs. Additionally, no deletion or expiration function is invoked after adding the session, so the deferred assertion would fail outside the test lifecycle as an uncaught exception.",
+          "file": "test/session.test.js",
+          "line_start": 20,
+          "line_end": 25,
+          "confidence": 1,
+          "recommendation": "Invoke the session deletion logic and make the test asynchronous (e.g. returning a Promise or using async/await) so node:test properly tracks the assertion."
+        },
+        {
+          "severity": "medium",
+          "title": "Unsafe indexOf comparison creates false-positive test pass",
+          "body": "Comparing indexOf results directly with '<' allows the assertion to pass if 'expired' is missing from the output (-1) and 'fresh' is found at index 0 or greater (-1 < 0 is true).",
+          "file": "test/session.test.js",
+          "line_start": 10,
+          "line_end": 13,
+          "confidence": 0.95,
+          "recommendation": "Verify that both indices are not -1 before comparing their relative positions, or assert the exact expected structure of rendered lines."
+        },
+        {
+          "severity": "medium",
+          "title": "Malformed payload test lacks assertions and passes valid JSON",
+          "body": "The test intended for malformed payloads passes a well-formed JSON string and contains no assertions (such as assert.throws or checking error return values), leaving the failure path untested.",
+          "file": "test/session.test.js",
+          "line_start": 6,
+          "line_end": 8,
+          "confidence": 0.9,
+          "recommendation": "Pass genuinely malformed input (e.g. invalid JSON syntax or invalid schema types) and assert the expected error or fallback behavior."
+        }
+      ],
+      "latencyMs": 22927
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "The test suite contains asynchronous assertion leakage, flawed index comparison logic causing false positives, and missing assertions.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Asynchronous assertion in synchronous test escapes test runner lifecycle",
+          "body": "The test function is synchronous and completes before the process.nextTick callback executes. Consequently, any assertion failure throws as an unhandled exception outside the test lifecycle instead of registering as a test failure, and no deletion operation is performed before asserting the size.",
+          "file": "test/session.test.js",
+          "line_start": 20,
+          "line_end": 25,
+          "confidence": 0.95,
+          "recommendation": "Return a Promise or await the async operation, and invoke the deletion function before asserting store size."
+        },
+        {
+          "severity": "medium",
+          "title": "indexOf comparison yields false positive when substring is missing",
+          "body": "If 'expired' is absent from lines, indexOf returns -1. If 'fresh' is found at index >= 0, the comparison -1 < lines.indexOf('fresh') evaluates to true, causing the assertion to pass even when 'expired' is not present.",
+          "file": "test/session.test.js",
+          "line_start": 10,
+          "line_end": 13,
+          "confidence": 0.95,
+          "recommendation": "Verify that both 'expired' and 'fresh' exist in lines (indexOf !== -1) before comparing their positions."
+        },
+        {
+          "severity": "low",
+          "title": "Malformed payload test passes valid JSON and lacks assertions",
+          "body": "The test titled for malformed payload testing supplies valid JSON and contains no assertions to verify error handling or return values.",
+          "file": "test/session.test.js",
+          "line_start": 6,
+          "line_end": 8,
+          "confidence": 0.9,
+          "recommendation": "Pass invalid JSON input and assert expected error handling using assert.throws or return value checks."
+        }
+      ],
+      "latencyMs": 24400
+    }
+  ],
+  "raw": "{\"conversation_id\":\"cb24c46a-76a8-4b1a-9771-94bf5f851682\",\"status\":\"SUCCESS\",\"response\":\"{\\n  \\\"verdict\\\": \\\"needs-attention\\\",\\n  \\\"summary\\\": \\\"The test suite contains asynchronous assertion leakage, flawed index comparison logic causing false positives, and missing assertions.\\\",\\n  \\\"findings\\\": [\\n    {\\n      \\\"severity\\\": \\\"high\\\",\\n      \\\"title\\\": \\\"Asynchronous assertion in synchronous test escapes test runner lifecycle\\\",\\n      \\\"body\\\": \\\"The test function is synchronous and completes before the process.nextTick callback executes. Consequently, any assertion failure throws as an unhandled exception outside the test lifecycle instead of registering as a test failure, and no deletion operation is performed before asserting the size.\\\",\\n      \\\"file\\\": \\\"test/session.test.js\\\",\\n      \\\"line_start\\\": 20,\\n      \\\"line_end\\\": 25,\\n      \\\"confidence\\\": 0.95,\\n      \\\"recommendation\\\": \\\"Return a Promise or await the async operation, and invoke the deletion function before asserting store size.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"medium\\\",\\n      \\\"title\\\": \\\"indexOf comparison yields false positive when substring is missing\\\",\\n      \\\"body\\\": \\\"If 'expired' is absent from lines, indexOf returns -1. If 'fresh' is found at index \\u003e= 0, the comparison -1 \\u003c lines.indexOf('fresh') evaluates to true, causing the assertion to pass even when 'expired' is not present.\\\",\\n      \\\"file\\\": \\\"test/session.test.js\\\",\\n      \\\"line_start\\\": 10,\\n      \\\"line_end\\\": 13,\\n      \\\"confidence\\\": 0.95,\\n      \\\"recommendation\\\": \\\"Verify that both 'expired' and 'fresh' exist in lines (indexOf !== -1) before comparing their positions.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"low\\\",\\n      \\\"title\\\": \\\"Malformed payload test passes valid JSON and lacks assertions\\\",\\n      \\\"body\\\": \\\"The test titled for malformed payload testing supplies valid JSON and contains no assertions to verify error handling or return values.\\\",\\n      \\\"file\\\": \\\"test/session.test.js\\\",\\n      \\\"line_start\\\": 6,\\n      \\\"line_end\\\": 8,\\n      \\\"confidence\\\": 0.9,\\n      \\\"recommendation\\\": \\\"Pass invalid JSON input and assert expected error handling using assert.throws or return value checks.\\\"\\n    }\\n  ],\\n  \\\"next_steps\\\": [\\n    \\\"Refactor asynchronous tests in test/session.test.js to return promises or use async/await.\\\",\\n    \\\"Add explicit index boundary checks to relative ordering assertions in render tests.\\\",\\n    \\\"Add malformed input test cases with appropriate assert.throws assertions.\\\"\\n  ]\\n}\\n\",\"duration_seconds\":20.4497043,\"num_turns\":1,\"usage\":{\"input_tokens\":19072,\"output_tokens\":4594,\"thinking_tokens\":4051,\"cache_read_tokens\":0,\"total_tokens\":23666}}\n"
+}

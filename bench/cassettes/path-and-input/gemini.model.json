@@ -1,0 +1,175 @@
+{
+  "caseId": "path-and-input",
+  "cell": "gemini.model",
+  "recordedAt": "2026-08-19T09:07:52.117Z",
+  "verdict": "needs-attention",
+  "summary": "The code introduces critical security vulnerabilities including command injection and path traversal, alongside missing error handling.",
+  "findings": [
+    {
+      "severity": "critical",
+      "title": "Command Injection in archive function",
+      "body": "The `name` parameter is directly interpolated into a shell command string executed by `execSync` without any sanitization or escaping. An attacker can exploit this to execute arbitrary shell commands by providing a payload like `test; rm -rf /`.",
+      "file": "src/files.js",
+      "line_start": 12,
+      "line_end": 14,
+      "confidence": 1,
+      "recommendation": "Use `execFileSync` instead of `execSync` and pass arguments as an array to prevent shell interpretation. Alternatively, use a native Node.js library for creating tar archives."
+    },
+    {
+      "severity": "critical",
+      "title": "Path Traversal Vulnerability in readUpload",
+      "body": "The `readUpload` function constructs a file path by joining a root directory with the `name` parameter without verifying the final resolved path. An attacker can read arbitrary files by using directory traversal payloads (e.g., `../../etc/passwd`). This vulnerability also applies to the `archive` function.",
+      "file": "src/files.js",
+      "line_start": 7,
+      "line_end": 10,
+      "confidence": 1,
+      "recommendation": "Ensure the `name` parameter does not contain path separators, and verify that the final resolved absolute path is strictly within the `ROOT` directory (e.g., using `target.startsWith(ROOT)`) before operating on it."
+    },
+    {
+      "severity": "medium",
+      "title": "Missing Error Handling in readUpload",
+      "body": "`fs.readFileSync` throws a synchronous exception if the file does not exist or lacks read permissions. Without a try-catch block, this unhandled exception may crash the application depending on the caller's context.",
+      "file": "src/files.js",
+      "line_start": 8,
+      "line_end": 9,
+      "confidence": 0.95,
+      "recommendation": "Wrap `fs.readFileSync` in a try-catch block to handle missing files or access errors gracefully."
+    },
+    {
+      "severity": "medium",
+      "title": "Unsafe integer parsing and missing bounds check in pickPage",
+      "body": "If `body.page` is missing or a non-numeric string, `parseInt` returns `NaN`, leading to `pages[NaN]` which yields `undefined`. There is also no bounds checking, so a negative or overly large integer will also return `undefined`, potentially causing downstream errors.",
+      "file": "src/files.js",
+      "line_start": 16,
+      "line_end": 19,
+      "confidence": 0.9,
+      "recommendation": "Verify that `parseInt(body.page)` is a valid number using `Number.isNaN()` and ensure it falls within the valid index range of the `pages` array before accessing the element."
+    }
+  ],
+  "latencyMs": 27202,
+  "engineVersion": "0.55.1",
+  "samples": [
+    {
+      "verdict": "needs-attention",
+      "summary": "Critical security vulnerabilities including command injection and path traversal, along with missing input validation.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Command Injection in archive()",
+          "body": "The `name` parameter is directly interpolated into a shell command string passed to `execSync`. If `name` contains shell metacharacters (e.g., `name; rm -rf /`), an attacker can execute arbitrary commands on the host system.",
+          "file": "src/files.js",
+          "line_start": 12,
+          "line_end": 14,
+          "confidence": 1,
+          "recommendation": "Use `execFileSync('tar', ['-czf', `${name}.tar.gz`, path.join(ROOT, name)])` to pass arguments safely as an array, bypassing shell interpretation."
+        },
+        {
+          "severity": "high",
+          "title": "Path Traversal in readUpload() and archive()",
+          "body": "The `name` parameter is concatenated with `ROOT` using `path.join()`, but there is no check to ensure the resolved path stays within `/srv/uploads`. An attacker can supply `../` to access arbitrary files on the filesystem.",
+          "file": "src/files.js",
+          "line_start": 7,
+          "line_end": 14,
+          "confidence": 1,
+          "recommendation": "After resolving the absolute path, verify it resides within the intended directory (e.g., `if (!target.startsWith(ROOT + path.sep)) throw Error('Invalid path')`)."
+        },
+        {
+          "severity": "medium",
+          "title": "Unsafe array indexing in pickPage()",
+          "body": "The function parses `body.page` using `parseInt()` but fails to validate the result. If `body.page` is missing or invalid, `page` becomes `NaN`. Without bounds checking, this can result in accessing invalid indices or returning `undefined`.",
+          "file": "src/files.js",
+          "line_start": 16,
+          "line_end": 19,
+          "confidence": 0.9,
+          "recommendation": "Ensure `page` is a valid number (`!isNaN(page)`) and verify it falls within the safe bounds of `0 <= page < pages.length`."
+        }
+      ],
+      "latencyMs": 23671
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Critical command injection and high-severity path traversal vulnerabilities detected due to unsafe handling of input.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Command Injection in archive function",
+          "body": "The `name` parameter is directly interpolated into a shell command and executed using `execSync`. An attacker can provide malicious input (e.g., `file.txt; id`) to achieve arbitrary command execution on the host system.",
+          "file": "src/files.js",
+          "line_start": 12,
+          "line_end": 14,
+          "confidence": 1,
+          "recommendation": "Use `execFileSync` from `child_process` to pass arguments as a strict array, thereby bypassing shell evaluation. Additionally, validate `name` to ensure it does not start with a hyphen to prevent argument injection into the `tar` command."
+        },
+        {
+          "severity": "high",
+          "title": "Path Traversal vulnerability in readUpload",
+          "body": "The `name` parameter is passed directly to `path.join()` without validation. If `name` contains directory traversal sequences (e.g., `../../../etc/passwd`), it allows an attacker to read arbitrary files anywhere on the filesystem, bypassing the `/srv/uploads` boundary.",
+          "file": "src/files.js",
+          "line_start": 7,
+          "line_end": 10,
+          "confidence": 1,
+          "recommendation": "Validate the resolved path to ensure it strictly starts with the target `ROOT` directory. Alternatively, if subdirectories are not required, sanitize the input using `path.basename(name)`."
+        },
+        {
+          "severity": "medium",
+          "title": "Missing null/undefined checks in pickPage",
+          "body": "The function attempts to read `body.page` without verifying if `body` exists. If `body` is null or undefined, this will throw an unhandled `TypeError`. It also fails to validate if the result of `parseInt` is `NaN` or an out-of-bounds index.",
+          "file": "src/files.js",
+          "line_start": 16,
+          "line_end": 19,
+          "confidence": 0.95,
+          "recommendation": "Add checks to verify `body` exists and is an object. Validate that `page` parses to a valid number (`!isNaN`) and check array/object bounds before returning the element."
+        }
+      ],
+      "latencyMs": 25680
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "The code introduces critical security vulnerabilities including command injection and path traversal, alongside missing error handling.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Command Injection in archive function",
+          "body": "The `name` parameter is directly interpolated into a shell command string executed by `execSync` without any sanitization or escaping. An attacker can exploit this to execute arbitrary shell commands by providing a payload like `test; rm -rf /`.",
+          "file": "src/files.js",
+          "line_start": 12,
+          "line_end": 14,
+          "confidence": 1,
+          "recommendation": "Use `execFileSync` instead of `execSync` and pass arguments as an array to prevent shell interpretation. Alternatively, use a native Node.js library for creating tar archives."
+        },
+        {
+          "severity": "critical",
+          "title": "Path Traversal Vulnerability in readUpload",
+          "body": "The `readUpload` function constructs a file path by joining a root directory with the `name` parameter without verifying the final resolved path. An attacker can read arbitrary files by using directory traversal payloads (e.g., `../../etc/passwd`). This vulnerability also applies to the `archive` function.",
+          "file": "src/files.js",
+          "line_start": 7,
+          "line_end": 10,
+          "confidence": 1,
+          "recommendation": "Ensure the `name` parameter does not contain path separators, and verify that the final resolved absolute path is strictly within the `ROOT` directory (e.g., using `target.startsWith(ROOT)`) before operating on it."
+        },
+        {
+          "severity": "medium",
+          "title": "Missing Error Handling in readUpload",
+          "body": "`fs.readFileSync` throws a synchronous exception if the file does not exist or lacks read permissions. Without a try-catch block, this unhandled exception may crash the application depending on the caller's context.",
+          "file": "src/files.js",
+          "line_start": 8,
+          "line_end": 9,
+          "confidence": 0.95,
+          "recommendation": "Wrap `fs.readFileSync` in a try-catch block to handle missing files or access errors gracefully."
+        },
+        {
+          "severity": "medium",
+          "title": "Unsafe integer parsing and missing bounds check in pickPage",
+          "body": "If `body.page` is missing or a non-numeric string, `parseInt` returns `NaN`, leading to `pages[NaN]` which yields `undefined`. There is also no bounds checking, so a negative or overly large integer will also return `undefined`, potentially causing downstream errors.",
+          "file": "src/files.js",
+          "line_start": 16,
+          "line_end": 19,
+          "confidence": 0.9,
+          "recommendation": "Verify that `parseInt(body.page)` is a valid number using `Number.isNaN()` and ensure it falls within the valid index range of the `pages` array before accessing the element."
+        }
+      ],
+      "latencyMs": 27202
+    }
+  ],
+  "raw": "{\n  \"session_id\": \"167fdf40-34b8-4751-b9fa-15b48ef4f0d3\",\n  \"response\": \"{\\n  \\\"verdict\\\": \\\"needs-attention\\\",\\n  \\\"summary\\\": \\\"The code introduces critical security vulnerabilities including command injection and path traversal, alongside missing error handling.\\\",\\n  \\\"findings\\\": [\\n    {\\n      \\\"severity\\\": \\\"critical\\\",\\n      \\\"title\\\": \\\"Command Injection in archive function\\\",\\n      \\\"body\\\": \\\"The `name` parameter is directly interpolated into a shell command string executed by `execSync` without any sanitization or escaping. An attacker can exploit this to execute arbitrary shell commands by providing a payload like `test; rm -rf /`.\\\",\\n      \\\"file\\\": \\\"src/files.js\\\",\\n      \\\"line_start\\\": 12,\\n      \\\"line_end\\\": 14,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Use `execFileSync` instead of `execSync` and pass arguments as an array to prevent shell interpretation. Alternatively, use a native Node.js library for creating tar archives.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"critical\\\",\\n      \\\"title\\\": \\\"Path Traversal Vulnerability in readUpload\\\",\\n      \\\"body\\\": \\\"The `readUpload` function constructs a file path by joining a root directory with the `name` parameter without verifying the final resolved path. An attacker can read arbitrary files by using directory traversal payloads (e.g., `../../etc/passwd`). This vulnerability also applies to the `archive` function.\\\",\\n      \\\"file\\\": \\\"src/files.js\\\",\\n      \\\"line_start\\\": 7,\\n      \\\"line_end\\\": 10,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Ensure the `name` parameter does not contain path separators, and verify that the final resolved absolute path is strictly within the `ROOT` directory (e.g., using `target.startsWith(ROOT)`) before operating on it.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"medium\\\",\\n      \\\"title\\\": \\\"Missing Error Handling in readUpload\\\",\\n      \\\"body\\\": \\\"`fs.readFileSync` throws a synchronous exception if the file does not exist or lacks read permissions. Without a try-catch block, this unhandled exception may crash the application depending on the caller's context.\\\",\\n      \\\"file\\\": \\\"src/files.js\\\",\\n      \\\"line_start\\\": 8,\\n      \\\"line_end\\\": 9,\\n      \\\"confidence\\\": 0.95,\\n      \\\"recommendation\\\": \\\"Wrap `fs.readFileSync` in a try-catch block to handle missing files or access errors gracefully.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"medium\\\",\\n      \\\"title\\\": \\\"Unsafe integer parsing and missing bounds check in pickPage\\\",\\n      \\\"body\\\": \\\"If `body.page` is missing or a non-numeric string, `parseInt` returns `NaN`, leading to `pages[NaN]` which yields `undefined`. There is also no bounds checking, so a negative or overly large integer will also return `undefined`, potentially causing downstream errors.\\\",\\n      \\\"file\\\": \\\"src/files.js\\\",\\n      \\\"line_start\\\": 16,\\n      \\\"line_end\\\": 19,\\n      \\\"confidence\\\": 0.9,\\n      \\\"recommendation\\\": \\\"Verify that `parseInt(body.page)` is a valid number using `Number.isNaN()` and ensure it falls within the valid index range of the `pages` array before accessing the element.\\\"\\n    }\\n  ],\\n  \\\"next_steps\\\": [\\n    \\\"Refactor 'archive' to use execFileSync with an array of arguments to prevent command injection.\\\",\\n    \\\"Implement strict path validation in 'readUpload' and 'archive' to prevent directory traversal.\\\",\\n    \\\"Add try/catch error handling around fs.readFileSync.\\\",\\n    \\\"Add type and boundary validation in the 'pickPage' function.\\\"\\n  ]\\n}\",\n  \"stats\": {\n    \"models\": {\n      \"gemini-3.1-pro-preview\": {\n        \"api\": {\n          \"totalRequests\": 1,\n          \"totalErrors\": 0,\n          \"totalLatencyMs\": 25504,\n          \"errorsByType\": {}\n        },\n        \"tokens\": {\n          \"input\": 5082,\n          \"prompt\": 17301,\n          \"candidates\": 802,\n          \"total\": 20272,\n          \"cached\": 12219,\n          \"thoughts\": 2169,\n          \"tool\": 0\n        },\n        \"roles\": {\n          \"main\": {\n            \"totalRequests\": 1"
+}
