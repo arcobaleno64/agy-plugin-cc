@@ -1,6 +1,6 @@
 # review benchmark scorecard — agy · gemini · codex
 
-> Mode: **replay** · repeats: 1 · cases: 5 · generated: 2026-08-19T12:24:38.903Z
+> Mode: **replay** · repeats: 1 · cases: 5 · generated: 2026-08-19T16:35:33.836Z
 
 ## Verdicts
 
