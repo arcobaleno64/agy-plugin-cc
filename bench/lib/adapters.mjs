@@ -185,7 +185,12 @@ function runCodexModel(promptText) {
       try { fs.rmSync(outFile, { force: true }); } catch { /* noop */ }
     }
     if (!review) review = normalizeReview(extractJsonObject(res.stdout));
-    if (!review) return fail("codex: could not parse review JSON");
+    // Carry stderr like the gemini and agy branches do. Without it this message
+    // was indistinguishable from a parser bug, and on 2026-08-19 it hid the real
+    // cause for three runs: exit 1, empty stdout, and "You've hit your usage limit"
+    // on stderr. A cell that cannot say why it failed gets diagnosed as the wrong
+    // defect.
+    if (!review) return fail(`codex: could not parse review JSON (${(res.stderr || "").slice(0, 160)})`);
     return { ok: true, ...review, raw: res.stdout?.slice(0, 4000) };
   });
 }

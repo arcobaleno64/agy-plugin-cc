@@ -1,0 +1,135 @@
+{
+  "caseId": "path-and-input",
+  "cell": "gemini.deep",
+  "recordedAt": "2026-08-19T08:28:19.638Z",
+  "verdict": "needs-attention",
+  "summary": "Identified critical command injection and path traversal vulnerabilities in file management operations.",
+  "findings": [
+    {
+      "severity": "critical",
+      "title": "Command injection vulnerability in archive()",
+      "body": "The `archive` function interpolates the unvalidated `name` argument directly into a shell command string executed via `execSync`. Passing inputs containing shell metacharacters allows arbitrary command execution, and filenames with spaces will cause command execution failures.",
+      "file": "src/files.js",
+      "line_start": 12,
+      "line_end": 14,
+      "confidence": 1,
+      "recommendation": "Use `execFileSync` or `spawnSync` with an arguments array rather than shell string interpolation, and validate `name`."
+    },
+    {
+      "severity": "high",
+      "title": "Path traversal vulnerability in readUpload()",
+      "body": "The `readUpload` function constructs target paths with `path.join(ROOT, name)` without validating that the resolved path stays within the `ROOT` directory. An attacker can supply relative path sequences (e.g., `../`) to read arbitrary files from the filesystem.",
+      "file": "src/files.js",
+      "line_start": 7,
+      "line_end": 10,
+      "confidence": 1,
+      "recommendation": "Resolve the path using `path.resolve` and assert that the target path starts with the resolved `ROOT` directory path."
+    }
+  ],
+  "latencyMs": 24263,
+  "engineVersion": "0.55.1",
+  "samples": [
+    {
+      "verdict": "needs-attention",
+      "summary": "Identified critical security vulnerabilities and reliability issues in src/files.js, including command injection, path traversal, and unvalidated property access.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Command injection via unescaped input in child_process.execSync",
+          "body": "In src/files.js, archive concatenates the unvalidated name argument directly into a shell command executed via execSync. An attacker providing command separators (e.g. ';', '&&', or '$()') can execute arbitrary commands on the host system.",
+          "file": "src/files.js",
+          "line_start": 12,
+          "line_end": 14,
+          "confidence": 1,
+          "recommendation": "Use execFileSync or spawnSync with an argument array rather than string interpolation in a shell: execFileSync('tar', ['-czf', `${name}.tar.gz`, path.join(ROOT, name)])."
+        },
+        {
+          "severity": "high",
+          "title": "Path traversal allowing arbitrary file read",
+          "body": "In src/files.js, readUpload resolves file paths using path.join(ROOT, name) without verifying that the resolved path stays within ROOT. Supplying relative path segments like '../' allows reading arbitrary files across the filesystem.",
+          "file": "src/files.js",
+          "line_start": 7,
+          "line_end": 10,
+          "confidence": 1,
+          "recommendation": "Resolve the path and ensure it is contained within ROOT (e.g. const resolved = path.resolve(ROOT, name); if (!resolved.startsWith(path.resolve(ROOT) + path.sep)) throw new Error('Access denied');) or restrict name using path.basename(name)."
+        },
+        {
+          "severity": "medium",
+          "title": "Unsafe property access and missing boundary validation in pickPage",
+          "body": "In src/files.js, pickPage accesses body.page without verifying that body is defined, leading to potential unhandled TypeErrors. Furthermore, parseInt is called without a radix, and the parsed page index is not validated against the bounds of the pages array.",
+          "file": "src/files.js",
+          "line_start": 16,
+          "line_end": 19,
+          "confidence": 0.95,
+          "recommendation": "Ensure body is defined, parse with a radix (parseInt(body?.page, 10)), and verify that the index is a non-negative integer within Array.isArray(pages) and page < pages.length before indexing."
+        }
+      ],
+      "latencyMs": 19417
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Critical command injection, high-severity path traversal, and unvalidated input handling vulnerabilities identified in src/files.js.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Command injection vulnerability in archive",
+          "body": "The `archive` function directly interpolates the unvalidated `name` parameter into a shell command string passed to `execSync`. An attacker can supply shell metacharacters to execute arbitrary commands on the system.",
+          "file": "src/files.js",
+          "line_start": 12,
+          "line_end": 14,
+          "confidence": 1,
+          "recommendation": "Replace `execSync` with `execFileSync` or `spawnSync` using an argument array (e.g., `execFileSync('tar', ['-czf', `${name}.tar.gz`, targetPath])`) and sanitize the input filename."
+        },
+        {
+          "severity": "high",
+          "title": "Path traversal vulnerability in readUpload and archive",
+          "body": "`readUpload` and `archive` use `path.join(ROOT, name)` without validating that the resulting path is strictly confined to the `/srv/uploads` root directory. An attacker can supply relative path segments (e.g., `../../etc/passwd`) to access arbitrary files on the filesystem.",
+          "file": "src/files.js",
+          "line_start": 7,
+          "line_end": 10,
+          "confidence": 1,
+          "recommendation": "Resolve the target path using `path.resolve` and verify that it starts with the resolved `ROOT` path, or restrict input to `path.basename(name)`."
+        },
+        {
+          "severity": "medium",
+          "title": "Missing null check and bounds validation in pickPage",
+          "body": "`pickPage` accesses `body.page` without checking if `body` is defined, and parses `body.page` without an explicit radix or bounds check against `pages.length`. This can cause uncaught `TypeError` or unexpected `undefined` index accesses.",
+          "file": "src/files.js",
+          "line_start": 16,
+          "line_end": 19,
+          "confidence": 0.95,
+          "recommendation": "Validate that `body` is an object, parse `body.page` with `Number.parseInt(body.page, 10)`, and ensure the parsed integer is non-negative and within `pages` array bounds."
+        }
+      ],
+      "latencyMs": 35401
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Identified critical command injection and path traversal vulnerabilities in file management operations.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Command injection vulnerability in archive()",
+          "body": "The `archive` function interpolates the unvalidated `name` argument directly into a shell command string executed via `execSync`. Passing inputs containing shell metacharacters allows arbitrary command execution, and filenames with spaces will cause command execution failures.",
+          "file": "src/files.js",
+          "line_start": 12,
+          "line_end": 14,
+          "confidence": 1,
+          "recommendation": "Use `execFileSync` or `spawnSync` with an arguments array rather than shell string interpolation, and validate `name`."
+        },
+        {
+          "severity": "high",
+          "title": "Path traversal vulnerability in readUpload()",
+          "body": "The `readUpload` function constructs target paths with `path.join(ROOT, name)` without validating that the resolved path stays within the `ROOT` directory. An attacker can supply relative path sequences (e.g., `../`) to read arbitrary files from the filesystem.",
+          "file": "src/files.js",
+          "line_start": 7,
+          "line_end": 10,
+          "confidence": 1,
+          "recommendation": "Resolve the path using `path.resolve` and assert that the target path starts with the resolved `ROOT` directory path."
+        }
+      ],
+      "latencyMs": 24263
+    }
+  ],
+  "raw": "{\n  \"review\": \"Review\",\n  \"target\": {\n    \"mode\": \"working-tree\",\n    \"label\": \"working tree diff\",\n    \"explicit\": true\n  },\n  \"gemini\": {\n    \"status\": 0,\n    \"stdout\": \"{\\n  \\\"verdict\\\": \\\"needs-attention\\\",\\n  \\\"summary\\\": \\\"Identified critical command injection and path traversal vulnerabilities in file management operations.\\\",\\n  \\\"findings\\\": [\\n    {\\n      \\\"severity\\\": \\\"critical\\\",\\n      \\\"title\\\": \\\"Command injection vulnerability in archive()\\\",\\n      \\\"body\\\": \\\"The `archive` function interpolates the unvalidated `name` argument directly into a shell command string executed via `execSync`. Passing inputs containing shell metacharacters allows arbitrary command execution, and filenames with spaces will cause command execution failures.\\\",\\n      \\\"file\\\": \\\"src/files.js\\\",\\n      \\\"line_start\\\": 12,\\n      \\\"line_end\\\": 14,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Use `execFileSync` or `spawnSync` with an arguments array rather than shell string interpolation, and validate `name`.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"high\\\",\\n      \\\"title\\\": \\\"Path traversal vulnerability in readUpload()\\\",\\n      \\\"body\\\": \\\"The `readUpload` function constructs target paths with `path.join(ROOT, name)` without validating that the resolved path stays within the `ROOT` directory. An attacker can supply relative path sequences (e.g., `../`) to read arbitrary files from the filesystem.\\\",\\n      \\\"file\\\": \\\"src/files.js\\\",\\n      \\\"line_start\\\": 7,\\n      \\\"line_end\\\": 10,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Resolve the path using `path.resolve` and assert that the target path starts with the resolved `ROOT` directory path.\\\"\\n    }\\n  ],\\n  \\\"next_steps\\\": [\\n    \\\"Refactor `archive` to use `execFileSync` with argument arrays instead of shell command interpolation.\\\",\\n    \\\"Add directory containment checks in `readUpload` to prevent path traversal outside `/srv/uploads`.\\\"\\n  ]\\n}\",\n    \"stderr\": \"\"\n  },\n  \"result\": {\n    \"verdict\": \"needs-attention\",\n    \"summary\": \"Identified critical command injection and path traversal vulnerabilities in file management operations.\",\n    \"findings\": [\n      {\n        \"severity\": \"critical\",\n        \"title\": \"Command injection vulnerability in archive()\",\n        \"body\": \"The `archive` function interpolates the unvalidated `name` argument directly into a shell command string executed via `execSync`. Passing inputs containing shell metacharacters allows arbitrary command execution, and filenames with spaces will cause command execution failures.\",\n        \"file\": \"src/files.js\",\n        \"line_start\": 12,\n        \"line_end\": 14,\n        \"confidence\": 1,\n        \"recommendation\": \"Use `execFileSync` or `spawnSync` with an arguments array rather than shell string interpolation, and validate `name`.\"\n      },\n      {\n        \"severity\": \"high\",\n        \"title\": \"Path traversal vulnerability in readUpload()\",\n        \"body\": \"The `readUpload` function constructs target paths with `path.join(ROOT, name)` without validating that the resolved path stays within the `ROOT` directory. An attacker can supply relative path sequences (e.g., `../`) to read arbitrary files from the filesystem.\",\n        \"file\": \"src/files.js\",\n        \"line_start\": 7,\n        \"line_end\": 10,\n        \"confidence\": 1,\n        \"recommendation\": \"Resolve the path using `path.resolve` and assert that the target path starts with the resolved `ROOT` directory path.\"\n      }\n    ],\n    \"next_steps\": [\n      \"Refactor `archive` to use `execFileSync` with argument arrays instead of shell command interpolation.\",\n      \"Add directory containment checks in `readUpload` to prevent path traversal outside `/srv/uploads`.\"\n    ]\n  }\n}\n"
+}

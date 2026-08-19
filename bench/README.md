@@ -58,45 +58,80 @@ A cassette recorded from a real run carries `recordedAt`, the `engineVersion` it
 recorded against, every repeat in `samples`, and no `source`; a seeded one carries a
 `source` field. The scorecard prints all of it per cell. Current committed state:
 
-- **`agy.model`, `agy.deep`, `gemini.deep`, `codex.model` — live-recorded**
-  (2026-08-19, three samples each: agy 1.1.14, gemini 0.54.4, codex-cli 0.147.0).
-- **`gemini.deep` records headlessly after all.** The previous note here said it could
-  not — that `gemini --deep` exits non-zero with empty stdout because tool approvals
-  need a TTY. It recorded six times without complaint on gemini 0.54.4, so whatever
-  blocked it in this environment was not permanent. It is also the steadiest cell on
-  the board.
-- **`gemini.model` — still the 2026-06-04 single sample** (gemini 0.45). It now fails
-  to re-record for a reason that has nothing to do with credentials: the CLI prints
-  `Warning: True color (24-bit) support not detected` and `Ripgrep is not available`
-  ahead of its JSON, and the cell's parser gives up. Worth fixing before trusting
-  anything about the gemini model axis.
+- **`gemini.model`, `gemini.deep`, `agy.model`, `agy.deep` — live-recorded on all
+  five cases**, three samples each, all on 2026-08-19: the two older cases on gemini
+  0.54.4 / agy 1.1.14, the three new ones on gemini 0.55.1 / agy 1.1.15.
+- **`codex.model` — live-recorded on two cases only** (codex-cli 0.147.0). The three
+  new cases are unrecorded because the account hit its usage limit mid-session: exit 1,
+  empty stdout, `ERROR: You've hit your usage limit ... try again at Aug 25th, 2026` on
+  stderr. Recordable again after that date; until then it prints
+  `skipped (no cassette)` on three of five cases and its aggregate covers two.
 - **`codex.native` — still seeded.** `BENCH_CODEX_COMPANION` was unset, so it was
   skipped rather than recorded.
+- **`gemini.deep` records headlessly after all.** An older note here said it could
+  not — that `gemini --deep` exits non-zero with empty stdout because tool approvals
+  need a TTY. It has now recorded fifteen times without complaint.
 
-### What three samples showed
+Two of those lines replace explanations that were wrong, and both were wrong the same
+way: a failure was explained by reading the code instead of the failure.
 
-Enough to disqualify every single-sample number the scorecard has ever printed,
-including the ones this file used to quote. Composite, per repeat:
+`gemini.model` was said to fail because the CLI prints `Warning: True color (24-bit)
+support not detected` ahead of its JSON and the parser gives up. `extractJsonObject`
+skips leading non-JSON — it finds the first `{` and brace-matches — so that story was
+never consistent with the code it blamed. Captured, the failure was authentication and
+then billing, in three steps: `~/.gemini/settings.json` selects
+`security.auth.selectedType: "gemini-api-key"` and with no key in the environment the
+CLI exits 400 with `API key not valid`; with a key it exits 429 with `Your project has
+exceeded its monthly spending cap`; with the cap raised it answers a normal envelope
+and records. `GEMINI_DEFAULT_AUTH_TYPE=oauth-personal` does not override the settings
+file.
 
-| cell | `auth-basic` | `repo-context` | widest move |
-|---|---|---|:-:|
-| `gemini.deep` | 80, 81, 81 | 88, 88, 88 | **1** |
-| `agy.deep` | 81, 77, 93 | 88, 88, 83 | 16 |
-| `codex.model` | 96, 72, 98 | 0, 45, 0 | 45 |
-| `agy.model` | 81, 94, 81 | 0, 65, 65 | **65** |
+`codex.model` was read as a parser fault for the same reason: its adapter branch was
+the one that did **not** append stderr to its failure message, so a quota wall arrived
+labelled `codex: could not parse review JSON`. It carries stderr now, like the gemini
+and agy branches always did.
 
-Two things fall out, and only one of them is about scores.
+### What five cases at three samples showed
 
-1. **The agentic cells are an order of magnitude steadier than the model cells.**
-   `gemini.deep` moved by 1 point across six runs; `agy.model` moved by 65 on a single
-   case. Whatever a repo-exploring harness is doing, part of it is making the answer
-   repeatable — which is a more useful claim than any composite here, and the only one
-   the data currently supports.
-2. **The old ±2 noise band was calibrated against nothing.** It is now the measured
-   spread: a verdict is named only when the lead is wider than the widest move either
-   cell made between repeats. Under that rule no axis on this board is decidable, and
-   neither is AGY's harness lift. That is the honest reading of two cases at three
-   samples, not a defect in the runner.
+Composite per repeat, and the widest move each cell made between repeats of the same
+recording:
+
+| cell | `auth-basic` | `repo-context` | `async-lifecycle` | `path-and-input` | `vacuous-tests` | widest |
+|---|---|---|---|---|---|:-:|
+| `gemini.model` | 94, 92, 79 | 45, 55, 100 | 84, 60, 81 | 69, 69, 86 | 76, 76, 65 | 55 |
+| `agy.model` | 81, 94, 81 | 0, 65, 65 | 65, 67, 84 | 69, 69, 69 | 76, 76, 76 | **65** |
+| `codex.model` | 96, 72, 98 | 0, 45, 0 | — | — | — | 45 |
+| `gemini.deep` | 80, 81, 81 | 88, 88, 88 | 81, 69, 69 | 69, 69, 53 | 76, 53, 93 | 40 |
+| `agy.deep` | 81, 77, 93 | 88, 88, 83 | 81, 62, 81 | 53, 69, 69 | 95, 71, 95 | **24** |
+
+Three readings, in the order they cost something to learn.
+
+1. **"The agentic cells are an order of magnitude steadier" was a property of the two
+   cases, not of the cells.** That is what this section used to claim, on the strength
+   of `gemini.deep` moving by 1 and by 0. The same cell moves by 40 on
+   `vacuous-tests`. Set `repo-context` aside and the ordering does not survive: the
+   deep cells' worst moves are 40 and 24, the model cells' 26, 24 and 19. What the old
+   pair
+   actually measured is that a harness is steady *on the case built to need a
+   harness* — `repo-context` is invisible single-shot, so the model cells were
+   guessing there, and guessing has variance. That is a much narrower claim than the
+   one it replaced, and it is the one the data carries.
+2. **Granularity was the dominant term in the model cells' noise, as predicted, and it
+   was not enough.** Two-defect `repo-context` is where every model cell posts its
+   widest move (55, 65, 45); across the four- and five-defect cases the same cells move
+   at most 26. One miss worth 35 composite points really was most of the old spread.
+   It bought no verdict: the board's leads are 6.4 on the model axis and 3.2 on the
+   harness axis, against bands of ±65 and ±40.
+3. **No axis is decidable — and under the present rule, no amount of extra sampling can
+   make one decidable.** Spread is a *range* (`max - min` over repeats, then `max`
+   over cases, `lib/report.mjs:48`), and a range only ever grows as samples are added.
+   It estimates the worst repeat, not the uncertainty in the average, so "run it more"
+   moves every verdict further out of reach rather than closer. Naming a lead honestly
+   would need a different statistic — a standard error over repeats shrinks with the
+   square root of the sample count; a range does not — and that is a change to the
+   scoring rule, not to the corpus. It is deliberately not made here: an undecidable
+   board that says so is worth more than a decidable one that got there by choosing a
+   friendlier statistic.
 
 A cell recorded once has no spread. It is printed as `—`, meaning *unknown*, and it
 can neither win nor lose an axis — the same exclusion a seeded cell gets, for the same
@@ -163,29 +198,36 @@ corpus/<case-id>/
 
 Cases:
 - **`auth-basic`** — five in-diff defects (the `MODEL_COMPARISON.md §A` set); probes
-  the **model axis** (everything is visible in the diff). Recorded.
+  the **model axis** (everything is visible in the diff). Recorded on all five live
+  cells; `codex.native` is seeded here as everywhere.
 - **`repo-context`** — an undeclared dependency and a committed runtime-state file;
   invisible single-shot, so it probes the **harness axis** (`MODEL_COMPARISON.md §B`).
-  Recorded.
+  Recorded on all five live cells; `codex.native` is seeded here as everywhere.
 - **`async-lifecycle`** — five async and resource defects in one file: a catch that
   returns success, an unclosed handle, an uncleared interval, an unawaited promise and
-  a map nothing deletes from. Model axis. Not yet recorded.
+  a map nothing deletes from. Model axis. Recorded on both gemini cells and both agy
+  cells; neither codex cell has a cassette.
 - **`path-and-input`** — two loud injection paths (traversal, `execSync`) and three
   quiet ones (`parseInt` without a radix, an unbounded read, an unhandled ENOENT).
   The quiet three are the discriminating half: a reviewer that reports only the two
-  criticals scores 0.4 recall. Model axis. Not yet recorded.
+  criticals scores 0.4 recall. Model axis. Recorded on both gemini cells and both agy
+  cells; neither codex cell has a cassette.
 - **`vacuous-tests`** — four green tests that constrain nothing: no assertion, an
   `indexOf` comparison that holds when neither element is present, a permanent
   `test.skip`, and an assertion inside `process.nextTick` that runs after the test
   ends. The module under test sits in `base/` so the assertions can be judged against
-  real behaviour. Model axis. Not yet recorded.
+  real behaviour. Model axis. Recorded on both gemini cells and both agy
+  cells; neither codex cell has a cassette.
 
-The three unrecorded cases exist because of the variance measured above, not because
-five cases sounded better than two. `repo-context` plants two defects, so one miss
-moves the composite by 35 points and `agy.model` swung 65 across three repeats; on
-five-defect `auth-basic` the same cell swung 13. Granularity was the dominant term in
-the noise, so every case added here plants four or five. Until they are recorded they
-print as `skipped (no cassette)` and change no number on the board.
+The last three cases exist because of the variance measured above, not because five
+cases sounded better than two. `repo-context` plants two defects, so one miss moves
+the composite by 35 points and `agy.model` swung 65 across three repeats; on
+five-defect `auth-basic` the same cell swung 13. Granularity looked like the dominant
+term in the noise, so every case added here plants four or five — and on the model
+cells it delivered: their worst move on the new cases is 24, against 65 on
+two-defect `repo-context`. The deep cells did not follow. `gemini.deep`, the steadiest thing on
+the old board at ±1, moves 40 on four-defect `vacuous-tests` — the measurement that
+retired the "agentic is steadier" reading above.
 
 ### Adding a case
 
