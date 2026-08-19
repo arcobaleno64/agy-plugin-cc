@@ -18,6 +18,7 @@ Start with the [README](../README.md). Nothing here is required reading to use t
 | [`adapter-contract.md`](adapter-contract.md) | The interface an engine adapter has to satisfy. |
 | [`version-sources.md`](version-sources.md) | Which file is authoritative for each version string, and what keeps them in lockstep. |
 | [`verifying-without-credentials.md`](verifying-without-credentials.md) | How to exercise the engine paths without a Gemini or AGY account. |
+| [`evidence.md`](evidence.md) | The rule this repository investigates by: nothing counts as evidence until it has been seen to fail. Includes the traps already paid for. |
 
 ## Dated records — never rewritten
 

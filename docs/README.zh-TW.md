@@ -18,6 +18,7 @@ English: [`README.md`](README.md)
 | [`adapter-contract.md`](adapter-contract.md) | 引擎 adapter 必須滿足的介面。 |
 | [`version-sources.md`](version-sources.md) | 每個版本字串以哪個檔案為準，以及靠什麼維持一致。 |
 | [`verifying-without-credentials.md`](verifying-without-credentials.md) | 沒有 Gemini 或 AGY 帳號時，如何演練引擎路徑。 |
+| [`evidence.md`](evidence.md) | 本 repo 的調查規則：沒看過它紅過的東西，不算證據。附已經付過學費的陷阱清單。 |
 
 ## 有日期的記錄——永不重寫
 
