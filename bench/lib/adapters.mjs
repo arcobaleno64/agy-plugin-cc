@@ -195,13 +195,26 @@ function runCodexModel(promptText) {
   });
 }
 
+// The companion resolves its engine from GEMINI_ENGINE when no --engine is given,
+// and this machine sets GEMINI_ENGINE=agy in ~/.claude/settings.json. So the
+// gemini.deep cell — which passed no --engine — spent its whole life recording AGY
+// while the cassette was stamped with `gemini --version`. Every cell now pins its
+// engine on the command line, and the variable is stripped from the child besides:
+// a benchmark whose cells can be redirected by an environment variable is not
+// measuring what its column headers say.
+export function companionSpawnEnv(baseEnv = process.env) {
+  const env = { ...baseEnv };
+  delete env.GEMINI_ENGINE;
+  return env;
+}
+
 function runCompanionReview(companionPath, repoDir, extraArgs) {
   return timed(() => {
     if (!companionPath) return fail("companion path not configured");
     const res = spawnSync(
       process.execPath,
       [companionPath, "review", "--scope", "working-tree", "--json", ...extraArgs, "--cwd", repoDir],
-      { cwd: repoDir, encoding: "utf8", timeout: TIMEOUT_MS }
+      { cwd: repoDir, encoding: "utf8", timeout: TIMEOUT_MS, env: companionSpawnEnv() }
     );
     if (res.error) return fail(`companion spawn: ${res.error.message}`);
     const payload = extractJsonObject(res.stdout);
@@ -226,7 +239,7 @@ function dispatchCell(cell, ctx) {
     case "agy.model":
       return runAgyModel(ctx.promptText);
     case "gemini.deep":
-      return runCompanionReview(GEMINI_COMPANION, ctx.repoDir, ["--deep"]);
+      return runCompanionReview(GEMINI_COMPANION, ctx.repoDir, ["--deep", "--engine", "gemini"]);
     case "codex.native":
       return runCompanionReview(CODEX_COMPANION, ctx.repoDir, []);
     case "agy.deep":
@@ -236,4 +249,4 @@ function dispatchCell(cell, ctx) {
   }
 }
 
-export const _internal = { extractJsonObject, normalizeReview, geminiInnerText };
+export const _internal = { extractJsonObject, normalizeReview, geminiInnerText, companionSpawnEnv };

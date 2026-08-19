@@ -432,3 +432,33 @@ test("an empty review is still correct when there is nothing planted to find", (
   assert.equal(clean.precision, 1, "nothing to find, nothing wrongly claimed");
   assert.equal(clean.composite, 90, "recall 1 and precision 1; severity has nothing to grade");
 });
+
+// --- a cell must run the engine its column header names -----------------------
+
+test("the companion cells do not inherit an engine from the environment", () => {
+  // GEMINI_ENGINE=agy in ~/.claude/settings.json silently redirected the
+  // gemini.deep cell to AGY for every recording it ever made, while the cassette
+  // was stamped from `gemini --version`. Stripping the variable is half the fix;
+  // the other half is the explicit --engine below.
+  const env = adapters.companionSpawnEnv({ GEMINI_ENGINE: "agy", PATH: "/usr/bin", HOME: "/home/x" });
+
+  assert.equal("GEMINI_ENGINE" in env, false, "the child must not inherit an engine preference");
+  assert.equal(env.PATH, "/usr/bin", "everything else is passed through untouched");
+  assert.equal(env.HOME, "/home/x");
+});
+
+test("each companion cell names its engine on the command line", () => {
+  // Stripping the variable leaves `auto`, which resolves by credential and would
+  // hand gemini.deep to AGY again on any machine where the gemini credential is
+  // the broken one. The engine has to be stated, not defaulted.
+  const source = fs.readFileSync(new URL("./lib/adapters.mjs", import.meta.url), "utf8");
+
+  for (const [cell, engine] of [["gemini.deep", "gemini"], ["agy.deep", "agy"]]) {
+    const branch = source.slice(source.indexOf(`case "${cell}":`));
+    const call = branch.slice(0, branch.indexOf(";") + 1);
+    assert.ok(
+      call.includes(`"--engine", "${engine}"`),
+      `${cell} must pin --engine ${engine}; got: ${call.trim()}`
+    );
+  }
+});
