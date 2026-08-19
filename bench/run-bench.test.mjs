@@ -447,18 +447,43 @@ test("the companion cells do not inherit an engine from the environment", () => 
   assert.equal(env.HOME, "/home/x");
 });
 
-test("each companion cell names its engine on the command line", () => {
-  // Stripping the variable leaves `auto`, which resolves by credential and would
-  // hand gemini.deep to AGY again on any machine where the gemini credential is
-  // the broken one. The engine has to be stated, not defaulted.
-  const source = fs.readFileSync(new URL("./lib/adapters.mjs", import.meta.url), "utf8");
+test("a cell refuses a run from an engine other than its own", () => {
+  // Pinning --engine stops the environment redirecting a cell; it does not prove
+  // the pin was honoured, and that failure is silent — the cassette stays green
+  // carrying another engine's answers, which is exactly what gemini.deep did for
+  // its entire life. The companion reports the engine it resolved; this compares.
+  assert.equal(adapters.assertExpectedEngine({ engine: "gemini" }, "gemini"), null, "a match passes");
 
-  for (const [cell, engine] of [["gemini.deep", "gemini"], ["agy.deep", "agy"]]) {
-    const branch = source.slice(source.indexOf(`case "${cell}":`));
-    const call = branch.slice(0, branch.indexOf(";") + 1);
-    assert.ok(
-      call.includes(`"--engine", "${engine}"`),
-      `${cell} must pin --engine ${engine}; got: ${call.trim()}`
-    );
-  }
+  const wrong = adapters.assertExpectedEngine({ engine: "agy" }, "gemini");
+  assert.match(String(wrong), /expects gemini/, "the failure names what the cell wanted");
+  assert.match(String(wrong), /ran agy/, "and what actually ran");
+});
+
+test("the cell actually calls the check — a mismatching run is rejected end to end", () => {
+  // The two tests below cover `assertExpectedEngine`; this one covers whether
+  // anything calls it. Deleting the call site left the helper correct, unreachable,
+  // and every test green, which is the defect this check exists to prevent wearing
+  // a different hat.
+  const stub = () => ({
+    status: 0,
+    stdout: JSON.stringify({ engine: "agy", result: { verdict: "needs-attention", summary: "s", findings: [] } }),
+    stderr: ""
+  });
+
+  const rejected = adapters.runCompanionReview("/companion.mjs", "/repo", ["--deep"], "gemini", { spawnImpl: stub });
+  assert.equal(rejected.ok, false, "a gemini cell must not accept an AGY run");
+  assert.match(String(rejected.error), /expects gemini.*ran agy/);
+
+  const accepted = adapters.runCompanionReview("/companion.mjs", "/repo", ["--deep"], "agy", { spawnImpl: stub });
+  assert.equal(accepted.ok, true, "the same run is fine for the cell it belongs to");
+  assert.equal(accepted.engineObserved, "agy", "and the cassette records what ran, not what was asked for");
+});
+
+test("a companion that cannot say which engine ran is a failure, not a pass", () => {
+  // Absence is the case that cannot be checked. Reading "no answer" as "the right
+  // answer" is how the original defect survived every green run.
+  const silent = adapters.assertExpectedEngine({ result: {} }, "gemini");
+  assert.match(String(silent), /did not report/, "an unreporting companion fails the cell");
+
+  assert.equal(adapters.assertExpectedEngine({ engine: null }, null), null, "a cell with no expectation is unaffected");
 });

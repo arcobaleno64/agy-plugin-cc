@@ -208,10 +208,36 @@ export function companionSpawnEnv(baseEnv = process.env) {
   return env;
 }
 
-function runCompanionReview(companionPath, repoDir, extraArgs) {
+// A cell may only record a run it can prove came from its own engine. Pinning
+// `--engine` on the command line stops the environment redirecting a cell; it does
+// not prove the pin was honoured, and the failure it guards against is silent —
+// every cassette stays green while carrying another engine's answers. So the
+// companion reports the engine it resolved and this compares the two.
+//
+// Absence is a failure, not a pass. A companion too old to report the field is
+// exactly the case that cannot be checked, and treating "no answer" as "the right
+// answer" is how the original defect survived.
+export function assertExpectedEngine(payload, expected) {
+  if (!expected) return null;
+  const actual = payload?.engine ?? null;
+  if (actual === null) {
+    return `companion did not report which engine ran (expected ${expected}); cannot label this cassette`;
+  }
+  if (actual !== expected) {
+    return `cell expects ${expected} but the companion ran ${actual}`;
+  }
+  return null;
+}
+
+// `spawnImpl` exists so the engine check can be tested through the function that
+// performs it rather than through the helper it calls. Without the seam, deleting
+// the two lines that invoke `assertExpectedEngine` left every test green — the
+// helper was correct and unreachable, which is the same shape as the defect this
+// whole check exists to prevent.
+export function runCompanionReview(companionPath, repoDir, extraArgs, expectEngine = null, { spawnImpl = spawnSync } = {}) {
   return timed(() => {
     if (!companionPath) return fail("companion path not configured");
-    const res = spawnSync(
+    const res = spawnImpl(
       process.execPath,
       [companionPath, "review", "--scope", "working-tree", "--json", ...extraArgs, "--cwd", repoDir],
       { cwd: repoDir, encoding: "utf8", timeout: TIMEOUT_MS, env: companionSpawnEnv() }
@@ -220,7 +246,9 @@ function runCompanionReview(companionPath, repoDir, extraArgs) {
     const payload = extractJsonObject(res.stdout);
     const review = normalizeReview(payload?.result);
     if (!review) return fail(`companion: no result in payload (${(res.stderr || "").slice(0, 200)})`);
-    return { ok: true, ...review, raw: res.stdout?.slice(0, 4000) };
+    const mismatch = assertExpectedEngine(payload, expectEngine);
+    if (mismatch) return fail(`companion: ${mismatch}`);
+    return { ok: true, ...review, engineObserved: payload?.engine ?? null, raw: res.stdout?.slice(0, 4000) };
   });
 }
 
@@ -239,14 +267,14 @@ function dispatchCell(cell, ctx) {
     case "agy.model":
       return runAgyModel(ctx.promptText);
     case "gemini.deep":
-      return runCompanionReview(GEMINI_COMPANION, ctx.repoDir, ["--deep", "--engine", "gemini"]);
+      return runCompanionReview(GEMINI_COMPANION, ctx.repoDir, ["--deep", "--engine", "gemini"], "gemini");
     case "codex.native":
       return runCompanionReview(CODEX_COMPANION, ctx.repoDir, []);
     case "agy.deep":
-      return runCompanionReview(GEMINI_COMPANION, ctx.repoDir, ["--deep", "--engine", "agy"]);
+      return runCompanionReview(GEMINI_COMPANION, ctx.repoDir, ["--deep", "--engine", "agy"], "agy");
     default:
       return fail(`unknown cell ${cell}`);
   }
 }
 
-export const _internal = { extractJsonObject, normalizeReview, geminiInnerText, companionSpawnEnv };
+export const _internal = { extractJsonObject, normalizeReview, geminiInnerText, companionSpawnEnv, assertExpectedEngine, runCompanionReview };
