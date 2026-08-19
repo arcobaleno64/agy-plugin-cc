@@ -996,11 +996,17 @@ export function getAgyLoginStatus() {
   // flag, which is why `agy --help` shows nothing about it. Naming only the
   // interactive path told a user who had already authenticated to go and do it
   // again.
+  //
+  // Measured on AGY 1.1.15, 2026-08-19, in a temporary home holding nothing but
+  // `{"modelProvider":"gemini"}`, with the same home and no key as the negative
+  // control: keyed, `probeAgyLogin()` returns `verified` and spends no turn;
+  // unkeyed, it returns `unknown` carrying AGY's own diagnostic, not `logged-out`.
+  // So the key route neither fools the probe nor is mistaken for a logout.
   return {
     loggedIn: false,
     state: "unknown",
     verifiable: false,
-    detail: `AGY ${status.detail ?? ""} present; authentication cannot be verified non-interactively. Run \`agy\` once interactively, or use a non-interactive credential: ADC and Enterprise/WIF on 1.1.10+, or GEMINI_API_KEY with \`modelProvider: "gemini"\` in settings.json on 1.1.13+. \`--probe-agy\` can settle this, and has itself only been verified against an interactive login.`.trim(),
+    detail: `AGY ${status.detail ?? ""} present; authentication cannot be verified non-interactively. Run \`agy\` once interactively, or use a non-interactive credential: ADC and Enterprise/WIF on 1.1.10+, or GEMINI_API_KEY with \`modelProvider: "gemini"\` in settings.json on 1.1.13+. \`--probe-agy\` settles it, and answers correctly on both an interactive login and a GEMINI_API_KEY route.`.trim(),
   };
 }
 
@@ -1072,7 +1078,7 @@ export function probeAgyLogin({ runCommandFn = runCommand, detectEngineFn = dete
       loggedIn: false,
       state: "logged-out",
       verifiable: true,
-      detail: `AGY ${version} rejected the \`/quota\` probe as unauthenticated. Run \`agy\` interactively once to sign in, or use a non-interactive credential (ADC/WIF on 1.1.10+, GEMINI_API_KEY with \`modelProvider: "gemini"\` on 1.1.13+). This probe has not been tested against those routes: if your AGY turns work and this still says unauthenticated, that is a bug here, not a logout.${reason ? ` (${reason})` : ""}`
+      detail: `AGY ${version} rejected the \`/quota\` probe as unauthenticated. Run \`agy\` interactively once to sign in, or use a non-interactive credential (ADC/WIF on 1.1.10+, GEMINI_API_KEY with \`modelProvider: "gemini"\` on 1.1.13+). A key-authenticated account answers this probe normally, so this really is a rejection rather than an unrecognised credential; ADC and WIF remain untested here.${reason ? ` (${reason})` : ""}`
     };
   }
   return {

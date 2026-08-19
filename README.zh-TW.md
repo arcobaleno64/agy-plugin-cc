@@ -57,7 +57,7 @@
 
 **安裝 AGY**（使用 `--engine agy` 時必須安裝）：`curl -fsSL https://antigravity.google/cli/install.sh | bash`
 
-**認證**：兩個引擎各自認證。Gemini 引擎請執行一次 `gemini`；AGY 引擎請互動式執行一次 `agy`。AGY 1.1.10+ 亦支援 Application Default Credentials (ADC) 與 Gemini Enterprise / Workforce Identity Federation (WIF)；1.1.13+ 另接受在 `settings.json` 設定 `modelProvider: "gemini"` 並帶入 `GEMINI_API_KEY`——這是設定檔路徑，因此不會出現在任何 `agy --help` 輸出中。Headless setup probe 無法可靠驗證 AGY 認證，因此 `/gemini:setup --engine agy` 會將其標為 unknown，直到真實 AGY 命令成功。`--probe-agy` 可為互動式登入定案；它尚未針對上述非互動憑證測試過，因此若帳號實際可用卻被判為 `logged-out`，請視為本專案的缺陷並回報。
+**認證**：兩個引擎各自認證。Gemini 引擎請執行一次 `gemini`；AGY 引擎請互動式執行一次 `agy`。AGY 1.1.10+ 亦支援 Application Default Credentials (ADC) 與 Gemini Enterprise / Workforce Identity Federation (WIF)；1.1.13+ 另接受在 `settings.json` 設定 `modelProvider: "gemini"` 並帶入 `GEMINI_API_KEY`——這是設定檔路徑，因此不會出現在任何 `agy --help` 輸出中。Headless setup probe 無法可靠驗證 AGY 認證，因此 `/gemini:setup --engine agy` 會將其標為 unknown，直到真實 AGY 命令成功。`--probe-agy` 可為此定案，且已在互動式登入與 `GEMINI_API_KEY` 兩條路徑上驗證（AGY 1.1.15，隔離的家目錄，並以未帶 key 的同一環境作對照）：帶 key 回報 `verified`，未帶 key 回報 `unknown` 並轉述 AGY 自己的診斷訊息，而非誤判為登出。ADC 與 Enterprise/WIF 尚未測試——若在那兩條路徑上帳號可用卻被判為 `logged-out`，請視為本專案的缺陷並回報。
 
 > **Gemini 引擎現在需要 Standard／Enterprise 帳戶或 API 金鑰。** Google 已於 2026-06-18 終止消費級 Gemini CLI 存取。個人帳戶下 gemini CLI 0.53.1 仍可安裝、`--version` 也正常，但所有請求都回 `API key not valid`（`API_KEY_INVALID`）——2026-08-04 實測。AGY 引擎不受影響，實務上就是預設引擎；若 `auto` 選到未認證的 gemini binary，請改用 `--engine agy` 或設定 `GEMINI_ENGINE=agy`。
 
