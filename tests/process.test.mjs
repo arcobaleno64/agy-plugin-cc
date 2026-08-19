@@ -419,6 +419,53 @@ test("a cancel kills the engine that outlived its worker", () => {
   );
 });
 
+test("a cancel asks what the worker left only once the worker is gone", () => {
+  // A worker that is still being torn down can still start an engine, so a
+  // listing taken before it goes can be out of date by the time it is read.
+  const events = [];
+  let looks = 0;
+  const outcome = terminateProcessTree(1234, {
+    platform: "win32",
+    powerShellPath: FAKE_POWERSHELL,
+    notBefore: JOB_STARTED,
+    runCommandImpl(command, args) {
+      events.push(command === FAKE_POWERSHELL ? "list" : `kill ${args[1]}`);
+      return command === FAKE_POWERSHELL
+        ? { command, args, status: 0, signal: null, stdout: "", stderr: "", error: null }
+        : { command, args, status: 0, signal: null, stdout: "", stderr: "", error: null };
+    },
+    isPidAlive() {
+      looks += 1;
+      const stillThere = looks < 3;
+      events.push(stillThere ? "worker still there" : "worker gone");
+      return stillThere;
+    }
+  });
+
+  assert.deepEqual(events, [
+    "kill 1234",
+    "worker still there",
+    "worker still there",
+    "worker gone",
+    "list"
+  ]);
+  assert.ok(!outcome.treeIncomplete, "the worker did go, so the listing is final");
+});
+
+test("a worker that outlives its own kill is not reported as a finished tree", () => {
+  // taskkill exited 0 and the process is still there: whatever the listing says,
+  // it can still change, so the report may not claim the tree is done.
+  const scenario = sweepScenario();
+  const outcome = terminateProcessTree(1234, {
+    ...scenario,
+    notBefore: JOB_STARTED,
+    isPidAlive: () => true
+  });
+
+  assert.equal(outcome.delivered, true, "taskkill said it killed it");
+  assert.equal(outcome.treeIncomplete, true, "but nothing here can say the tree is finished");
+});
+
 test("a cancel does not kill a process that predates the job it is cancelling", () => {
   // Windows never clears a parent link, so a reused pid inherits processes that
   // belonged to an earlier owner of that number. They are older than this job,

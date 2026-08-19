@@ -30,6 +30,15 @@ cleared, so the query can name processes belonging to an earlier owner of that
 number, and those predate the job. Given no start time the sweep does nothing at
 all.
 
+"Once the worker is gone" is load-bearing. `taskkill /F` returns before the kernel
+has finished the teardown, and a worker that is still running can still start an
+engine — the very moment this is trying to catch — so a listing taken then can be
+stale before it is read. The pid is waited out first, and a process that no longer
+exists cannot start anything: the set of children it left is final, so one query
+sees all of it and no second pass or settle delay could add to it. A worker that
+somehow outlives its own kill still gets swept, but its tree is no longer called
+finished.
+
 Which of the two existing messages a run gets is now decided by measurement, so
 the caveat appears when something of the job's really is still running and stays
 away when it is not. Both now carry a count, because the sweep knows one: a
