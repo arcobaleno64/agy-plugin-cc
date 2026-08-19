@@ -119,6 +119,13 @@ Per cell, findings are matched against the case's `ground-truth.json`:
 - Each finding is assigned to its **single best** unmatched planted defect, so two
   line-adjacent defects are never double-counted.
 - `recall` = planted found / planted total. `precision` = relevant / findings.
+- **An empty review scores 0, not 20.** Precision over zero findings is undefined
+  rather than perfect, and paying for it made silence the best available wrong
+  answer: saying nothing scored 20 while naming one thing and being wrong scored 0.
+  A scorer that rewards not looking cannot be used to argue that looking helps. The
+  exception is kept: when a case plants nothing, an empty review is the correct
+  answer and earns its precision. No committed sample was ever empty (28 of 28 have
+  at least one finding), so this closes a hole rather than restating any result.
 - A finding matching none of the planted set but listed in `allowed_extras` is a
   **bonus** (a legitimate unique catch), not a false positive. Everything else
   unmatched is a **false positive**.

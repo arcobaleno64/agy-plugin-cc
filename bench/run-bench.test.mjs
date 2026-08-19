@@ -333,12 +333,10 @@ test("replaying a cassette recorded with repeats averages them instead of taking
   const row = bench.replayCell({ caseId, cell: "agy.model", truth: TRUTH });
 
   assert.equal(row.status, "ok");
-  // An empty review is not 0: precision is vacuously 1 over zero findings, so
-  // saying nothing scores 20. That is what the last run alone would report here.
-  assert.notEqual(row.score.composite, 20, "20 is the last run alone — the flaw this exists to catch");
-  assert.equal(row.score.composite, 73, "(100 + 100 + 20) / 3");
+  assert.notEqual(row.score.composite, 0, "0 is the last run alone — the flaw this exists to catch");
+  assert.equal(row.score.composite, 67, "(100 + 100 + 0) / 3");
   assert.equal(row.provenance.samples, 3, "and the reader is told it is an average of three");
-  assert.equal(row.spread, 80, "and how far those three moved: 100 and 100 and 20");
+  assert.equal(row.spread, 100, "and how far those three moved: two perfect runs and one empty one");
   assert.equal(row.latencyMs, 200, "latency averages with the score, not the last run's");
 });
 
@@ -410,4 +408,27 @@ test("the source column says how many samples a number came from", () => {
     }
   ]);
   assert.doesNotMatch(single.markdown, /×1/, "one sample is the default, and saying so would be noise");
+});
+
+// --- silence must not outscore effort ----------------------------------------
+
+test("an empty review scores nothing when there was something to find", () => {
+  // Precision used to be 1 over zero findings, which paid 20 points for silence —
+  // more than naming one thing and being wrong, which pays 0. A benchmark that
+  // rewards not looking cannot be evidence that looking helps.
+  const silent = scoreReview([], TRUTH);
+  const wrong = scoreReview([finding({ file: "src/unrelated.js", title: "nothing here" })], TRUTH);
+
+  assert.equal(silent.composite, 0, "saying nothing earns nothing");
+  assert.ok(
+    silent.composite <= wrong.composite,
+    `silence (${silent.composite}) must not beat a wrong answer (${wrong.composite})`
+  );
+});
+
+test("an empty review is still correct when there is nothing planted to find", () => {
+  // The exception the rule above must not swallow: a clean diff reviewed as clean.
+  const clean = scoreReview([], { planted: [], allowed_extras: [] });
+  assert.equal(clean.precision, 1, "nothing to find, nothing wrongly claimed");
+  assert.equal(clean.composite, 90, "recall 1 and precision 1; severity has nothing to grade");
 });

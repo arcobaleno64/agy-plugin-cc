@@ -118,7 +118,14 @@ export function scoreReview(findings, truth, options = {}) {
   const found = matchedPlantedIds.size;
   const recall = planted.length ? found / planted.length : 1;
   const relevant = found + bonus;
-  const precision = list.length ? relevant / list.length : 1;
+  // Precision over an empty review is not 1, it is undefined, and paying 20 points
+  // for it made silence the best available wrong answer: on this corpus, saying
+  // nothing scored 20 while naming one thing that turned out to be wrong scored 0.
+  // A scorer that rewards not looking cannot be used to argue that looking helps.
+  //
+  // The exception is real and kept: when there is nothing planted to find, an empty
+  // review is the correct answer and earns its precision.
+  const precision = list.length ? relevant / list.length : planted.length ? 0 : 1;
 
   const severity = { exact: 0, within1: 0, mismatch: 0, unknown: 0 };
   for (const p of planted) {
