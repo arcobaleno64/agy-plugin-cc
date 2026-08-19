@@ -1,0 +1,110 @@
+{
+  "title": "queue.js — five in-diff async correctness and resource defects",
+  "notes": "All defects are visible in the diff, so this case probes single-shot quality the same way auth-basic does. Five planted defects rather than two: with two, one miss moves the composite by 35 points, which is where repo-context's ±65 spread came from.",
+  "planted": [
+    {
+      "id": "swallowed-error",
+      "category": "error-handling",
+      "file": "src/queue.js",
+      "line_start": 26,
+      "line_end": 28,
+      "severity": "critical",
+      "match": {
+        "keywords": [
+          "swallow",
+          "ok: true",
+          "reports success",
+          "silently",
+          "catch block",
+          "hides the error",
+          "always returns"
+        ]
+      }
+    },
+    {
+      "id": "handle-leak",
+      "category": "resource-leak",
+      "file": "src/queue.js",
+      "line_start": 6,
+      "line_end": 10,
+      "severity": "high",
+      "match": {
+        "keywords": [
+          "file handle",
+          "not closed",
+          "leak",
+          "finally",
+          "close()",
+          "descriptor"
+        ]
+      }
+    },
+    {
+      "id": "unbounded-interval",
+      "category": "resource-leak",
+      "file": "src/queue.js",
+      "line_start": 16,
+      "line_end": 18,
+      "severity": "medium",
+      "match": {
+        "keywords": [
+          "setinterval",
+          "never cleared",
+          "clearinterval",
+          "no handle",
+          "runs forever"
+        ]
+      }
+    },
+    {
+      "id": "floating-promise",
+      "category": "error-handling",
+      "file": "src/queue.js",
+      "line_start": 17,
+      "line_end": 17,
+      "severity": "high",
+      "match": {
+        "keywords": [
+          "not awaited",
+          "floating promise",
+          "unhandled rejection",
+          "no await",
+          "no catch",
+          "promise is ignored"
+        ]
+      }
+    },
+    {
+      "id": "unbounded-map",
+      "category": "resource-leak",
+      "file": "src/queue.js",
+      "line_start": 3,
+      "line_end": 7,
+      "severity": "medium",
+      "match": {
+        "keywords": [
+          "never removed",
+          "grows",
+          "unbounded",
+          "memory",
+          "delete",
+          "map is never"
+        ]
+      }
+    }
+  ],
+  "allowed_extras": [
+    {
+      "id": "hardcoded-path",
+      "file": "src/queue.js",
+      "match": {
+        "keywords": [
+          "/var/jobs",
+          "hardcoded path",
+          "not configurable",
+          "absolute path"
+        ]
+      }
+    }
+  ]
+}

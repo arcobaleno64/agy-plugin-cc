@@ -161,11 +161,31 @@ corpus/<case-id>/
 }
 ```
 
-Seeded cases:
+Cases:
 - **`auth-basic`** — five in-diff defects (the `MODEL_COMPARISON.md §A` set); probes
-  the **model axis** (everything is visible in the diff).
+  the **model axis** (everything is visible in the diff). Recorded.
 - **`repo-context`** — an undeclared dependency and a committed runtime-state file;
   invisible single-shot, so it probes the **harness axis** (`MODEL_COMPARISON.md §B`).
+  Recorded.
+- **`async-lifecycle`** — five async and resource defects in one file: a catch that
+  returns success, an unclosed handle, an uncleared interval, an unawaited promise and
+  a map nothing deletes from. Model axis. Not yet recorded.
+- **`path-and-input`** — two loud injection paths (traversal, `execSync`) and three
+  quiet ones (`parseInt` without a radix, an unbounded read, an unhandled ENOENT).
+  The quiet three are the discriminating half: a reviewer that reports only the two
+  criticals scores 0.4 recall. Model axis. Not yet recorded.
+- **`vacuous-tests`** — four green tests that constrain nothing: no assertion, an
+  `indexOf` comparison that holds when neither element is present, a permanent
+  `test.skip`, and an assertion inside `process.nextTick` that runs after the test
+  ends. The module under test sits in `base/` so the assertions can be judged against
+  real behaviour. Model axis. Not yet recorded.
+
+The three unrecorded cases exist because of the variance measured above, not because
+five cases sounded better than two. `repo-context` plants two defects, so one miss
+moves the composite by 35 points and `agy.model` swung 65 across three repeats; on
+five-defect `auth-basic` the same cell swung 13. Granularity was the dominant term in
+the noise, so every case added here plants four or five. Until they are recorded they
+print as `skipped (no cassette)` and change no number on the board.
 
 ### Adding a case
 

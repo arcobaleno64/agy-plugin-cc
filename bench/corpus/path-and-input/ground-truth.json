@@ -1,0 +1,113 @@
+{
+  "title": "files.js — five in-diff input-handling defects",
+  "notes": "Two critical injection paths plus three quieter validation defects. The quiet ones are the discriminating half: a reviewer that only reports the two obvious criticals scores 40 on recall, which is what separates a scan from a review.",
+  "planted": [
+    {
+      "id": "path-traversal",
+      "category": "path-traversal",
+      "file": "src/files.js",
+      "line_start": 8,
+      "line_end": 9,
+      "severity": "critical",
+      "match": {
+        "keywords": [
+          "path traversal",
+          "traversal",
+          "..",
+          "escape",
+          "outside",
+          "resolve",
+          "containment",
+          "directory traversal"
+        ]
+      }
+    },
+    {
+      "id": "command-injection",
+      "category": "injection",
+      "file": "src/files.js",
+      "line_start": 13,
+      "line_end": 13,
+      "severity": "critical",
+      "match": {
+        "keywords": [
+          "command injection",
+          "execsync",
+          "shell",
+          "interpolat",
+          "untrusted",
+          "execfile"
+        ]
+      }
+    },
+    {
+      "id": "parseint-radix",
+      "category": "validation",
+      "file": "src/files.js",
+      "line_start": 17,
+      "line_end": 18,
+      "severity": "medium",
+      "match": {
+        "keywords": [
+          "radix",
+          "parseint",
+          "nan",
+          "not validated",
+          "negative",
+          "out of range",
+          "undefined"
+        ]
+      }
+    },
+    {
+      "id": "unbounded-read",
+      "category": "resource-exhaustion",
+      "file": "src/files.js",
+      "line_start": 9,
+      "line_end": 9,
+      "severity": "medium",
+      "match": {
+        "keywords": [
+          "size limit",
+          "entire file",
+          "memory",
+          "large file",
+          "no limit",
+          "streaming"
+        ]
+      }
+    },
+    {
+      "id": "unhandled-enoent",
+      "category": "error-handling",
+      "file": "src/files.js",
+      "line_start": 7,
+      "line_end": 9,
+      "severity": "medium",
+      "match": {
+        "keywords": [
+          "enoent",
+          "missing file",
+          "throws",
+          "try/catch",
+          "does not exist",
+          "unhandled"
+        ]
+      }
+    }
+  ],
+  "allowed_extras": [
+    {
+      "id": "sync-io",
+      "file": "src/files.js",
+      "match": {
+        "keywords": [
+          "synchronous",
+          "readfilesync",
+          "blocks the event loop",
+          "blocking"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "title": "session.test.js — four tests that pass without protecting anything",
+  "notes": "Every test here is green and none of them constrains the code. This is the case a reviewer has to read like a test, not like source: the defect is always an absent assertion rather than a present mistake. The module under test lives in base/ so the assertions can be judged against real behaviour.",
+  "planted": [
+    {
+      "id": "no-assertion",
+      "category": "test-quality",
+      "file": "test/session.test.js",
+      "line_start": 6,
+      "line_end": 7,
+      "severity": "high",
+      "match": {
+        "keywords": [
+          "no assertion",
+          "asserts nothing",
+          "does not assert",
+          "always passes",
+          "no expectation"
+        ]
+      }
+    },
+    {
+      "id": "vacuous-ordering",
+      "category": "test-quality",
+      "file": "test/session.test.js",
+      "line_start": 11,
+      "line_end": 12,
+      "severity": "high",
+      "match": {
+        "keywords": [
+          "indexof",
+          "-1",
+          "not present",
+          "absent",
+          "empty",
+          "vacuous",
+          "passes when",
+          "missing element"
+        ]
+      }
+    },
+    {
+      "id": "permanent-skip",
+      "category": "test-quality",
+      "file": "test/session.test.js",
+      "line_start": 15,
+      "line_end": 18,
+      "severity": "medium",
+      "match": {
+        "keywords": [
+          "skip",
+          "never runs",
+          "disabled",
+          "not executed",
+          "unprotected"
+        ]
+      }
+    },
+    {
+      "id": "assertion-never-runs",
+      "category": "test-quality",
+      "file": "test/session.test.js",
+      "line_start": 22,
+      "line_end": 24,
+      "severity": "high",
+      "match": {
+        "keywords": [
+          "callback",
+          "nexttick",
+          "after the test",
+          "never runs",
+          "asynchronous",
+          "not awaited",
+          "test ends"
+        ]
+      }
+    }
+  ],
+  "allowed_extras": [
+    {
+      "id": "shared-state",
+      "file": "test/session.test.js",
+      "match": {
+        "keywords": [
+          "shared state",
+          "sessions map",
+          "leaks between tests",
+          "not reset",
+          "order dependent"
+        ]
+      }
+    }
+  ]
+}
