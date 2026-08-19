@@ -4,6 +4,10 @@ import assert from "node:assert/strict";
 import { scoreReview, findingMatchesPlanted, normalizeFile } from "./lib/score.mjs";
 import { _internal as adapters } from "./lib/adapters.mjs";
 import { buildScorecard } from "./lib/report.mjs";
+import { cassettePath, writeCassette } from "./lib/cassette.mjs";
+import { _internal as bench } from "./run-bench.mjs";
+import fs from "node:fs";
+import path from "node:path";
 
 const TRUTH = {
   planted: [
@@ -230,4 +234,121 @@ test("a harness lift measured end to end says what it is", () => {
 test("the per-cell table carries the build a live cell was recorded against", () => {
   const { markdown } = buildScorecard([row("agy.deep", 90.5, false)]);
   assert.match(markdown, /live 2026-08-19 · 1.1.14/);
+});
+
+// --- repeats have to survive into replay ------------------------------------
+// The published scorecard comes from replay, so an average that exists only in a
+// live run is an average nobody ever reads. `--repeats N` used to store the last
+// run and average nothing that lasted.
+
+const PERFECT = [
+  finding({ severity: "critical", title: "SQL injection", body: "not parameterized", line_start: 10, line_end: 12 }),
+  finding({ severity: "high", title: "Unguarded JSON.parse", body: "may throw", line_start: 40, line_end: 41 })
+];
+
+function scratchCassette(t, cell, payload) {
+  // A case id with no corpus entry, so a stray file could never join a real run.
+  const caseId = "__scratch-" + cell.replace(/\W/g, "-");
+  const file = cassettePath(caseId, cell);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(payload, null, 2));
+  t.after(() => {
+    try {
+      fs.rmSync(path.dirname(file), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    } catch (error) {
+      process.stderr.write(`left ${path.dirname(file)} for the OS: ${error?.code}\n`);
+    }
+  });
+  return caseId;
+}
+
+test("replaying a cassette recorded with repeats averages them instead of taking the last", (t) => {
+  const caseId = scratchCassette(t, "agy.model", {
+    caseId: "x",
+    cell: "agy.model",
+    recordedAt: "2026-08-19T00:00:00.000Z",
+    engineVersion: "1.1.14",
+    verdict: "approve",
+    summary: "last run",
+    findings: [],
+    latencyMs: 300,
+    samples: [
+      { verdict: "needs-attention", summary: "1", findings: PERFECT, latencyMs: 100 },
+      { verdict: "needs-attention", summary: "2", findings: PERFECT, latencyMs: 200 },
+      { verdict: "approve", summary: "3", findings: [], latencyMs: 300 }
+    ]
+  });
+
+  const row = bench.replayCell({ caseId, cell: "agy.model", truth: TRUTH });
+
+  assert.equal(row.status, "ok");
+  // An empty review is not 0: precision is vacuously 1 over zero findings, so
+  // saying nothing scores 20. That is what the last run alone would report here.
+  assert.notEqual(row.score.composite, 20, "20 is the last run alone — the flaw this exists to catch");
+  assert.equal(row.score.composite, 73, "(100 + 100 + 20) / 3");
+  assert.equal(row.provenance.samples, 3, "and the reader is told it is an average of three");
+  assert.equal(row.latencyMs, 200, "latency averages with the score, not the last run's");
+});
+
+test("a cassette recorded before repeats existed still replays as a single sample", (t) => {
+  const caseId = scratchCassette(t, "agy.deep", {
+    caseId: "x",
+    cell: "agy.deep",
+    recordedAt: "2026-06-04T00:00:00.000Z",
+    verdict: "needs-attention",
+    summary: "one run",
+    findings: PERFECT,
+    latencyMs: 1234
+  });
+
+  const row = bench.replayCell({ caseId, cell: "agy.deep", truth: TRUTH });
+
+  assert.equal(row.score.composite, 100, "scored from the top-level findings, exactly as before");
+  assert.equal(row.provenance.samples, 1);
+  assert.equal(row.latencyMs, 1234);
+});
+
+test("writeCassette keeps every repeat, not just the one it reports at the top", (t) => {
+  const cell = "agy.model";
+  const caseId = scratchCassette(t, cell, { placeholder: true });
+  writeCassette(
+    caseId,
+    cell,
+    { verdict: "approve", summary: "last", findings: [], latencyMs: 300, engineVersion: "1.1.14" },
+    [
+      { verdict: "needs-attention", summary: "1", findings: PERFECT, latencyMs: 100 },
+      { verdict: "approve", summary: "last", findings: [], latencyMs: 300 }
+    ]
+  );
+
+  const stored = JSON.parse(fs.readFileSync(cassettePath(caseId, cell), "utf8"));
+  assert.equal(stored.samples.length, 2);
+  assert.equal(stored.samples[0].findings.length, 2, "the run that was not last is still there");
+  assert.equal(stored.findings.length, 0, "and the top level is still the last run");
+});
+
+test("the source column says how many samples a number came from", () => {
+  const withRepeats = buildScorecard([
+    {
+      caseId: "c1",
+      cell: "agy.deep",
+      status: "ok",
+      score: { composite: 90, recall: 1, precision: 1, falsePositives: 0, bonus: 0, severityExactRate: 1, missed: [] },
+      latencyMs: 1000,
+      provenance: { seeded: false, recordedAt: "2026-08-19T00:00:00.000Z", engineVersion: "1.1.14", samples: 5 }
+    }
+  ]);
+  assert.match(withRepeats.markdown, /live 2026-08-19 · 1.1.14 ×5/);
+
+  const single = buildScorecard([
+    {
+      caseId: "c1",
+      cell: "agy.deep",
+      status: "ok",
+      score: { composite: 90, recall: 1, precision: 1, falsePositives: 0, bonus: 0, severityExactRate: 1, missed: [] },
+      latencyMs: 1000,
+      provenance: { seeded: false, recordedAt: "2026-08-19T00:00:00.000Z", engineVersion: "1.1.14", samples: 1 }
+    }
+  ]);
+  assert.doesNotMatch(single.markdown, /×1/, "one sample is the default, and saying so would be noise");
 });

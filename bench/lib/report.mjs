@@ -44,7 +44,11 @@ function describeSource(p) {
   if (!p) return "—";
   if (p.seeded) return "**seeded**";
   const day = p.recordedAt ? p.recordedAt.slice(0, 10) : "?";
-  return p.engineVersion ? `live ${day} · ${p.engineVersion}` : `live ${day}`;
+  // The sample count travels with the number. A composite from one run and a
+  // composite averaged over five read identically without it, and on this corpus
+  // they are not comparable.
+  const n = Number.isFinite(p.samples) && p.samples > 1 ? ` ×${p.samples}` : "";
+  return p.engineVersion ? `live ${day} · ${p.engineVersion}${n}` : `live ${day}${n}`;
 }
 
 // A seeded cassette is an illustration, not a measurement, so it cannot win an
