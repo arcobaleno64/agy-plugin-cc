@@ -204,20 +204,33 @@ function waitForJob(env, cwd, jobId, timeoutMs = 60_000) {
   return "timed-out";
 }
 
-// The cancel step needs a job whose worker is up, because what `cancel`
-// terminates is that worker's process tree. `task --background` returns as soon
-// as the worker is *spawned*, not when it has started, so the step used to wait
-// a fixed two seconds and hope. On a loaded machine two seconds is not enough:
-// the walkthrough then cancelled a job the state directory could not yet
-// describe, and the step produced no output at all -- a failure of the demo's
-// timing, reported as if the plugin could not cancel a job.
+// The cancel step needs a job whose engine is up, because the point of the step
+// is terminating a live process tree. `task --background` returns as soon as the
+// worker is *spawned*, not when it has started, so the step used to wait a fixed
+// two seconds and hope. On a loaded machine two seconds is not enough: the
+// walkthrough then cancelled a job the state directory could not yet describe,
+// and the step produced no output at all -- a failure of the demo's timing,
+// reported as if the plugin could not cancel a job.
 //
-// So wait for the state the step actually needs rather than guessing how long
-// reaching it takes. `pid` is what cancel terminates and the worker records it
-// with the running status, which makes its presence the signal that there is a
-// tree to kill.
+// So wait for the state the step actually needs. That state is not `pid`: the
+// worker records `running` with its pid *before* it starts the engine, so at
+// that instant the only thing to kill is the worker itself. Measured on this
+// machine, the engine turn begins about 900ms after that record appears, and
+// the plugin announces it by moving the job to phase `running` (`reviewing` for
+// a review) on the same event that logs "Starting <engine> turn...".
+//
+// Waiting for the phase instead means the step demonstrates what it claims,
+// rather than cancelling during engine detection whenever the machine is slow.
+// It also stops the demo aiming at the narrowest possible window: an engine
+// killed in the moment it is being created can outlive the cancel that reported
+// it terminated, which is a real defect (v0.22.1) but not what this step is for.
+// "engine" — the turn has started, which is what the step wants to cancel.
+// "worker" — a worker is up but its engine never reported in; cancel still has
+// something to terminate, and the step says so rather than pretending.
+// "none"   — nothing to go on.
 function waitForRunningJob(env, cwd, jobId, timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs;
+  let sawWorker = false;
   while (Date.now() < deadline) {
     const probe = spawnSync(process.execPath, ["--no-deprecation", COMPANION, "status", jobId, "--json"], {
       cwd, env, encoding: "utf8", windowsHide: true
@@ -226,18 +239,22 @@ function waitForRunningJob(env, cwd, jobId, timeoutMs = 30_000) {
       const payload = JSON.parse(probe.stdout);
       const job = payload.job ?? payload.jobs?.[0] ?? payload;
       const status = String(job?.status ?? "");
-      if (status === "running" && job.pid) return true;
+      const phase = String(job?.phase ?? "");
+      if (status === "running" && job.pid) {
+        sawWorker = true;
+        if (phase === "running" || phase === "reviewing") return "engine";
+      }
       // Anything neither queued nor running has finished, and will never reach
       // running. Phrased as the complement of "still active" rather than as a
       // list of terminal states, which would need updating every time the
       // runtime gains one.
-      if (status && status !== "queued" && status !== "running") return false;
+      if (status && status !== "queued" && status !== "running") return sawWorker ? "worker" : "none";
     } catch {
       // status not written yet — keep waiting
     }
     sleep(200);
   }
-  return false;
+  return sawWorker ? "worker" : "none";
 }
 
 function sleep(ms) {
@@ -339,7 +356,10 @@ function main() {
     const toCancel = show(["task", "--background", "a job that will be cancelled"], { cwd: repo, env });
     const cancelId = (toCancel.body.match(JOB_ID) ?? [])[1];
     if (cancelId) {
-      if (!waitForRunningJob(env, repo, cancelId)) {
+      const ready = waitForRunningJob(env, repo, cancelId);
+      if (ready === "worker") {
+        note("The engine never reported its turn; cancelling the worker anyway.");
+      } else if (ready === "none") {
         note("The worker never reported a running process; cancelling anyway.");
       }
       show(["cancel", cancelId], { cwd: repo, env, allowFailure: true });
