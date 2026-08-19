@@ -57,7 +57,7 @@
 
 **安裝 AGY**（使用 `--engine agy` 時必須安裝）：`curl -fsSL https://antigravity.google/cli/install.sh | bash`
 
-**認證**：兩個引擎各自認證。Gemini 引擎請執行一次 `gemini`；AGY 引擎請互動式執行一次 `agy`。AGY 1.1.10+ 亦支援 Application Default Credentials (ADC) 與 Gemini Enterprise / Workforce Identity Federation (WIF)。Headless setup probe 無法可靠驗證 AGY 認證，因此 `/gemini:setup --engine agy` 會將其標為 unknown，直到真實 AGY 命令成功。
+**認證**：兩個引擎各自認證。Gemini 引擎請執行一次 `gemini`；AGY 引擎請互動式執行一次 `agy`。AGY 1.1.10+ 亦支援 Application Default Credentials (ADC) 與 Gemini Enterprise / Workforce Identity Federation (WIF)；1.1.13+ 另接受在 `settings.json` 設定 `modelProvider: "gemini"` 並帶入 `GEMINI_API_KEY`——這是設定檔路徑，因此不會出現在任何 `agy --help` 輸出中。Headless setup probe 無法可靠驗證 AGY 認證，因此 `/gemini:setup --engine agy` 會將其標為 unknown，直到真實 AGY 命令成功。`--probe-agy` 可為互動式登入定案；它尚未針對上述非互動憑證測試過，因此若帳號實際可用卻被判為 `logged-out`，請視為本專案的缺陷並回報。
 
 > **Gemini 引擎現在需要 Standard／Enterprise 帳戶或 API 金鑰。** Google 已於 2026-06-18 終止消費級 Gemini CLI 存取。個人帳戶下 gemini CLI 0.53.1 仍可安裝、`--version` 也正常，但所有請求都回 `API key not valid`（`API_KEY_INVALID`）——2026-08-04 實測。AGY 引擎不受影響，實務上就是預設引擎；若 `auto` 選到未認證的 gemini binary，請改用 `--engine agy` 或設定 `GEMINI_ENGINE=agy`。
 
@@ -337,7 +337,7 @@
 | Windows：命令可解析但執行失敗 | `.cmd` wrapper／PATH | 確認 `where gemini` 可解析；外掛以 `shell: true` 啟動裸命令名以尋得 `.cmd` shim |
 | `--engine agy` 回報找不到 brain 根目錄 | AGY 尚未建立 brain 目錄，或其位於未知位置 | 先執行一次 `agy` 讓其建立 brain 目錄。已知路徑：`~/.gemini/antigravity-cli/brain`（已於 Windows、macOS AGY 1.0.7 與 Linux AGY 1.1.2 驗證）與 `~/.antigravity-cli/brain`（較舊的 Linux 1.0.2，回報）；若不同請開 issue 回報其位置 |
 
-Gemini 引擎請執行一次 **`!gemini`**——外掛即以呼叫 `gemini` 自身完成 OAuth，**並無** `gemini login` 子命令。AGY 引擎請互動式執行一次 `agy`；其獨立 OAuth 狀態不由 Gemini 的 `~/.gemini/oauth_creds.json` 推定。AGY binary 存在但 auth 無法驗證時，setup 會回報 `partial`。
+Gemini 引擎請執行一次 **`!gemini`**——外掛即以呼叫 `gemini` 自身完成 OAuth，**並無** `gemini login` 子命令。AGY 引擎請互動式執行一次 `agy`，或改用非互動憑證（1.1.10+ 的 ADC／WIF，或 1.1.13+ 在 `settings.json` 設 `modelProvider: "gemini"` 並帶 `GEMINI_API_KEY`）；其獨立 OAuth 狀態不由 Gemini 的 `~/.gemini/oauth_creds.json` 推定。AGY binary 存在但 auth 無法驗證時，setup 會回報 `partial`。
 
 ---
 

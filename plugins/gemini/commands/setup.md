@@ -104,7 +104,15 @@ It asks AGY a read-only question the account has to answer, so it verifies the
 login without starting a turn or spending quota (AGY 1.1.11+; below that it
 declines and says so). A verified AGY then reports `readyState: "ready"`; a probe
 that comes back `logged-out` reports `not-ready`, and the fix is to run `agy`
-once interactively.
+once interactively — or to use one of AGY's non-interactive credentials (ADC and
+Enterprise/WIF on 1.1.10+, `GEMINI_API_KEY` with `modelProvider: "gemini"` on
+1.1.13+).
+
+The probe has only been verified against an interactive login. It asks `/quota`,
+which the AGY account answers; whether an account authenticated by API key
+answers it the same way is **untested**. If your AGY turns work and `--probe-agy`
+still reports `logged-out`, that is a defect here rather than a real logout —
+please report it.
 
 There is a matching `--probe-gemini`, and **it is not free**. Gemini CLI has no
 question the account answers without generating, so the probe makes a real
