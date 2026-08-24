@@ -1,0 +1,1037 @@
+# File: README.md
+
+# Gemini / Antigravity Companion for Claude Code
+
+> Use Gemini CLI or Antigravity CLI (`agy`) inside Claude Code for task delegation, pragmatic code review, and adversarial review.
+
+**Transition-ready for Google's Gemini CLI to Antigravity CLI migration.**
+`gemini-plugin-cc` keeps the familiar Claude Code slash-command workflow while letting you route work to Gemini CLI where available, or to Antigravity CLI (`agy`) during the post-June-2026 transition.
+
+[繁體中文說明 →](README.zh-TW.md)
+
+Ported from [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) (Apache-2.0), retaining a familiar slash-command and background-job workflow while adapting behavior to Gemini/AGY capabilities and documenting intentional divergences.
+
+---
+
+## Why this plugin?
+
+`gemini-plugin-cc` is a Claude Code-native companion bridge for users who want both Gemini CLI and Antigravity CLI (`agy`) support during Google's Gemini CLI transition.
+
+Compared with AGY-only, multi-host plugins, this project keeps the Gemini CLI path where available while providing an explicit `--engine agy` route for users migrating to Antigravity CLI.
+
+- Claude Code-native `/gemini:*` slash commands.
+- Pragmatic and adversarial code review over the current diff or branch.
+- Background task delegation for longer-running companion-agent work.
+- Gemini model aliases, graceful model fallback, and transient review retry.
+- Version-gated AGY result retrieval: native JSON envelope on 1.1.8+, transcript recovery below it.
+- Safer stdin prompt delivery on Gemini and AGY 1.1.2 or newer.
+
+| Need | Use this plugin when... |
+|---|---|
+| Gemini CLI still works for you | You want model selection, JSON output, and stdin prompt delivery. |
+| You are migrating to AGY | Use `--engine agy` as the fully supported Antigravity CLI backend. |
+| You want adversarial review | Use `/gemini:adversarial-review` with optional focus text. |
+| You need AGY-only multi-host support | Consider an AGY-only plugin instead. |
+
+---
+
+## Features
+
+- **`/gemini:rescue`** — Delegate investigation, debugging, or implementation tasks to the selected Gemini CLI or AGY engine. Runs in the foreground or detached in the background.
+- **`/gemini:transfer`** — Export current session context (git status, diff, instructions) into a structured JSON snapshot and print a single-quoted launch command for AGY or Gemini CLI (POSIX Bash form everywhere, plus a PowerShell form on Windows).
+- **`/gemini:review`** — Standard (pragmatic) code review over the current diff or branch. Finds real bugs, missing error handling, and incomplete code paths. Add `--deep` for an agentic pass that explores repo context beyond the diff.
+- **`/gemini:adversarial-review`** — Adversarial code review that challenges design decisions over the current diff or branch. Returns structured findings with severity ratings.
+- **`/gemini:setup`** — Check Gemini CLI / AGY availability and OAuth status.
+- **`/gemini:status`** — Inspect active and completed background jobs.
+- **`/gemini:result`** / **`/gemini:cancel`** — Retrieve or cancel a background job.
+- **Engine auto-detection** — Both engines are first-class; `auto` checks `gemini` first for its JSON/model contract, then `agy`.
+- **Version-aware stdin prompt delivery** — Gemini always uses stdin; AGY 1.1.2 or newer uses its auto-print stdin path, while older or unknown versions retain the compatible positional path.
+- **Session lifecycle hooks** — Automatically injects `GEMINI_COMPANION_SESSION_ID`; cleans up stale jobs on session end.
+
+---
+
+## Prerequisites
+
+| Requirement | Version | Install |
+|---|---|---|
+| Node.js | ≥ 18 | [nodejs.org](https://nodejs.org) |
+| Gemini CLI | ≥ 0.40; required for the `gemini` engine | `npm install -g @google/gemini-cli` |
+| AGY | ≥ 1.0.3; ≥ 1.1.2 recommended and live-verified on Windows/Ubuntu WSL2 | _(see install note below)_ |
+| Claude Code | any | [claude.ai/code](https://claude.ai/code) |
+
+**Install AGY** (required for `--engine agy`): `curl -fsSL https://antigravity.google/cli/install.sh | bash`
+
+**Authentication**: Each engine authenticates independently. Run `gemini` once for the Gemini engine, or run `agy` once interactively for the AGY engine. AGY 1.1.10+ also supports Application Default Credentials (ADC) and Gemini Enterprise / Workforce Identity Federation (WIF), and 1.1.13+ accepts `GEMINI_API_KEY` with `modelProvider: "gemini"` in its `settings.json` — a settings-file route, which is why it appears in no `agy --help` output. AGY OAuth authentication cannot be verified reliably from a headless setup probe, so `/gemini:setup --engine agy` reports it as unknown until a real AGY command succeeds. `--probe-agy` settles it, and is verified on both an interactive login and a `GEMINI_API_KEY` route (AGY 1.1.15, isolated home, unkeyed control): keyed it reports `verified`, unkeyed it reports `unknown` with AGY's own diagnostic rather than a false logout. ADC and Enterprise/WIF are untested — treat a `logged-out` verdict on a working account there as a bug worth reporting.
+
+> **The Gemini engine now needs a Standard/Enterprise account or an API key.** Google ended consumer Gemini CLI access on 2026-06-18. On a personal account, gemini CLI 0.53.1 still installs and answers `--version`, but every request returns `API key not valid` (`API_KEY_INVALID`) — verified 2026-08-04. The AGY engine is unaffected and is the practical default; pass `--engine agy`, or set `GEMINI_ENGINE=agy`, if `auto` selects an unauthenticated gemini binary.
+
+> **Heads-up (reality check):**
+> - **2026-06-18 consumer transition**: Google announced that free/personal, Google AI Pro, and Google AI Ultra Gemini CLI requests stop being served after this date; Standard/Enterprise access remains. See Google's [Gemini CLI to Antigravity CLI announcement](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/).
+> - **Model availability drifts by CLI version.** A 2026-08-05 probe of the live Gemini API listing found `gemini-3.5-flash` and `gemini-3.6-flash` are now GA, while `gemini-3.5-pro` is still absent — the 2026-06-02 probe had returned `404 ModelNotFound` for both 3.5 ids. The plugin gracefully falls back to a GA model if a requested id is unavailable. See [Model Aliases](#model-aliases) and [docs/MODEL_COMPARISON.md](docs/MODEL_COMPARISON.md).
+
+---
+
+## Installation
+
+### Release channel (marketplace follows `main`)
+
+```
+# 1. Add the marketplace
+/plugin marketplace add arcobaleno64/gemini-plugin-cc
+
+# 2. Install the plugin
+/plugin install gemini@gemini-plugin-cc
+
+# 3. Reload plugins
+/reload-plugins
+```
+
+This marketplace source follows the repository's `main` branch, but that does **not** mean every Claude Code launch automatically installs and activates new code:
+
+- Claude Code identifies this plugin by its explicit manifest version. Existing installations update only after that version is bumped (normally as part of a release); unversioned commits on `main` with the same manifest version are not delivered as plugin updates.
+- Auto-update is disabled by default for third-party marketplaces. To opt in, open `/plugin`, select **Marketplaces** → **gemini-plugin-cc**, and choose **Enable auto-update**. When enabled, Claude Code checks the marketplace at startup and updates installed plugins whose resolved version changed.
+- If Claude Code reports that the plugin was updated, run `/reload-plugins` before using it in the current session. Opening Claude Code by itself is therefore not a reliable guarantee that a newly published version is already active.
+
+For an explicit update without enabling auto-update, run:
+
+```
+/plugin marketplace update gemini-plugin-cc
+/plugin update gemini@gemini-plugin-cc
+/reload-plugins
+```
+
+### Pinned release (a specific published version)
+
+Pin the marketplace to a release tag — e.g. `v0.9.1`:
+
+```
+/plugin marketplace add arcobaleno64/gemini-plugin-cc@v0.9.1
+/plugin install gemini@gemini-plugin-cc
+/reload-plugins
+```
+
+> Claude Code installs plugins from the git tree, not from GitHub Release tarballs — `@<tag>` selects the git tag behind a [Release](https://github.com/arcobaleno64/gemini-plugin-cc/releases). A pinned marketplace stays on that tag even if marketplace auto-update is enabled. To move it to another release, remove the existing marketplace (which also uninstalls plugins installed from it), add the repository again with the new tag, reinstall the plugin, and run `/reload-plugins`.
+
+Then run `/gemini:setup` for `auto`/Gemini, or `/gemini:setup --engine agy` for AGY. The selected engine is the only engine dependency that must be installed; setup offers the matching installer when it is missing.
+
+If Gemini is installed but not authenticated yet, run:
+
+```
+!gemini
+```
+
+---
+
+## Quick Start
+
+```
+# Delegate a task to Gemini (foreground)
+/gemini:rescue Investigate why the auth middleware returns 401 on valid tokens
+
+# Run in the background and check later
+/gemini:rescue --background Add unit tests for the UserService class
+/gemini:status
+
+# Adversarial review of your current diff
+/gemini:adversarial-review
+
+# Review with a specific focus
+/gemini:adversarial-review Focus on race conditions in the job queue
+```
+
+---
+
+## Commands
+
+### `/gemini:rescue [prompt]`
+
+Delegates a task to Gemini. Reads from stdin if no prompt is given.
+
+| Flag | Description |
+|---|---|
+| `--background` | Run detached; returns a job ID immediately |
+| `--write` | State that edits are expected. Off by default. On gemini it adds `--yolo`, which genuinely gates whether write tools exist. On AGY it selects `--new-project` over `--add-dir`; both orient the run on your repository and **neither withholds write**, so there it is a statement of intent, not a boundary — see [Security](#security) |
+| `--resume-last` | Continue the most recent Gemini session |
+| `--fresh` | Force a new Gemini session, ignoring any resumable thread |
+| `--engine <gemini\|agy\|auto>` | Override engine selection |
+| `--model <alias\|id>` | Model override. Gemini resolves its aliases; AGY 1.1.10+ requires an exact model ID from `agy models`. AGY model selection cannot be combined with `--effort` or a dual-engine (`--engines gemini,agy`) review. |
+| `--effort <low\|medium\|high\|xhigh>` | Gemini maps effort to a model; AGY 1.1.10+ forwards `low`, `medium`, or `high` as native reasoning effort when no AGY model is selected. |
+
+### `/gemini:transfer [instructions...]`
+
+Exports current workspace context (git diff, status, instructions) and generates ready-to-run CLI commands (`agy`/`gemini`) to hand off work to an interactive terminal session. Includes automated secret redaction (`.env*`, credentials) and git conflict safeguards. The generated commands are printed for you to paste into a terminal; the plugin never runs them.
+
+| Flag | Description |
+|---|---|
+| `--engine <gemini\|agy\|auto>` | Which handoff commands to print. `auto` (default) prints both |
+| `--model <id>` | Model override carried into the generated command. AGY requires an exact ID from `agy models` |
+| `--effort <low\|medium\|high\|xhigh>` | Reasoning effort carried into the generated AGY command. Cannot be combined with `--model` |
+
+### `/gemini:review`
+
+Runs a standard, pragmatic review over the current working tree or branch diff — real bugs, missing error handling, and incomplete code paths. Not steerable and takes no focus text; use `/gemini:adversarial-review` to challenge a specific decision.
+
+| Flag | Description |
+|---|---|
+| `--wait` / `--background` | Run in the foreground or detached |
+| `--deep` | Agentic review — let Gemini explore repo context beyond the diff (slower, higher-token; gemini engine) |
+| `--base <ref>` | Compare against a specific git ref |
+| `--scope <auto\|working-tree\|branch>` | Diff scope |
+| `--engine <gemini\|agy\|auto>` | Override engine |
+| `--model <alias\|id>` | Model override |
+| `--effort <level>` | Model selection on Gemini; native reasoning effort on AGY 1.1.10+ (`low`, `medium`, `high`) when no AGY model is selected |
+
+### `/gemini:adversarial-review [focus]`
+
+Runs an adversarial review over the current working tree or branch diff.
+
+| Flag | Description |
+|---|---|
+| `--deep` | Agentic review — let Gemini explore repo context beyond the diff (slower, higher-token; gemini engine) |
+| `--base <ref>` | Compare against a specific git ref |
+| `--scope <auto\|working-tree\|branch>` | Diff scope |
+| `--engine <gemini\|agy\|auto>` | Override engine |
+| `--model <alias\|id>` | Model override |
+| `--effort <level>` | Model selection on Gemini; native reasoning effort on AGY 1.1.10+ (`low`, `medium`, `high`) when no AGY model is selected |
+
+### `/gemini:setup`
+
+Prints availability and auth status for Node, Gemini CLI, and AGY.
+
+| Flag | Description |
+|---|---|
+| `--engine <agy\|gemini>` | Report readiness for that engine rather than the auto-routing default |
+| `--probe-agy` | Verify AGY's login by asking it a read-only question. **Free** — the account answers `/quota` without starting a turn (AGY 1.1.11+; below that AGY declines and setup says so) |
+| `--probe-gemini` | Verify the stored Gemini credential by making a real request. **Not free** — it costs nothing when the credential is already broken (the API refuses it before generating), but it spends a turn when the credential works. Skipped, with a note, under `--engine agy` |
+| `--enable-review-gate` / `--disable-review-gate` | Toggle the stop-time review gate (see [Review Gate](#review-gate-optional)) |
+
+Without a probe, Gemini readiness is read off disk, which can only prove staleness: a present-but-expired `oauth_creds.json` reports `partial`, while a credential living only in the OS keychain cannot be judged at all (gemini CLI 0.53.1 migrates the file into the keychain and deletes it). `geminiCredentialSource` names which credential actually satisfied the check.
+
+### `/gemini:status [job-id]`
+
+Lists active and recent background jobs. Pass a job ID to inspect a single job.
+
+| Flag | Description |
+|---|---|
+| `--wait` | Block until the job completes (requires a job ID) |
+| `--all` | Show all jobs, not just this session's |
+
+### `/gemini:result [job-id]`
+
+Retrieves the output of a completed job. If the job has a Gemini session ID, the output includes `Resume in Gemini: gemini --resume <session-id>` — paste that into a terminal to continue the session in Gemini CLI directly.
+
+### `/gemini:cancel [job-id]`
+
+Cancels a running or queued background job.
+
+---
+
+## MCP Tools
+
+The plugin also ships an MCP server (`.mcp.json` → `scripts/gemini-mcp.mjs`), so an agent can drive it without a human typing a slash command. This surface is **not** a mirror of the commands above — read the two tables together before assuming a feature is reachable.
+
+| Tool | Required | Optional | Read-only | Reaches Google |
+|---|---|---|---|---|
+| `gemini_rescue` | `workspace`, `prompt` | `write`, `model`, `effort`, `engine` | no | yes |
+| `gemini_review` | `workspace` | `base`, `scope`, `model`, `engine`, `deep` | yes | yes |
+| `gemini_adversarial_review` | `workspace` | `base`, `scope`, `model`, `engine`, `deep`, `focus` | yes | yes |
+| `gemini_job_status` | `workspace`, `jobId` | — | yes | no |
+| `gemini_job_result` | `workspace`, `jobId` | — | yes | no |
+| `gemini_job_cancel` | `workspace`, `jobId` | — | no | no |
+
+`workspace` is required on every tool and must be an absolute path to an existing directory. There is no implicit "current directory" here: the server is launched once per session from `.mcp.json`, not per invocation from a shell.
+
+**The first three queue a background job and return immediately** with a `jobId`. Nothing arrives with that response — poll `gemini_job_status`, then collect with `gemini_job_result`. A job started and never collected is quota spent for nothing, which is this plugin's most expensive failure mode.
+
+**`write: false` is an intent, not a sandbox.** AGY has no read-only mode, so a delegated turn can still edit files; the run compares the workspace before and after and reports what it wrote. `gemini_rescue` is annotated `destructiveHint: true` for that reason even though `write` defaults to false — annotations describe the worst a tool can do and cannot vary with arguments. See [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) §7.2.
+
+**The three job tools are addressed by job id and deliberately cross sessions.** A caller holding an id has already identified the job, so the session filter that keeps the *discovery* paths honest cannot do any work for them — and applying it broke them outright, because this server never receives a session id (see below).
+
+**Jobs queued here belong to no session.** `.mcp.json` gives the server no way to learn `GEMINI_COMPANION_SESSION_ID`: the `SessionStart` hook can only export into `CLAUDE_ENV_FILE`, which reaches later Bash commands, not a server started alongside them. Before v0.18.0 those untagged jobs were sorted with "another session's" and were invisible to `/gemini:status` and uncancellable from the slash commands. They are shown now — "nobody could say whose it is" is not the same claim as "it is someone else's".
+
+### Slash-only, by omission
+
+Listed so the gap is visible rather than discovered: `/gemini:setup` and its probe flags (interactive by design), `/gemini:transfer` (it writes a workspace-local snapshot and needs the model to author the instructions file), `--timeout`, `--resume-last`, and `--engines gemini,agy` are not on this surface — use the slash command or the CLI. MCP jobs take the per-engine default timeout, and every `gemini_rescue` starts a fresh turn. The [Review Gate](#review-gate-optional) is configured through `/gemini:setup` and then applies to the whole session, whichever surface queued the job.
+
+---
+
+## Review Gate (Optional)
+
+An optional stop-time gate that runs an adversarial review before Claude Code can stop, whenever a `--write` task completed in the session. Disabled by default.
+
+Enable or disable via `/gemini:setup`:
+
+```
+# Enable
+/gemini:setup --enable-review-gate
+
+# Disable
+/gemini:setup --disable-review-gate
+```
+
+When enabled and the review returns `needs-attention`, Claude Code is blocked from stopping and shown the finding summary. Run `/gemini:adversarial-review --wait` to review the findings and decide whether to accept or fix them before continuing.
+
+---
+
+## Model Aliases
+
+| Alias | Resolved Model | Notes |
+|---|---|---|
+| `flash` / `flash3` | `gemini-3-flash-preview` | Gemini 3 Flash (preview) |
+| `pro` / `pro3` | `gemini-3.1-pro-preview` | Gemini 3.1 Pro (preview) |
+| `flash25` | `gemini-2.5-flash` | Stable 2.5 Flash (GA) |
+| `pro25` | `gemini-2.5-pro` | Stable 2.5 Pro (GA) |
+| `lite` / `fast` | `gemini-2.5-flash-lite` | Cost-efficient (GA) |
+| `lite3` | `gemini-3.1-flash-lite` | Gemini 3.1 Flash-Lite (GA, cost-efficient) |
+
+### Model Alias Notes
+
+- Aliases and effort tiers live in a single source of truth — `plugins/gemini/scripts/lib/model-map.mjs` — and `npm test` verifies the table above against it, so the two cannot drift.
+- **Effort mapping** (applied when `--effort` is given without `--model`): `none`/`minimal` → `gemini-2.5-flash-lite`; `low`/`medium` → `gemini-3-flash-preview`; `high`/`xhigh` → `gemini-3.1-pro-preview`.
+- **CLI probe snapshot.** The alias table was last re-verified 2026-08-05 against the live Gemini API model listing; all six ids it uses resolved. Google can retire preview ids at any time. If an alias stops resolving, override it with `--model <exact-id>` — any value that is not a known alias is passed through to the CLI unchanged.
+- **Gemini 3.5 availability has changed.** The 2026-06-02 probe returned `404 ModelNotFound` for both `gemini-3.5-flash` and `gemini-3.5-pro`. As of 2026-08-05 `gemini-3.5-flash` is GA and `gemini-3.5-pro` is still absent. Unknown or unavailable model IDs degrade gracefully to the GA fallback.
+- **Graceful model fallback.** If a requested model id is not found on your gemini CLI (preview/retired id, or a CLI-version mismatch), the plugin retries the run **once on the GA fallback `gemini-2.5-flash`** and prints a clear note — so a stale id degrades gracefully instead of hard-failing.
+- **AGY 1.1.10+ model and reasoning selection.** Use either `--model <exact-id>` from `agy models` or native `--effort <low|medium|high>`; the options are mutually exclusive. AGY model IDs are not Gemini aliases, and `--model` is unavailable for a dual-engine review because model IDs are engine-specific.
+
+---
+
+## Engine Routing
+
+In `auto` mode the plugin selects the first available engine in this order:
+
+1. **`gemini` CLI** — outputs via stdout; supports stdin prompt delivery.
+2. **`agy`** — first-class supported engine and second `auto` candidate; AGY 1.1.2 or newer receives the prompt on stdin with no `--print` flag, while older or unknown versions retain `agy --print <prompt>`.
+
+Override via `--engine` flag or the `GEMINI_ENGINE` environment variable.
+
+> **Gemini counts as available only when it has a credential the CLI would actually use.** That means `GEMINI_API_KEY`/`GOOGLE_API_KEY`, `~/.gemini/oauth_creds.json`, or the two entries Gemini CLI 0.53.1 keeps in your OS keychain (`gemini-cli-api-key/default-api-key`, `gemini-cli-oauth/main-account`). The keychain is checked for **existence only** — never the stored value — and the probe can be switched off with `GEMINI_COMPANION_DISABLE_KEYCHAIN=1`, at the cost of `auto` skipping a gemini whose credential it can no longer see. See [`PRIVACY.md`](PRIVACY.md). One case is deliberately not detected: where no keychain is available the CLI falls back to an encrypted file shared by every service, and its presence cannot distinguish a gemini credential from an unrelated token, so it is not guessed at — use `--engine gemini` there.
+
+> **AGY 1.1.10+ selection:** use either `--model <exact-id>` from `agy models` or `--effort <low|medium|high>`. Gemini aliases are not valid AGY model IDs, model and effort cannot be combined, and `--model` is unavailable for a dual-engine review because IDs are engine-specific. Gemini retains its separate alias and effort-to-model mapping.
+
+> **AGY 1.1.8+ uses the native JSON envelope; older AGY falls back to transcript recovery.** AGY 1.1.8 added `--output-format json`, which returns the response, conversation ID, and a terminal status on stdout. From plugin v0.11.0 that envelope is the source of truth on AGY 1.1.8 or newer, and the on-disk transcript is not read at all — no brain root is required. One consequence: the reasoning-summary section is not shown for AGY results, because the envelope reports only a `thinking_tokens` count and carries no thinking text (`stream-json` does not either). The Gemini engine is unaffected; it takes its reasoning summary from stderr.
+>
+> Below AGY 1.1.8 the transcript remains authoritative, because positional `agy --print` produced no piped response on older releases (upstream [google-gemini/gemini-cli#27466](https://github.com/google-gemini/gemini-cli/issues/27466); reproduced on macOS AGY 1.0.7) and no version before 1.1.8 surfaces the conversation ID on stdout. Those runs still take the completed response, DONE status, thinking, and conversation ID from disk. Known brain roots are `~/.gemini/antigravity-cli/brain` (verified on Windows, macOS AGY 1.0.7, and Linux AGY 1.1.2) and `~/.antigravity-cli/brain` (older Linux 1.0.2, reported). If no brain root is found on such a version, run `agy` once, upgrade to 1.1.8 or newer, or open an issue with its actual location.
+
+---
+
+## Security
+
+- **Stdin delivery**: Gemini prompts and AGY 1.1.2-or-newer prompts use Node's `spawnSync` `input` option and never enter argv. AGY versions older than 1.1.2, plus unparseable versions, keep the positional compatibility path and its 24,000-character limit; prefer Gemini or AGY 1.1.2+ for untrusted prompt content.
+- **Windows process boundary**: Gemini's npm `.cmd` shim is launched through `shell:true`, but its prompt remains on stdin and only validated flags enter argv. AGY must resolve to an absolute `.exe` and is always launched with `shell:false`.
+- **Git process boundary**: Repository-derived refs are always passed to Git as literal argv with `shell:false`, including on Windows; Git helpers never inherit the `.cmd` wrapper fallback. This aligns with the upstream Codex plugin's [v1.0.6 Git shell-expansion removal](https://github.com/openai/codex-plugin-cc/releases/tag/v1.0.6).
+- **DEP0190 warning is benign**: On Windows you may see `(node:NNN) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.` This is **safe to ignore here** — the deprecation is about *prompt content* placed in argv under `shell: true`, but this plugin never does that for the gemini engine: the prompt travels on stdin, and only controlled flags reach argv (each validated, e.g. model ids must match `^[A-Za-z0-9][A-Za-z0-9._-]*$`). The warning is Node flagging the general pattern, not an actual injection vector in this code path.
+- **AGY transport fallback**: Only a stable parsed version of 1.1.2 or newer enables stdin. Unknown and prerelease version strings fail closed to the existing positional path, preserving compatibility rather than assuming an upstream capability.
+- **AGY 1.1.10+ `.git` sandbox rule**: AGY 1.1.10 implements read-only `.git` sandbox rules during sandboxed execution, protecting git repository metadata and commit history against accidental modification during review and subagent tasks.
+- **Credential handling**: OAuth credentials in `~/.gemini/oauth_creds.json` are read only to check token expiry via `getGeminiLoginStatus()`; they are never logged, copied elsewhere, or transmitted by this plugin.
+- **`.gitignore`**: A transfer snapshot's `gitDiff` field holds the entire uncommitted diff, so `/gemini:transfer` writes `.omc/.gitignore` containing `*` when it creates the directory — the snapshots are excluded from version control in **your** repository, not only in this one. Before v0.19.0 the exclusion existed only in this repository's own `.gitignore`, so elsewhere the snapshots were untracked rather than ignored and `git add -A` committed them. An existing `.omc/.gitignore` is never overwritten. Job state and logs live outside the repository entirely — see [How It Works](#how-it-works).
+
+**What is sent, kept, and read** — including the one path that transmits without an explicit command — is documented in [`PRIVACY.md`](PRIVACY.md).
+
+---
+
+## Setup & Auth Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `gemini: not found` | Gemini CLI not installed | `npm install -g @google/gemini-cli`, or run `/gemini:setup` and accept the install prompt |
+| `npm: not found` | Node/npm missing from PATH | Install Node.js ≥ 18 from [nodejs.org](https://nodejs.org) |
+| setup shows `gemini auth: No credentials …` | OAuth not completed | Run `!gemini` once and complete the browser login |
+| setup shows `… token expired` | OAuth token lapsed | Run `!gemini` again to refresh credentials |
+| `Status: partial (AGY available …)` | Gemini CLI unavailable but AGY present | Use `--engine agy` directly; setup keeps AGY auth `unknown` because it cannot verify the independent AGY OAuth flow non-interactively |
+| Windows: command resolves but fails | `.cmd` wrapper / PATH | Confirm `where gemini` resolves; the plugin spawns bare names through `shell: true` to find `.cmd` shims |
+| `--engine agy` reports no brain root | AGY has not created its brain directory yet, or it lives in an unknown location | Run `agy` once so it creates the brain dir. Known roots: `~/.gemini/antigravity-cli/brain` (verified on Windows, macOS AGY 1.0.7, and Linux AGY 1.1.2) and `~/.antigravity-cli/brain` (older Linux 1.0.2, reported); if yours differs, open an issue with its location |
+
+For the Gemini engine, run **`!gemini`** once — the plugin completes OAuth by invoking `gemini` itself. There is **no** `gemini login` subcommand. For the AGY engine, run `agy` interactively once, or give it a non-interactive credential (ADC/WIF on 1.1.10+, `GEMINI_API_KEY` with `modelProvider: "gemini"` on 1.1.13+); its separate OAuth state is not inferred from Gemini's `~/.gemini/oauth_creds.json`. `setup` reports AGY as `partial` while the binary is present but auth remains unverifiable.
+
+---
+
+## How It Works
+
+```
+Claude Code
+  └─ /gemini:rescue "prompt"
+       └─ gemini-companion.mjs task
+            ├─ detectEngine()        → gemini | agy
+            ├─ buildCliArgs()        → version-gated args
+            ├─ runCommand()          → spawnSync
+            │    input: prompt       ← gemini + AGY ≥1.1.2
+            │    argv: prompt        ← older/unknown AGY only (24K cap)
+            └─ renderTaskResult()   → Markdown output to Claude
+```
+
+Background mode spawns a detached worker child process (`task-worker` for `/gemini:rescue`, `review-worker` for `/gemini:review` and `/gemini:adversarial-review`) and returns a job ID immediately. State is polled via `/gemini:status`, so a background result survives even if the Claude session is interrupted.
+
+Job state is written to Claude Code's per-plugin data directory — `$CLAUDE_PLUGIN_DATA/state/<workspace>-<hash>/`, holding `state.json` and one `.json` plus `.log` per job, most recent 50 kept. **A 51st job deletes the oldest finished one**, and its result is then gone — `/gemini:result` cannot retrieve it, whether or not you ever read it. The plugin prints a warning naming what it removed, so this is never silent; a queued or running job is never evicted. Outside Claude Code, where that variable is unset, it falls back to `<system temp>/gemini-companion/<workspace>-<hash>/`; the OS eventually cleans that, so a job left running across a temp sweep can disappear. Set `GEMINI_COMPANION_DATA` to pin the location yourself.
+
+The workspace-local `.omc/` directory is a separate thing: it holds `/gemini:transfer` snapshots only, not job state.
+
+---
+
+## Parity with codex-plugin-cc
+
+A high-fidelity port of [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc): the slash-command surface, background job model, and state/result/status/cancel flow mirror the upstream, while the execution backends are the Gemini CLI and AGY engines rather than the Codex app server.
+
+The per-command compatibility matrix and the runtime, review, sandbox and resume differences are in [`docs/parity.md`](docs/parity.md). Dated audits against specific upstream versions sit beside it.
+
+---
+
+## Skills
+
+Three skills are bundled for Claude Code to consume:
+
+| Skill | Purpose |
+|---|---|
+| `gemini-cli-runtime` | Runtime contract — how to call `gemini-companion task` |
+| `gemini-result-handling` | Result presentation rules (severity, reasoning, evidence) |
+| `gemini-prompting` | Prompt composition guide (XML tags, output contract) |
+
+---
+
+## Known limitations
+
+Documented, non-blocking constraints — see the linked sections for detail:
+
+- **Model and access availability drift.** Google announced the 2026-06-18 consumer Gemini CLI transition; Gemini model IDs served by the CLI also change over time. This plugin keeps a GA fallback for unavailable Gemini model IDs. See [Model Alias Notes](#model-alias-notes) and [docs/MODEL_COMPARISON.md](docs/MODEL_COMPARISON.md).
+- **`/gemini:review` is a prompt/CLI adapter, not a native reviewer.** It sends the diff with a review prompt and parses the structured JSON, rather than using an app-server reviewer, so its feedback depth differs from a native one. See [Codex app server vs Gemini CLI adapter](#codex-app-server-vs-gemini-cli-adapter).
+
+---
+
+## Support
+
+- **Setup or auth failing** — check [Setup & Auth Troubleshooting](#setup--auth-troubleshooting) first; most install and OAuth symptoms are in that table.
+- **A feature behaves differently from `codex-plugin-cc`** — check [docs/known-diffs.md](docs/known-diffs.md) before filing. Several differences are deliberate and documented.
+- **A bug** — open a [bug report](https://github.com/arcobaleno64/gemini-plugin-cc/issues/new?template=bug_report.yml). Include the exact command and your `/gemini:setup` output; those two answer most questions on their own.
+- **An engine version or platform we have not verified** — open a [compatibility report](https://github.com/arcobaleno64/gemini-plugin-cc/issues/new?template=compatibility_report.yml). "It works on X" is as useful as "it breaks on X", because the docs only claim what has actually been run.
+- **A security vulnerability** — do not open an issue. Use [private disclosure](https://github.com/arcobaleno64/gemini-plugin-cc/security/advisories/new); see [`SECURITY.md`](SECURITY.md).
+- **Anything else, or you cannot use GitHub** — email <arcobaleno830623@gmail.com>. GitHub is the faster route for anything that belongs in public, because the answer stays where the next person will find it.
+
+This is a single-maintainer project, not a staffed support desk. Everything above reaches one person.
+
+Deeper material lives in [`docs/`](docs/README.md), which separates reference kept current from dated records that are never rewritten — reading one as the other is the easiest mistake to make there.
+
+Reviewing the plugin rather than using it? [`docs/verifying-without-credentials.md`](docs/verifying-without-credentials.md) is the complete offline path — no account, no API key. For a run of every command end to end against a stand-in engine, start with `node scripts/reviewer-demo.mjs`.
+
+---
+
+## Changelog
+
+See [CHANGELOG.md](plugins/gemini/CHANGELOG.md).
+
+---
+
+## License & Upstream Attribution
+
+MIT © 2026 arcobaleno64.
+
+This project is a derivative work of [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc), Copyright 2026 OpenAI, licensed under the Apache License, Version 2.0. Adapted portions remain under Apache-2.0 (see [`LICENSE-APACHE-2.0`](LICENSE-APACHE-2.0) and [`NOTICE`](NOTICE)); Gemini/AGY-specific changes are MIT (see [`LICENSE`](LICENSE)).
+
+**Derived from upstream** (adapted, Apache-2.0): the slash-command structure, the background job model (enqueue / worker / status / result / cancel), the `.omc/state` persistence and job-control patterns, the stop-time review-gate pattern, the skill contract layout, and the version/manifest tooling (`bump-version`).
+
+**Original to this repository** (MIT): the Gemini/AGY engine detection and routing, stdin prompt delivery, the `model-map` alias/effort source, AGY engine handling, OAuth status checks, and the contract-verification script.
+
+---
+
+# File: SECURITY.md
+
+# Security Policy
+
+## Supported Versions
+
+Only the current MINOR line is supported. Update this table with every MINOR bump.
+
+| Version | Supported |
+|---|---|
+| 0.22.x | :white_check_mark: |
+| < 0.22.0 | :x: |
+
+## Security Model & Trust Boundaries
+
+`gemini-plugin-cc` acts as a local CLI bridge between Anthropic's Claude Code environment and local Gemini/AGY binaries.
+
+### In-Scope Components
+- Stdin transport and prompt escaping logic (`plugins/gemini/scripts/lib/gemini.mjs`, `plugins/gemini/scripts/transfer.mjs`).
+- Argument validation and flag parsing (preventing flag injection into CLI subprocesses).
+- Process boundary security (forcing `shell: false` on Git operations in `plugins/gemini/scripts/lib/git.mjs`, and resolving bare command names to an absolute executable or npm entry script so engine spawns also avoid the shell — `resolveSpawnTarget` in `plugins/gemini/scripts/lib/process.mjs`).
+- Secret file redaction filters (`isSecretFile()` and `redactSecretsFromDiff()` in `plugins/gemini/scripts/lib/secrets.mjs`, shared by the review and transfer paths; `transfer-context.mjs` re-exports `isSecretFile` under its original name).
+- Background job state directory isolation (`.omc/`).
+- **Prompt injection and delegated agency** — the plugin hands repository content it did not author to an agent that can be write-capable. Modelled in [`docs/THREAT-MODEL.md` §7](docs/THREAT-MODEL.md), mapped against the OWASP Top 10 for LLM Applications. Read that section before reporting: the highest-rated item (`/gemini:rescue` defaulting to a write-capable run with no path sandbox) is **known and documented**, not an undisclosed flaw.
+
+### Out-of-Scope Components
+- Third-party CLI binary vulnerabilities within Google's `gemini` or `agy` executables.
+- Claude Code runtime environment process sandbox boundaries.
+- User-managed OAuth token storage inside `~/.gemini/oauth_creds.json` or AGY system keyrings.
+
+### Data Handling
+
+What the plugin sends, keeps, and reads — and the single path that transmits without an explicit user command — is documented in [`PRIVACY.md`](PRIVACY.md). Report any statement there that the code does not support as a documentation defect.
+
+## Reporting a Vulnerability
+
+If you discover a potential security vulnerability within `gemini-plugin-cc`, please **do not** open a public GitHub issue.
+
+Instead, report it responsibly via either of:
+- **Private Security Disclosure** (preferred): Submit via [GitHub Security Advisories](https://github.com/arcobaleno64/gemini-plugin-cc/security/advisories/new). It keeps the report, the discussion, and the eventual advisory in one place.
+- **Email**: <arcobaleno830623@gmail.com>, for anyone who cannot or would rather not use GitHub. This address is monitored by the maintainer; it is not a team inbox, so expect one person's response times.
+
+### Response Expectations
+- **Initial Response**: Within 48 hours.
+- **Status Update**: Within 7 business days.
+- **Fix & Patch Advisory**: Released in a timely patch release.
+
+---
+
+# File: PRIVACY.md
+
+# Privacy and Data Handling
+
+This document states exactly what `gemini-plugin-cc` reads, what it sends, where it
+sends it, and what it keeps. Every claim here is checkable against the source
+files cited beside it. If you find a statement that the code does not support,
+that is a bug — report it as described in [`SECURITY.md`](SECURITY.md).
+
+Applies to plugin version 0.16.x.
+
+---
+
+## 1. The plugin operates no service
+
+- **No remote endpoint of its own.** The plugin makes no HTTP requests, opens no
+  sockets, and performs no DNS lookups. There is no `fetch`, `http`, `https`,
+  `net`, or `dns` call anywhere in `plugins/gemini/scripts/`. The only URLs in
+  the source are install instructions inside error messages
+  (`scripts/gemini-companion.mjs`).
+- **No telemetry, analytics, crash reporting, or update check.** None exists to
+  disable.
+- **No dependencies.** `package.json` declares neither `dependencies` nor
+  `devDependencies`; everything runs on the Node standard library. There is no
+  third-party package that could collect anything.
+- **Nothing is sent to the maintainer.** The maintainer receives only what you
+  choose to put in a GitHub issue or a security advisory.
+
+---
+
+## 2. What leaves your machine
+
+Data leaves your machine on exactly one path: the plugin spawns the **Gemini CLI
+or Antigravity CLI (`agy`) binary you installed**, and that binary sends your
+prompt to Google. The plugin is the thing that assembles the prompt; Google's CLI
+is the thing that transmits it.
+
+Transport is argv or stdin on a `shell: false` child process — never a shell
+command line. See [`SECURITY.md`](SECURITY.md) for the process-boundary details.
+
+What gets assembled depends on the command:
+
+| Command | Repository data included | Limits and redaction |
+|---|---|---|
+| `/gemini:rescue` | Your instruction text only | — |
+| `/gemini:review`, `/gemini:adversarial-review` | `git status`, staged and unstaged diffs or a branch diff, and the contents of untracked files (`scripts/lib/git.mjs`) | Secret-file contents withheld; 400,000-character total cap; untracked files skipped above 24 KB, and skipped entirely if binary, a directory, or a broken symlink |
+| `/gemini:transfer` | `git status -s` plus a per-file diff (`scripts/lib/transfer-context.mjs`) | Secret-file contents withheld; 5,000 characters per file; 25,000 characters total |
+
+Truncation is announced **inside** the content that is sent, so the model reports
+that it saw a partial diff rather than reviewing half a change silently.
+
+**The table describes what the plugin assembles, not the ceiling on what Google
+receives.** Gemini CLI and AGY are agentic: they run in your workspace directory
+and can read files on their own initiative while working on the prompt. For
+`/gemini:rescue` in particular, the plugin sends your instruction and nothing
+else, but the CLI may then read whatever it judges relevant — including files no
+redaction rule here ever saw. The limits and redaction above bound the plugin's
+contribution; they do not sandbox the engine, and neither AGY nor Gemini CLI
+offers a path-boundary mode the plugin could impose — AGY's `--sandbox` is not
+one, and Gemini CLI's is a container sandbox that will not start without Docker
+or Podman, both measured in
+[`docs/THREAT-MODEL.md` §7.2](docs/THREAT-MODEL.md), which also records this as a
+known, unmitigated gap. If a workspace contains material that must not reach
+Google, do not run a delegated task in it.
+
+### Secret-file redaction
+
+Files whose names look like credential stores — `.env` and `.env.*`, `*.env`,
+`*.pem`, `*.key`, `*.p12`/`*.pfx`/`*.crt`/`*.keystore`, `.npmrc`,
+`credentials.json`, `*_creds.json`, `secret(s).json|yml|yaml|env`, anything
+matching `id_rsa` — have their contents replaced with a placeholder before the
+prompt is built. The diff header is kept, so the review still knows the file
+changed. One definition covers both the review and transfer paths
+(`scripts/lib/secrets.mjs`).
+
+**Known limit, stated plainly:** detection is by filename only. A credential
+pasted into an ordinary source file, hardcoded in a config, or embedded in a
+test fixture is **not** redacted on any path. This is not a secret scanner, and
+it has never been one. Treat the diff you are about to review as the thing you
+are sending.
+
+### The one automated send, and how it is gated
+
+The optional Stop review gate (`scripts/stop-review-gate-hook.mjs`) can run an
+adversarial review of your working tree without a fresh command from you. It
+fires only when **both** conditions hold:
+
+1. you enabled it explicitly (`stopReviewGateEnabled`, set through
+   `/gemini:setup`; it defaults to off), **and**
+2. a `--write` task has completed in this workspace.
+
+Disable it the same way you enabled it. Nothing else in the plugin transmits
+anything without a command you typed.
+
+### Third parties
+
+Whatever the Gemini CLI or AGY sends is then governed by Google's terms and
+privacy policy for that product, including any retention or model-training
+practices they apply to your plan tier. This project has no control over, and no
+visibility into, what happens after the prompt reaches Google:
+
+- Gemini CLI: <https://github.com/google-gemini/gemini-cli>
+- Antigravity: <https://antigravity.google/>
+- Google Privacy Policy: <https://policies.google.com/privacy>
+
+Review those terms for your plan before sending proprietary code.
+
+---
+
+## 3. What is read from your machine
+
+Beyond the workspace you invoke a command in, the plugin reads four things
+outside it — all locally, none transmitted:
+
+| Path | What is read | Why |
+|---|---|---|
+| `~/.gemini/oauth_creds.json` (or `$GEMINI_HOME`) | The token **expiry timestamp** only | To report Gemini auth status and to keep `auto` routing from selecting an unauthenticated CLI (`scripts/lib/gemini-auth.mjs`) |
+| `~/.gemini/settings.json` | The `security.auth.selectedType` string only | To tell a personal plan from a Code Assist plan, which differ in CLI access (`scripts/lib/gemini-auth.mjs`) |
+| `~/.gemini/antigravity-cli/brain/` or `~/.antigravity-cli/brain/` | AGY's own conversation transcript for the run it just started | Only on AGY older than 1.1.8, which has no structured stdout; newer AGY returns a JSON envelope and the transcript is not read (`scripts/lib/agy-transcript.mjs`, `scripts/lib/engine.mjs`) |
+| Your OS keychain, two fixed entries only | **Whether** `gemini-cli-api-key/default-api-key` or `gemini-cli-oauth/main-account` exists — never the stored value | Gemini CLI 0.53.1 keeps credentials there, so without this check a user who authenticated through the CLI is read as unauthenticated and `auto` routes past a working gemini (`scripts/lib/gemini-auth.mjs`) |
+
+The token value itself is never logged, copied, or transmitted. `GEMINI_API_KEY`
+and `GOOGLE_API_KEY` are checked for presence only; their values are never read
+into a prompt.
+
+### The keychain check, in detail
+
+It runs your platform's own credential tool as a child process, asks about the
+two Gemini CLI entries by exact name, and reads only whether they exist:
+
+- **macOS** — `security find-generic-password -s <service> -a <account>`.
+  Deliberately without `-w`, the flag that would print the password. The
+  command's output is discarded unread; only its exit status is used.
+- **Linux** — `secret-tool search …`, not `secret-tool lookup`, which prints the
+  secret. Output likewise discarded unread.
+- **Windows** — `cmdkey /list:<service>/<account>`. `cmdkey` never prints
+  credential values, and the query names one target rather than enumerating
+  every credential on the machine.
+
+Each probe is capped at two seconds, runs at most once per command, and treats
+every failure as "no credential". To switch it off entirely, set
+`GEMINI_COMPANION_DISABLE_KEYCHAIN=1`; the only consequence is that `auto`
+routing may skip a gemini CLI whose credential it can no longer see, which you
+can override with `--engine gemini`.
+
+### What the plugin does not touch
+
+- Claude memory (`~/.claude/`, `CLAUDE.md`, `MEMORY.md`) — never read.
+- Claude Code conversation history, transcripts, or summaries — never read.
+- Files you uploaded to Claude — never read.
+- Your credentials as values — see above.
+- Any other keychain entry. The probe asks about two entries by exact name and
+  never enumerates.
+- Any other home-directory content. The paths in the table are the whole list.
+
+---
+
+## 4. What is stored locally, and where
+
+Nothing is stored remotely. Two local locations, both prunable, both yours:
+
+### Transfer snapshots
+
+`<workspace>/.omc/transfers/transfer-*.json` — written by `/gemini:transfer`,
+containing the workspace path, your instructions, `git status`, and the redacted
+diff. The 20 most recent are kept; older ones are deleted on each new transfer
+(`scripts/lib/transfer-context.mjs`). `.omc/` is in `.gitignore`, so snapshots
+are not committed by accident.
+
+### Job state and logs
+
+`$CLAUDE_PLUGIN_DATA/state/<workspace-slug>-<hash>/` — Claude Code's per-plugin
+data directory — containing `state.json`, `jobs/<id>.json`, and `jobs/<id>.log`
+for background jobs. Outside Claude Code, where that variable is unset, it falls
+back to `<system temp>/gemini-companion/<workspace-slug>-<hash>/`. Setting
+`GEMINI_COMPANION_DATA` overrides both.
+
+The 50 most recent jobs are kept; older records and their log files are deleted
+together (`scripts/lib/state.mjs`). The directory name derives from your
+workspace path so separate projects do not share state; ending a Claude Code
+session removes that session's jobs (`scripts/session-lifecycle-hook.mjs`).
+
+Delete either directory at any time. The plugin recreates what it needs.
+
+---
+
+## 5. Changes to this document
+
+New data collection, new transmission, new retention, or a new remote service is
+a material change: it requires a threat-model review, a `SECURITY.md` update,
+this document updated in the same pull request, and at minimum a MINOR version
+bump. See [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md).
+
+---
+
+# File: docs/THREAT-MODEL.md
+
+# Threat Model: gemini-plugin-cc
+
+This document formalizes the threat model and risk mitigations for `gemini-plugin-cc`.
+
+Scope note: sections 1–6 cover the conventional CLI-host surface (argv, subprocess, credentials). Section 7 covers the surface specific to delegating work to an LLM agent, which the earlier sections did not model.
+
+## 1. Assets
+- **Local Credentials**: OAuth tokens stored in user home directories (`~/.gemini/oauth_creds.json`).
+- **Workspace Source Code**: Repository files, uncommitted diffs, and developer environment states.
+- **Background Job State**: Job output logs and resume IDs stored in `.omc/`.
+- **The parent agent's context**: Claude Code renders this plugin's output verbatim, so that output is itself an asset — see 7.3.
+
+## 2. Trust Boundaries
+1. **User Prompt & Terminal Entry Point** $\rightarrow$ `gemini-plugin-cc` script dispatcher.
+2. `gemini-plugin-cc` $\rightarrow$ Subprocess execution of `git`, `gemini`, or `agy`.
+3. Subprocess $\rightarrow$ External LLM API endpoints.
+4. **Repository content** $\rightarrow$ model prompt. Repository content is *data*, but every consumer downstream of the model treats model output as *instructions*. This boundary is the subject of section 7.
+
+## 3. Entry Points & Attack Vectors
+- **Malicious Repository Content**: Untrusted repositories containing specially named files (e.g. `--flag-file` or `& calc.exe`) designed to trigger argument/command injection.
+- **Prompt Injection**: Untrusted diffs, file contents, or commit messages carrying instructions aimed at the delegated agent. Detailed in section 7.
+- **Unsanitized Argv**: CLI arguments provided by user slash commands (`--model`, `--effort`, `instructions`).
+
+## 4. Threat Actors
+- **Malicious Repository Author**: Provides a repository containing crafted file paths or git metadata. Realistic delivery: a dependency, a fork, a drive-by clone, or a pull request the user reviews locally.
+- **Prompt Injector**: Places instructions inside git diffs, file contents, or commit messages.
+
+## 5. Existing Mitigations
+
+| Threat | Existing Mitigation | Implementation |
+|---|---|---|
+| Command Injection (CWE-78) | Forced `shell: false` on Git operations | `plugins/gemini/scripts/lib/git.mjs`, `plugins/gemini/scripts/lib/transfer-context.mjs` |
+| Argv re-parsing by cmd.exe (Windows) | A bare command name is resolved to an absolute executable — or, for an npm shim, to the entry script its package's `bin` field names — and spawned with `shell: false`. The shell remains only as a fallback for commands resolution cannot identify | `resolveSpawnTarget`, `plugins/gemini/scripts/lib/process.mjs` |
+| Argument Injection | Strict regex validation of flags (`--model`) | `plugins/gemini/scripts/lib/engine.mjs` |
+| Argv smuggling on Windows | AGY must resolve to an absolute `.exe`; `.cmd` shims are refused (CVE-2024-27980) | `resolveAgyExecutablePath`, `plugins/gemini/scripts/lib/engine.mjs` |
+| Credential Leakage (transfer only) | Secret **filename** redaction (`.env*`, `.pem`, `.npmrc`, `id_rsa`) plus per-file and total size caps | `isSecretFile`, `plugins/gemini/scripts/lib/transfer-context.mjs` |
+| Prompt Transport / Argv Risk | Gemini and AGY 1.1.2+ use stdin; older, prerelease, or unparseable AGY versions use a validated positional fallback with NUL and 24,000-character preflight limits | `plugins/gemini/scripts/lib/gemini.mjs`, `plugins/gemini/scripts/lib/engine.mjs` |
+| Slash-command hijack of the prompt | `--disable-slash-commands` on AGY 1.1.9+, which otherwise expands a task beginning with `/` as its own command | `buildCliArgs`, `plugins/gemini/scripts/lib/engine.mjs` |
+| File Mutation | `--write` selects the write-capable run | `plugins/gemini/scripts/lib/job-control.mjs` |
+
+> **Correction (2026-08-04), resolved in v0.16.0.** This table previously described file mutation as "gated behind explicit `--write`", and that gate did not hold on the default path: the rescue subagent was instructed to *add* `--write` unless the user asked for read-only, so `/gemini:rescue` was write-capable by default. It no longer is. What `--write` gates is also narrower than the table implied — it selects the workspace the engine operates on, not whether the engine may write at all. See 7.2 for the measurements.
+
+## 6. Residual Risks (conventional surface)
+- **Malicious Repository Content Boundary**: Audit edge cases where malformed git diffs or file paths might evade regex filters.
+- **State Corruption**: Audit concurrency and state file handling in `.omc/` during multi-job execution.
+
+---
+
+## 7. Prompt injection and delegated agency
+
+The plugin's function is to take content it did not author and hand it to an agent. That is the whole product, so the exposure cannot be removed — only bounded. This section maps it against the **OWASP Top 10 for LLM Applications (2025)**.
+
+### 7.1 Data flows carrying untrusted content
+
+| # | Flow | Write-capable | Bound |
+|---|---|---|---|
+| A | repo diff → review prompt → model → rendered output → **Claude Code's context** | no (`write: false`, `lib/gemini.mjs`) | filename redaction + size cap on the input (7.4); parent-agent rule on the output (7.3) |
+| A′ | task prompt → model → rendered output → **Claude Code's context** | no unless `--write` (7.2) | parent-agent rule **and** the positional marker, which only `renderTaskResult` emits (7.3) |
+| B | repo content → rescue agent → **filesystem and shell** | only with `--write` (7.2) | `--write` decides *where* the engine works, not *whether* it may write; no path boundary exists |
+| C | repo diff → `.omc/transfers/*.json` → an interactive AGY session started with `--add-dir .` | inherits that session's mode | filename redaction + size caps |
+| D | repo diff → stop-review-gate hook → model, with no explicit user action | no | same as A |
+
+### 7.2 PI-1 — Write-capable delegation without a sandbox (High)
+
+`LLM06 Excessive Agency`, `LLM01 Prompt Injection`
+
+**This is where the port diverges from upstream, and the parity audit did not catch it** because it compared command surfaces rather than capability semantics. `codex-companion.mjs:491` passes `sandbox: request.write ? "workspace-write" : "read-only"` — upstream's write mode is *confined to the workspace by a sandbox*, which is why upstream can also set `approvalPolicy: "never"` safely: the sandbox is the control, and the prompt is only an affordance. This plugin has no equivalent boundary.
+
+**Measured on AGY 1.1.10, 2026-08-05.** Seven headless runs against a disposable repository, prompt on stdin, matching how the plugin invokes the engine. Superseding the earlier "deliberately not tested" note — this is now tested, and two of the three claims that note rested on were wrong.
+
+| `--sandbox` | `--dangerously-skip-permissions` | `--new-project` | Action | Outcome |
+|---|---|---|---|---|
+| — | yes | yes | edit tool → outside workspace | wrote |
+| yes | yes | yes | edit tool → outside workspace | wrote |
+| yes | yes | yes | shell command → outside workspace | wrote, exit 0 |
+| yes | — | yes | edit tool → outside workspace | wrote, no prompt |
+| — | — | — | edit tool → in-repo path | wrote to AGY's scratch dir; repo untouched |
+| — | — | yes | edit tool → in-repo path | edited the repo file |
+| — | — | yes | shell command → in repo | ran, exit 0 |
+
+1. **`--sandbox` is not a path boundary.** It exists on 1.1.10 — so the earlier claim that "AGY has no path-boundary mode" was wrong about the flag and right about the capability. Runs 2–4 wrote outside the workspace with it enabled, via both the edit tool and a shell command. Its help text, "terminal restrictions", describes what a terminal command may reach (network, `.git`), not where anything may write. [antigravity-cli#749](https://github.com/google-antigravity/antigravity-cli/issues/749) is therefore still the open request.
+2. **`--dangerously-skip-permissions` granted nothing here.** Runs 4, 6 and 7 wrote or executed without it and without any prompt: headless print mode auto-approves regardless. The claim that "those flags remove the approval prompt" was wrong — in this mode there is no prompt to remove. **The flag was removed in v0.16.0** at no behavioral cost.
+3. **`--new-project` orients the session; it does not confine it.** Without it AGY works inside its own scratch directory and the repository is untouched (run 5); with it, the repository is edited (runs 6–7). `lib/engine.mjs` adds it only on write turns.
+
+> **Correction (2026-08-05), applied in v0.16.4.** Conclusion 3 originally ended "the read-only guarantee comes from workspace binding, not from a permission mode." **There was no guarantee.** Run 5 wrote to the scratch dir because the prompt named a *relative* path, and an unoriented AGY resolves those against its own directory. Re-measured with absolute paths: a turn with **no workspace flag at all** read and wrote an absolute path outside its scratch dir. What the unoriented shape withheld was the model's knowledge of where the repository is — not its access to it. That stops nothing an injected instruction carrying an absolute path would do, and repository content is exactly where such an instruction would arrive.
+>
+> It did stop the intended use. A read-only turn reported its cwd as `~/.gemini/antigravity-cli/scratch`, so every relative path missed — leaving `/gemini:rescue` without `--write`, which `agents/gemini-rescue.md` documents for investigation, reading a scratch directory instead of the user's code. That regressed in v0.16.0, when read-only became the default and took the orientation flag with it.
+
+| Orientation flag | Model's reported cwd | Relative read | Absolute read/write |
+|---|---|---|---|
+| none | `~/.gemini/antigravity-cli/scratch` | fails | **works** |
+| `--add-dir <repo>` | the repository | works | works |
+| `--new-project` | the repository | works | works |
+
+4. **AGY has no read-only mode, and the plugin no longer implies one.** `--add-dir` and `--new-project` orient identically; neither withholds write. Since v0.16.4 a read-only turn takes `--add-dir` so it can do the job it is documented for, and the honest description of the difference between a read-only and a `--write` run on AGY is: **what the prompt asks for**, plus the workspace the run is bound to for relative paths. Not a capability boundary.
+
+**Changed in v0.16.0**: `--write` is no longer the subagent default (`agents/gemini-rescue.md`), and `--dangerously-skip-permissions` is gone. The MCP path already defaulted `write: false`; the two entry points now agree.
+
+**Residual, unchanged.** Nothing constrains where any AGY run may reach — runs 1 and 3 wrote outside the workspace, the correction above shows an unoriented run doing the same, and no flag on either engine prevents it. `--write` remains meaningful as the opt-in that says "edits are expected", and it is what the subagent and MCP defaults key off. It is not a sandbox. The real fix remains an engine-side path boundary.
+
+**Measured on AGY 1.1.13, 2026-08-17.** Six headless runs against a disposable git repository, prompt on stdin, `--output-format json`, matching how the plugin invokes the engine. AGY 1.1.12 fixed `--mode` being ignored in headless `-p` runs, which is what made `--mode plan` worth testing against conclusion 4 above. It does not survive the test.
+
+| `--mode plan` | `--disable-slash-commands` | Orientation | Action | Outcome |
+|---|---|---|---|---|
+| — | yes | `--add-dir` | edit tool → in workspace | wrote |
+| yes | yes | `--add-dir` | edit tool → in workspace | wrote |
+| yes | — | `--add-dir` | edit tool → in workspace | refused, asked for plan approval |
+| yes | — | `--add-dir` | edit tool → in workspace (repeat) | refused, reproduced |
+| yes | — | `--add-dir` | **shell command → in workspace** | **wrote, exit 0** |
+| yes | — | `--new-project` | edit tool → in workspace | refused, asked for plan approval |
+
+1. **Plan mode gates the edit tools; it does not gate the terminal.** Run 5 asked for `cmd /c echo … > probe-4.txt` and got it, with plan mode active, exit 0, and the file on disk. Runs 3, 4 and 6 refused the same write through the edit tool. That makes `--mode plan` a tool policy, not a write boundary — the same shape as `--sandbox` in the table above, and for the same reason it cannot be relied on: a prompt injection that asks for a shell command is not covered by it.
+2. **`--mode plan` is mutually exclusive with `--disable-slash-commands`.** Run 2 wrote the file and AGY said why on stderr: `warning: --mode plan has no effect while slash command expansion is disabled`. The plugin passes `--disable-slash-commands` on every AGY spawn from 1.1.9 up, because the prompt is raw user text at position 0 and a task beginning with `/` would otherwise be executed as an AGY command. Adopting plan mode means giving that up — to gain a policy run 5 already walked through. That warning is readable at all only because AGY 1.1.12 stopped swallowing startup diagnostics into the log file; below it, this combination failed silently.
+3. **Orientation does not change plan mode.** `--add-dir` and `--new-project` produced identical edit-tool refusals (runs 3 and 6), consistent with the orientation table above: these flags say where "here" is, and nothing else.
+
+Conclusion 4 above therefore stands unchanged on 1.1.13: **AGY still has no read-only mode.** `--mode plan` is tested and not adopted. The after-the-fact workspace comparison the review and task paths run (`lib/readonly-guard.mjs`, v0.18.0) remains the honest answer — it reports what a turn wrote, because nothing available prevents it from writing.
+
+**Re-measured on AGY 1.1.14, 2026-08-19.** Five headless runs, prompt on stdin, `--output-format json`, matching how the plugin invokes the engine. AGY 1.1.14's release notes say the setting that allows access outside your workspace "now grants only read access", which is aimed squarely at the residual below. It does not reach headless print mode.
+
+Every path lived under one disposable root on `D:\`, deliberately: this machine's `trustedWorkspaces` includes all of `C:\Users\<user>`, so a probe anywhere under the home directory would have measured that trust entry rather than AGY's workspace boundary.
+
+| Orientation | Action | Target | Outcome |
+|---|---|---|---|
+| `--new-project` | edit tool | outside the workspace | wrote, exit 0 |
+| `--new-project --sandbox` | shell command | outside the workspace | wrote, exit 0 |
+| none | edit tool | outside the workspace | wrote, exit 0 |
+| `--add-dir` (**the plugin's read-only shape**) | edit tool | outside the workspace | wrote, exit 0 |
+| `--new-project` | edit tool | in the workspace | wrote, exit 0 — positive control |
+
+1. **The residual stands, unchanged, on 1.1.14.** Every configuration wrote an absolute path outside the workspace it was bound to, including the shape the plugin uses for a read-only turn. Whatever setting the release note refers to, it is not what governs a headless `-p` run.
+2. **The control is why the other four rows can be read at all.** A run that does not write and a prompt that never asked look identical from the outside, and the last row is the one that fails if the probe is broken rather than if AGY is permissive.
+
+**Known limit of this measurement.** The machine's `settings.json` carries `"toolPermission": "always-proceed"`, and AGY offers no flag or environment variable to override a settings file, so that variable was not controlled. It does not explain the result — conclusion 2 of the 1.1.10 block already found headless print mode auto-approving without `--dangerously-skip-permissions` — but it does mean these rows describe a machine whose approval policy is permissive. Controlling it needs a temporary home directory holding a copy of `~/.gemini/oauth_creds.json` beside a minimal settings file, which is worth doing before any claim about AGY's *defaults* rather than about its behaviour here.
+
+**Re-measured on AGY 1.1.15, 2026-08-19.** The same five rows as the 1.1.14 block
+above, deliberately: changing the probe and the version in one step measures neither.
+Same disposable root on `D:\`, for the same reason — this machine's
+`trustedWorkspaces` covers all of `C:\Users\<user>`, so a probe under the home
+directory would measure that trust entry instead of AGY's workspace boundary.
+
+| Orientation | Action | Target | Outcome |
+|---|---|---|---|
+| `--new-project` | edit tool | outside the workspace | wrote, exit 0 |
+| `--new-project --sandbox` | shell command | outside the workspace | wrote, exit 0 |
+| none | edit tool | outside the workspace | wrote, exit 0 |
+| `--add-dir` (**the plugin's read-only shape**) | edit tool | outside the workspace | wrote, exit 0 |
+| `--new-project` | edit tool | in the workspace | wrote, exit 0 — positive control |
+
+1. **The residual stands, unchanged, on 1.1.15.** Four of four configurations wrote an
+   absolute path outside the workspace they were bound to, including the shape the
+   plugin uses for a read-only turn. This is the third consecutive AGY release the row
+   has survived (1.1.10, 1.1.14, 1.1.15), and
+   [antigravity-cli#749](https://github.com/google-antigravity/antigravity-cli/issues/749)
+   remains the open request.
+2. **The control wrote, so the four rows above can be read at all.** A boundary that
+   held and a prompt the model never acted on are the same observation from outside.
+
+**Seen once, not reproduced, and not a claim.** On the first pass the last two rows
+returned `status: ERROR` in the JSON envelope while writing the file and exiting 0.
+Re-run immediately with the same flags, both returned `SUCCESS` — so the cause is
+unknown and nothing here rests on it. It is written down because it points the wrong
+way for a caller: a turn that reports an error may still have changed the tree, so
+`status` cannot be read as "did this have an effect". The plugin does not read it that
+way — `lib/readonly-guard.mjs` compares the workspace after the turn and reports what
+was actually written — which is the same reason that guard exists.
+
+**The same limit as the 1.1.14 block applies and is still uncontrolled.** The machine's
+`settings.json` carries `"toolPermission": "always-proceed"`, and AGY offers no flag or
+environment variable that overrides a settings file. These rows describe this machine's
+behaviour, not AGY's defaults. Controlling it needs a temporary home holding a minimal
+settings file beside a credential, which is the next thing to do here before any claim
+about defaults.
+
+**Measured on gemini CLI 0.53.1, 2026-08-05**, against the same disposable repository and the same stdin transport, on a temporary API key. The gemini engine behaves the *opposite* way to AGY, so nothing above transfers between them.
+
+| `--yolo` | other flags | Action | Outcome |
+|---|---|---|---|
+| yes | — | edit tool → outside workspace | wrote |
+| — | — | edit tool → outside workspace | refused: "I do not have the necessary file write or shell command tools available" |
+| yes | `--sandbox` | edit tool → outside workspace | never started: `GEMINI_SANDBOX is true but failed to determine command for sandbox; install docker or podman` |
+| yes | — | edit tool → in-repo path | edited the repo file |
+| yes | — | shell command → in repo | ran, exit 0 |
+| — | `--approval-mode plan` | edit tool → in-repo path | exit 0, refused: "I am currently in Plan Mode and cannot modify source code directly" |
+| — | — (the plugin's read-only shape) | edit tool → in-repo path | blocked: `Unauthorized tool call: 'write_file' is not available to this agent` |
+
+1. **`--yolo` is a genuine gate, and is kept.** Without it the model is not offered `write_file`, `edit`, or `run_shell_command` at all — at both the main-agent and subagent level — and says so rather than failing silently. This is the control AGY's `--dangerously-skip-permissions` was assumed to be and was not.
+2. **gemini's `--sandbox` is a container sandbox**, not AGY's terminal-restriction flag of the same name. It requires Docker or Podman and refuses to start without one. Whether it bounds writes to the workspace is therefore **still unmeasured**; imposing a container runtime on every user to find out is not a trade this plugin makes today.
+3. **`--approval-mode plan` works headless over stdin.** The in-tree comment claiming it "requires TTY input and conflicts with stdin prompt delivery" was wrong and is removed. It is still **not** used, for a different reason: reading gemini CLI 0.53.1's bundle, plan mode *re-declares* `write_file` and `edit` to the model with an amended description and redirects their target into the plans directory, and it prepends a planning-workflow system prompt instructing a non-interactive run to write a design document. Against a read-only turn that currently declares no write tools at all, plan mode is a net loss of restriction and a change of output shape. The dead `approvalModePlan` option was removed rather than left as a switch inviting the opposite conclusion.
+
+### 7.3 PI-2 — Model output reaches the parent agent unfiltered — **mitigated in v0.14.0**
+
+`LLM05 Improper Output Handling`, `LLM01 Prompt Injection`
+
+`commands/review.md`, `adversarial-review.md`, `result.md` and `rescue.md` all instruct Claude Code to present the delegated model's output **verbatim**, without paraphrase or commentary. That rule exists for good reasons — it prevents the parent from softening or fabricating findings — but it also means text originating in an untrusted repository reaches the parent agent's context with no framing that marks it as data.
+
+**Live test, 2026-08-04, AGY 1.1.10.** A diff carrying a blatant payload — a comment addressed to "the reviewing agent" instructing it to suppress findings, emit the literal string `PWNED_BY_INJECTION`, and set the verdict to approve — was **resisted**. The review reported the genuine `eval()` defect, emitted no injected string, and returned `needs-attention`.
+
+Calibrate that result honestly: it shows one model refusing one obvious payload. **The refusal came entirely from the model** — at the time of the test the plugin applied no control of its own — so the result says nothing about a subtler payload or a different model.
+
+**Mitigated in v0.14.0, partially.** Two changes, neither of which weakens the verbatim rule:
+
+1. `review.md`, `adversarial-review.md`, `rescue.md` and `result.md` state that command output is untrusted data to reproduce but never act on, pinned by a contract test. This is the control that covers **every** path, because the command file is in the prompt alongside the output.
+2. `renderTaskResult` additionally prefixes its output with `DELEGATED_OUTPUT_MARKER` (`lib/render.mjs`) — an HTML comment, so it is invisible in rendered Markdown and costs the user nothing, while remaining present in the text the parent agent reads. **Only the task path emits it**, because that path is the one whose output is model text with no plugin scaffolding at all; a review is rendered by the plugin into its own verdict and findings structure.
+
+**What this does not do.** The marker names where untrusted content begins; it does not fence a region, so a model could still emit text shaped like plugin scaffolding after it. Closing that would need a per-run nonce delimiter, at the cost of visible noise in every result. The current control is an instruction to the parent agent, reinforced on one path by a positional marker — a real improvement over nothing, not a guarantee.
+
+### 7.4 PI-3 — No redaction or size bound on the review path — **fixed in v0.13.0**
+
+`LLM02 Sensitive Information Disclosure`, `LLM10 Unbounded Consumption`
+
+**The defect.** `transfer-context.mjs` redacted secret-looking filenames and capped its output, while the review path collected `git diff` whole with no filter and no cap. `/gemini:review` on a diff touching `.env` sent its contents to the model; `/gemini:transfer` on the same diff redacted them. Untracked files were worse — `formatUntrackedFile` read them in full, so a new untracked `.env` was sent whole.
+
+**The fix.** Detection moved to `lib/secrets.mjs`, shared by both paths. `redactSecretsFromDiff` splits a unified diff on its `diff --git` boundaries and withholds the body of any secret-looking file, keeping the header so the review still knows the file changed. `formatUntrackedFile` applies the same check before reading. A 400,000-character cap bounds the payload, and truncation is announced inside the content so the model reports it — a silently truncated review that returns "looks good" about code it never saw is a worse failure than an expensive one.
+
+**Widened while fixing.** The inherited pattern was anchored at `^\.env`, so it matched `.env` and `.env.production` but not `prod.env` or `staging.env`. Both paths now catch those.
+
+**Still true**: detection is filename-based. A credential pasted into `config.js` is not redacted on either path, and nothing here should be relied on as a secret scanner.
+
+**Reopened and closed again for the size bound itself.** The `LLM10` half of this section claimed too much. The 400,000-character cap was spent front-to-back, so it did not bound consumption fairly — it decided *which files were reviewed at all*, by position. Measured on a 5,200-line `data/questions.json` edit beside one tracked source change and three untracked new files: the cap was reached inside the data file, and the entire `## Untracked Files` section plus the tracked `src/quiz.ts` change never reached the model. The review returned `approve` with `No material findings` over roughly 8% of the change. "Truncation is announced inside the content so the model reports it" was the whole mitigation, and it depended on a model reading a notice at character 400,000 and choosing to relay it; nothing told the plugin, so nothing could warn the user or stop the verdict. The budget is now shared per file (`lib/git.mjs`), so no single file can evict another; the notice leads the payload instead of trailing it; `collectReviewContext` returns `truncated` with the affected filenames; and a truncated review is never recorded as `approve` (`gemini-companion.mjs`), which also makes the 7.5 gate block rather than pass it. Separately, `git diff` ran with spawnSync's 1 MiB default buffer, so a diff large enough to need any of this aborted the review with a raw `ENOBUFS` before the cap applied at all.
+
+**Reopened and closed again for symlinks.** The 0.13.0 fix routed `formatUntrackedFile` through the same filename check, but the name it checks is the *link* name, which whoever plants the link chooses. An untracked symlink called `notes.txt` pointing at `~/.ssh/id_rsa` passed the check, and `readFileSync` followed it — the review then carried key material from outside the repository. The reachable route is 7.2's own output: a write-capable delegated task creates the link, a later review or the 7.5 gate reads through it. `formatUntrackedFile` now resolves any symlink with `fs.realpathSync.native` and skips it when the target falls outside the workspace, so a review only ever carries content from the tree being reviewed. In-repo aliases still inline normally, and broken links still report as broken.
+
+**Also filename-based, but only for reporting.** `redactSecretsFromDiff` used to read the redacted file's name off the `diff --git a/P b/P` header, which is ambiguous once `P` contains a space — for `a b/c.env` it reported `c.env b/a b/c.env`. Redaction was never affected (the check runs on the final path segment, which survives either misparse), but the list shown to the user was wrong. The b-side path now comes from the unambiguous `+++ b/<path>` line, with the header kept as a fallback for diffs that have none.
+
+### 7.5 PI-4 — Automatic exposure via the stop-review gate (Low)
+
+`LLM01 Prompt Injection`
+
+`stop-review-gate-hook.mjs` runs a review when a Claude Code turn stops, so repository content reaches a model without any explicit user action. Impact is limited: the gate is read-only and fails open, so a manipulated verdict cannot block work — but it widens the window in which untrusted content is sent automatically.
+
+### 7.6 OWASP Top 10 for LLM Applications (2025) coverage
+
+| ID | Applies | Where |
+|---|---|---|
+| LLM01 Prompt Injection | **Yes** | 7.2, 7.3, 7.5 |
+| LLM02 Sensitive Information Disclosure | **Yes** | 7.4 |
+| LLM03 Supply Chain | Partial | Plugin installs by git clone from a marketplace; version pinning is documented in the README. No lockfile for the delegated CLIs themselves |
+| LLM04 Data and Model Poisoning | No | The plugin neither trains nor fine-tunes |
+| LLM05 Improper Output Handling | **Yes** | 7.3 |
+| LLM06 Excessive Agency | **Yes** | 7.2 |
+| LLM07 System Prompt Leakage | Low | Prompt templates ship in `prompts/` and are public by design |
+| LLM08 Vector and Embedding Weaknesses | No | No retrieval or embedding store |
+| LLM09 Misinformation | Accepted | A review may be wrong; output is advisory and always shown to a human |
+| LLM10 Unbounded Consumption | Partial | AGY spawn timeout and `--print-timeout` bound a run; the review diff itself is unbounded (7.4) |
+
+### 7.7 Priority
+
+1. **7.2** — the only item where a successful injection reaches the filesystem. `--write` is opt-in as of v0.16.0, which was half the mitigation; the other half, an engine-side path boundary, still does not exist to adopt. Re-test `--sandbox` on each AGY release — if it grows a filesystem scope, this becomes closable. On the gemini side the open question is different: its `--sandbox` may already be a real boundary, but it needs a container runtime, so the question is whether to measure it and offer it as an opt-in for users who have one.
+2. ~~**7.4**~~ — **fixed in v0.13.0**; detection is shared between both paths and the review payload is bounded.
+3. ~~**7.3**~~ — **mitigated in v0.14.0**; marker plus a parent-agent rule. A nonce-delimited region remains available if the residual is ever judged worth the noise.
+4. **7.5** — accept, or make the gate opt-in per repository.
+
+---
+
+# File: docs/COMPARISON.md
+
+# Gemini / Antigravity Plugin Comparison
+
+`gemini-plugin-cc` is a Claude Code-native companion bridge for developers who want Gemini CLI where it is still available, plus an explicit Antigravity CLI (`agy`) path during Google's Gemini CLI transition.
+
+This project is not an AGY-only replacement or a multi-host plugin. It focuses on Claude Code workflows with richer review behavior and defensive handling around real CLI failure modes.
+
+## The Landscape, Measured
+
+Measured 2026-08-20 from each project's README and repository tree. Their code was not
+read, so every feature attributed to another project is that project's own description.
+`pushedAt` is the last code push; GitHub's `updatedAt` also moves on metadata changes
+such as a new star, which makes an untouched repository look current.
+
+| Project | Stars | Last push | Latest release | Engine | Transport |
+|---|---|---|---|---|---|
+| [thepushkarp/cc-gemini-plugin](https://github.com/thepushkarp/cc-gemini-plugin) | 71 | 2026-04-14 | none | Gemini CLI | bridge script |
+| [abiswas97/gemini-plugin-cc](https://github.com/abiswas97/gemini-plugin-cc) | 48 | 2026-04-19 | v1.0.1 | Gemini CLI | ACP |
+| [sakibsadmanshajib/gemini-plugin-cc](https://github.com/sakibsadmanshajib/gemini-plugin-cc) | 24 | 2026-05-22 | v1.0.1, archived | Gemini CLI | ACP |
+| [sakibsadmanshajib/antigravity-plugin](https://github.com/sakibsadmanshajib/antigravity-plugin) | 19 | 2026-05-22 | none | AGY only | `agy --print` |
+| [m-ghalib/gemini-plugin-cc](https://github.com/m-ghalib/gemini-plugin-cc) | 18 | 2026-04-24 | v0.1.0 | Gemini CLI, setup installs 0.38.2 | ACP |
+| **this project** | 9 | 2026-08-19 | v0.22.2 | Gemini CLI **and** AGY | direct spawn, structured JSON |
+
+| Surface | Slash commands | MCP tools | Skills | Test files (`*.test.*`) |
+|---|---|---|---|---|
+| **this project** | 8 | **6** | 3 | 36 |
+| abiswas97 | 8 | 0 | 3 | 13 |
+| m-ghalib | 7 | 0 | 3 | 12 |
+| sakibsadmanshajib/antigravity-plugin | 6 | 0 | 0 | 12 |
+| thepushkarp | 1 | 0 | 0 | 1 |
+
+A test file count measures files, not assertions: it says nothing about whether any of
+these suites, this one included, would fail if the behaviour they cover broke.
+
+No other project in the table declares an MCP server — no `.mcp.json`, and no
+`mcpServers` key in `plugin.json`. Their command surface is reachable by a person typing a
+slash command, not by another program calling a tool.
+
+Every other project's last code push predates 2026-06-18, the day consumer OAuth for
+Gemini CLI stopped working — measured here on 2026-08-19: without an API key the CLI
+now answers `API key not valid`. That is a statement about dates, not a claim that any of them
+is broken: the projects documenting `GOOGLE_API_KEY` or application-default credentials
+may still authenticate normally.
+
+Every project here descends from `openai/codex-plugin-cc` by its own attribution, this
+one included, except `thepushkarp/cc-gemini-plugin`, whose README names no upstream. The command and skill sets are therefore
+close by inheritance rather than by convergence: `abiswas97` ships the same three skill
+directories this project does, and `m-ghalib` the same three but for a prompting skill
+renamed `gemini-3-prompting`. The columns that actually differ are MCP tools and tests.
+
+Three of the others lead somewhere this one does not go.
+`sakibsadmanshajib/antigravity-plugin` installs into Codex CLI, `agy` itself and
+standalone `npx`. `thepushkarp/cc-gemini-plugin` inlines globbed files into the prompt
+for long-context delegation, and its one-command surface is easier to learn than eight.
+`abiswas97/gemini-plugin-cc` ships `/gemini:task` for one-off delegation, where this
+project spends its eighth command on `/gemini:transfer` instead. `m-ghalib` is the
+closest neighbour of all: same lineage, same skills, one command fewer, and the longest
+README of the five others at 318 lines.
+
+### One Deliberate Difference
+
+`m-ghalib/gemini-plugin-cc` ships the same stop-time review gate this project does. Both
+descend from `openai/codex-plugin-cc`, and the two `hooks.json` files are identical apart
+from the description line. The gates fail in opposite directions.
+
+That project's README says its gate blocks when Gemini cannot be reached. This one fails
+open (`plugins/gemini/scripts/stop-review-gate-hook.mjs:110`): it emits `proceed` with a
+warning that names the command to run by hand. Both are defensible, and the choice is
+about which failure a user can act on. After the OAuth change, failing closed traps every
+user whose credentials lapsed at the exact moment they are trying to stop working — and a
+gate that cannot reach the reviewer cannot tell a credential problem from a real finding.
+
+## Positioning
+
+| Need | Best fit |
+|---|---|
+| Claude Code-native Gemini / AGY bridge | Use this plugin. |
+| Pragmatic and adversarial review inside Claude Code | Use `/gemini:review` or `/gemini:adversarial-review`. |
+| Gemini CLI model aliases, JSON output, and stdin prompt delivery | Use the Gemini engine where your account still supports Gemini CLI. |
+| Antigravity CLI fallback during migration | Use `--engine agy`. |
+| AGY-only, multi-host, or standalone `npx` workflows | Use an AGY-only multi-host plugin instead. |
+
+## What This Plugin Emphasizes
+
+- Claude Code-native `/gemini:*` slash commands.
+- MCP tools (`gemini_review`, `gemini_adversarial_review`, `gemini_rescue`, and job
+  status / result / cancel) so another agent can call the bridge, not only a person.
+- Standard and adversarial code review over the current diff or branch.
+- Background jobs with status, result, and cancel flows.
+- Gemini model aliases, graceful model fallback, and transient review retry.
+- AGY transcript recovery for `agy --print` non-pipe behavior.
+- Safer stdin prompt delivery on the Gemini engine.
+
+## What This Plugin Does Not Claim
+
+- It is not a universal multi-host Antigravity plugin.
+- It does not claim full feature parity with Antigravity CLI.
+- It does not implement or claim ACP support for AGY.
+- It does not publish an npm / `npx` install path.
+
+## Recommended GitHub Topics
+
+`claude-code`, `claude-code-plugin`, `gemini-cli`, `antigravity-cli`, `agy`, `google-gemini`, `google-antigravity`, `code-review`, `adversarial-review`, `ai-code-review`, `task-delegation`, `ai-coding-agent`, `agentic-coding`, `developer-tools`, `cli`, `nodejs`, `javascript`, `llm`, `plugins`
