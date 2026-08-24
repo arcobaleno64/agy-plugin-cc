@@ -46,14 +46,20 @@ one scorer grades all of them.
 > review prompt with the diff embedded and no tools — which is exactly the plugin's own
 > non-deep review. See the `*.shallow` cells.
 >
-> Two further limits on reading any lift here. Its sign is set by corpus composition:
-> the per-case deltas on the current five cases run from −20 to +17 for both engines,
-> so the mean says as much about which cases exist as about the harness. And exactly
-> one case — `repo-context` — plants defects that are repository-scoped rather than
-> file-scoped (`file: "*"` in its `ground-truth.json`), which means the capability the
-> harness axis exists to measure is exercised by a single case. Adding cases of that
-> kind is what would make the axis a measurement; adding repeats is not — see finding
-> 4 below on why the spread statistic cannot shrink.
+> One further limit on reading any lift here: its sign is set by corpus composition.
+> Across the original five cases the per-case deltas run from −20 to +17 on both
+> engines, so a mean over them says as much about which cases exist as about the
+> harness. Adding cases that exercise the capability is what makes the axis a
+> measurement; adding repeats is not — see finding 4 below on why the spread statistic
+> cannot shrink.
+>
+> `caller-contract` and `stale-duplicate` were added for exactly that, joining
+> `repo-context` as the cases whose planted defects are repository-scoped (`file: "*"`).
+> They are the first evidence on this board that exploration does anything at all:
+> on `caller-contract`, `agy.model` scores **0** — it misses both defects, because the
+> diff is a clean refactor of `findUser` and says nothing about the two callers left on
+> the old contract — while `agy.deep` scores **68**. On `stale-duplicate` the same pair
+> is 43 → 67. Both far outside any band on this board.
 
 The adversarial cells are a third axis rather than more entries on the harness one,
 because the two prompts are not interchangeable: `prompts/review.md` asks for a

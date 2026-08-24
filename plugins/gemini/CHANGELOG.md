@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- **Two repository-scoped corpus cases, and the first evidence on this board that
+  exploration does anything.** The harness axis existed to measure defects a reviewer
+  can only find by looking beyond the diff, and exactly one case
+  (`repo-context`) planted any. `caller-contract` changes `findUser`'s return shape —
+  a clean refactor read on its own — while two callers the diff never mentions keep the
+  old contract, one of them an `if (user && user.role === "admin")` check that is now
+  always truthy. `stale-duplicate` fixes a crash in `src/api/v2/validate.js` while an
+  identical `v1` copy keeps it, and adds a worker reading a `config.maxBatch` that
+  `config/default.json` does not define.
+
+  Measured on agy 1.1.19, three samples: `caller-contract` is **0 → 68** from
+  `agy.model` to `agy.deep` — the single-shot cell misses both defects outright — and
+  `stale-duplicate` is **43 → 67**. Both gaps are far outside any band on the board,
+  against a whole-corpus harness lift of −4.4. The negative lift was corpus
+  composition, not a finding about exploration.
+
+  The gemini cells could not be recorded on either case, and the reason is no longer
+  confined to heavy prompts: `gemini.model` on `caller-contract`'s 21-line diff timed
+  out twice at the 180s cap, on a case `agy.model` answers in ~25s, hours after the same
+  cell recorded all five original cases. agy is unaffected throughout. Field notes
+  updated; codex cells not attempted this round.
+
 - **The harness lift now says what it actually spans.** The number is a
   `model → agentic` composite delta presented as the harness's contribution, and it
   changes three things at once: the prompt (the neutral 33-line bench prompt versus the

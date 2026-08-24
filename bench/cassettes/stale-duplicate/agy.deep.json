@@ -1,0 +1,86 @@
+{
+  "caseId": "stale-duplicate",
+  "cell": "agy.deep",
+  "recordedAt": "2026-08-24T14:43:50.543Z",
+  "verdict": "needs-attention",
+  "summary": "Missing maxBatch configuration causes worker chunking to evaluate to NaN, producing empty chunks and losing all batch items.",
+  "findings": [
+    {
+      "severity": "critical",
+      "title": "Undefined maxBatch in config causes chunking loop failure and data loss",
+      "body": "src/worker.js relies on config.maxBatch to slice batch IDs into chunks, but config/default.json does not define maxBatch. In JavaScript, accessing this undefined property causes i + config.maxBatch to produce NaN. As a result, ids.slice(0, NaN) returns [] and i becomes NaN, terminating the loop after a single iteration and returning [[]] as chunks regardless of the input.",
+      "file": "src/worker.js",
+      "line_start": 7,
+      "line_end": 9,
+      "confidence": 1,
+      "recommendation": "Define maxBatch in config/default.json and specify a fallback or validation in src/worker.js (e.g., const maxBatch = config.maxBatch ?? 100)."
+    }
+  ],
+  "latencyMs": 37088,
+  "engineVersion": "1.1.19",
+  "engineObserved": "agy",
+  "samples": [
+    {
+      "verdict": "needs-attention",
+      "summary": "Missing maxBatch configuration causes drain() in worker.js to slice with undefined bounds and drop all items.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Undefined config.maxBatch causes chunking failure and data loss in worker.js",
+          "body": "config.maxBatch is referenced in src/worker.js (lines 7-9) to chunk validated batch IDs, but maxBatch is not defined in config/default.json. Consequently, config.maxBatch is undefined at runtime, causing ids.slice(i, i + config.maxBatch) to evaluate to ids.slice(0, NaN) which returns [] and i += config.maxBatch to become NaN. This terminates the loop after a single iteration and silently discards all IDs.",
+          "file": "src/worker.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 1,
+          "recommendation": "Add the maxBatch property to config/default.json and specify a fallback in src/worker.js (e.g., const maxBatch = config.maxBatch || 100)."
+        }
+      ],
+      "latencyMs": 37566
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Worker chunking fails due to undefined config.maxBatch dropping all batch items, and legacy v1 validate logic remains a stale duplicate unpatched against missing IDs.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Undefined config.maxBatch causes chunking failure and data loss in worker",
+          "body": "src/worker.js references config.maxBatch in the chunking loop at lines 7-9, but maxBatch is not defined in config/default.json. Because config.maxBatch is undefined, ids.slice(0, NaN) yields an empty array and i becomes NaN, immediately terminating the loop and returning chunks: [[]], discarding all items in the batch.",
+          "file": "src/worker.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 1,
+          "recommendation": "Define maxBatch in config/default.json and add fallback validation in src/worker.js (e.g. const maxBatch = Number(config.maxBatch) || 100)."
+        },
+        {
+          "severity": "medium",
+          "title": "Stale duplicate validation in v1 missing null-safe filtering for batch items",
+          "body": "The fix to skip entries with missing IDs was applied to src/api/v2/validate.js, but src/api/v1/validate.js remains a stale duplicate that calls batch.map((item) => String(item.id)). If legacy clients send batch items that are null, undefined, or missing an id property, v1 will throw a TypeError and abort processing the entire batch.",
+          "file": "src/api/v1/validate.js",
+          "line_start": 10,
+          "line_end": 10,
+          "confidence": 0.95,
+          "recommendation": "Update src/api/v1/validate.js to filter out null or missing id items matching v2, or consolidate shared validation logic into a common helper."
+        }
+      ],
+      "latencyMs": 48340
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Missing maxBatch configuration causes worker chunking to evaluate to NaN, producing empty chunks and losing all batch items.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Undefined maxBatch in config causes chunking loop failure and data loss",
+          "body": "src/worker.js relies on config.maxBatch to slice batch IDs into chunks, but config/default.json does not define maxBatch. In JavaScript, accessing this undefined property causes i + config.maxBatch to produce NaN. As a result, ids.slice(0, NaN) returns [] and i becomes NaN, terminating the loop after a single iteration and returning [[]] as chunks regardless of the input.",
+          "file": "src/worker.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 1,
+          "recommendation": "Define maxBatch in config/default.json and specify a fallback or validation in src/worker.js (e.g., const maxBatch = config.maxBatch ?? 100)."
+        }
+      ],
+      "latencyMs": 37088
+    }
+  ],
+  "raw": "{\n  \"review\": \"Review\",\n  \"target\": {\n    \"mode\": \"working-tree\",\n    \"label\": \"working tree diff\",\n    \"explicit\": true\n  },\n  \"engine\": \"agy\",\n  \"gemini\": {\n    \"status\": 0,\n    \"stdout\": \"{\\n  \\\"verdict\\\": \\\"needs-attention\\\",\\n  \\\"summary\\\": \\\"Missing maxBatch configuration causes worker chunking to evaluate to NaN, producing empty chunks and losing all batch items.\\\",\\n  \\\"findings\\\": [\\n    {\\n      \\\"severity\\\": \\\"critical\\\",\\n      \\\"title\\\": \\\"Undefined maxBatch in config causes chunking loop failure and data loss\\\",\\n      \\\"body\\\": \\\"src/worker.js relies on config.maxBatch to slice batch IDs into chunks, but config/default.json does not define maxBatch. In JavaScript, accessing this undefined property causes i + config.maxBatch to produce NaN. As a result, ids.slice(0, NaN) returns [] and i becomes NaN, terminating the loop after a single iteration and returning [[]] as chunks regardless of the input.\\\",\\n      \\\"file\\\": \\\"src/worker.js\\\",\\n      \\\"line_start\\\": 7,\\n      \\\"line_end\\\": 9,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Define maxBatch in config/default.json and specify a fallback or validation in src/worker.js (e.g., const maxBatch = config.maxBatch ?? 100).\\\"\\n    }\\n  ],\\n  \\\"next_steps\\\": [\\n    \\\"Add maxBatch to config/default.json\\\",\\n    \\\"Add unit tests covering drain() in src/worker.js with various batch sizes\\\"\\n  ]\\n}\",\n    \"stderr\": \"\"\n  },\n  \"result\": {\n    \"verdict\": \"needs-attention\",\n    \"summary\": \"Missing maxBatch configuration causes worker chunking to evaluate to NaN, producing empty chunks and losing all batch items.\",\n    \"findings\": [\n      {\n        \"severity\": \"critical\",\n        \"title\": \"Undefined maxBatch in config causes chunking loop failure and data loss\",\n        \"body\": \"src/worker.js relies on config.maxBatch to slice batch IDs into chunks, but config/default.json does not define maxBatch. In JavaScript, accessing this undefined property causes i + config.maxBatch to produce NaN. As a result, ids.slice(0, NaN) returns [] and i becomes NaN, terminating the loop after a single iteration and returning [[]] as chunks regardless of the input.\",\n        \"file\": \"src/worker.js\",\n        \"line_start\": 7,\n        \"line_end\": 9,\n        \"confidence\": 1,\n        \"recommendation\": \"Define maxBatch in config/default.json and specify a fallback or validation in src/worker.js (e.g., const maxBatch = config.maxBatch ?? 100).\"\n      }\n    ],\n    \"next_steps\": [\n      \"Add maxBatch to config/default.json\",\n      \"Add unit tests covering drain() in src/worker.js with various batch sizes\"\n    ]\n  }\n}\n"
+}

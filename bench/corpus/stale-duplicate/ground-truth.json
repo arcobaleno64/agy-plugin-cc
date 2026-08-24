@@ -1,0 +1,35 @@
+{
+  "title": "stale-duplicate — the fix landed in one copy, and the new code reads a key nobody defined",
+  "notes": "The diff fixes a crash in src/api/v2/validate.js and adds src/worker.js. Both planted defects are invisible from the diff alone: the identical v1 copy that still crashes is never mentioned, and config/default.json — which has no maxBatch — is not part of the change. file is \"*\" so a finding citing any file matches on keyword.",
+  "planted": [
+    {
+      "id": "v1-copy-still-crashes",
+      "category": "duplication",
+      "file": "*",
+      "line_start": 1,
+      "line_end": 1,
+      "severity": "high",
+      "match": {
+        "keywords": ["v1", "api/v1", "duplicate", "copy", "same bug", "not applied", "legacy", "both versions"]
+      }
+    },
+    {
+      "id": "undefined-config-key",
+      "category": "config",
+      "file": "*",
+      "line_start": 1,
+      "line_end": 1,
+      "severity": "high",
+      "match": {
+        "keywords": ["maxbatch", "config", "default.json", "undefined", "not defined", "missing key", "nan"]
+      }
+    }
+  ],
+  "allowed_extras": [
+    {
+      "id": "worker-unreferenced",
+      "file": "*",
+      "match": { "keywords": ["worker.js", "never imported", "not wired", "unused module", "no entry point"] }
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "caseId": "caller-contract",
+  "cell": "agy.model",
+  "recordedAt": "2026-08-24T14:38:00.137Z",
+  "verdict": "approve",
+  "summary": "Refactored findUser to return a result envelope for successful and not-found lookups with no internal defects in the diff.",
+  "findings": [],
+  "latencyMs": 16831,
+  "engineVersion": "1.1.19",
+  "engineObserved": null,
+  "samples": [
+    {
+      "verdict": "approve",
+      "summary": "The refactored user lookup cleanly returns a result envelope for success and not-found cases without material defects.",
+      "findings": [],
+      "latencyMs": 19417
+    },
+    {
+      "verdict": "approve",
+      "summary": "The function correctly refactors findUser to return a structured result envelope with no material defects.",
+      "findings": [],
+      "latencyMs": 17003
+    },
+    {
+      "verdict": "approve",
+      "summary": "Refactored findUser to return a result envelope for successful and not-found lookups with no internal defects in the diff.",
+      "findings": [],
+      "latencyMs": 16831
+    }
+  ],
+  "raw": "{\"conversation_id\":\"3e725cea-1e31-455f-bc8e-2b11b217862b\",\"status\":\"SUCCESS\",\"response\":\"{\\n  \\\"verdict\\\": \\\"approve\\\",\\n  \\\"summary\\\": \\\"Refactored findUser to return a result envelope for successful and not-found lookups with no internal defects in the diff.\\\",\\n  \\\"findings\\\": [],\\n  \\\"next_steps\\\": [\\n    \\\"Update callers of findUser to consume the new result envelope structure instead of direct user objects or null.\\\"\\n  ]\\n}\\n\",\"duration_seconds\":10.6336153,\"num_turns\":1,\"usage\":{\"input_tokens\":18940,\"output_tokens\":1618,\"thinking_tokens\":1534,\"cache_read_tokens\":0,\"total_tokens\":20558}}\n"
+}

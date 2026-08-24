@@ -1,0 +1,35 @@
+{
+  "title": "caller-contract — a return shape changed and its callers were not",
+  "notes": "The diff touches only src/store.js, and read on its own it is a clean refactor: findUser now returns a result envelope instead of the record or null. Both planted defects live in files the diff never mentions, so a single-shot review over the diff cannot reach them — it has to go and read the callers. file is \"*\" so a finding citing any file matches on keyword.",
+  "planted": [
+    {
+      "id": "profile-caller-broken",
+      "category": "contract",
+      "file": "*",
+      "line_start": 1,
+      "line_end": 1,
+      "severity": "high",
+      "match": {
+        "keywords": ["profile", "profileroute", "caller", "callers", "call site", "call sites", "not updated", "still expects", "return shape", "envelope"]
+      }
+    },
+    {
+      "id": "admin-check-always-passes",
+      "category": "auth",
+      "file": "*",
+      "line_start": 1,
+      "line_end": 1,
+      "severity": "critical",
+      "match": {
+        "keywords": ["requireadmin", "admin", "role", "always truthy", "always true", "authorization", "auth bypass", "forbidden"]
+      }
+    }
+  ],
+  "allowed_extras": [
+    {
+      "id": "no-migration-note",
+      "file": "*",
+      "match": { "keywords": ["breaking change", "no callers updated in this commit", "semver"] }
+    }
+  ]
+}

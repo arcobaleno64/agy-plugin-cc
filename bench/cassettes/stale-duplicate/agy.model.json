@@ -1,0 +1,65 @@
+{
+  "caseId": "stale-duplicate",
+  "cell": "agy.model",
+  "recordedAt": "2026-08-24T14:41:46.366Z",
+  "verdict": "needs-attention",
+  "summary": "The batch chunking loop in drain() unsafely assumes config.maxBatch is a positive integer, creating a risk of an infinite loop or data loss.",
+  "findings": [
+    {
+      "severity": "high",
+      "title": "Unvalidated loop step risks infinite loop",
+      "body": "In src/worker.js, drain() increments the loop index via `i += config.maxBatch` without verifying that config.maxBatch is a positive integer. If config.maxBatch is 0 or negative, non-empty batches trigger an infinite loop that hangs the Node.js event loop. If config.maxBatch is undefined or NaN, i becomes NaN and the loop terminates prematurely, returning incomplete or empty chunks.",
+      "file": "src/worker.js",
+      "line_start": 7,
+      "line_end": 9,
+      "confidence": 0.9,
+      "recommendation": "Validate that config.maxBatch is an integer greater than 0 before entering the loop (or supply a safe default/throw a configuration error if invalid)."
+    }
+  ],
+  "latencyMs": 41932,
+  "engineVersion": "1.1.19",
+  "engineObserved": null,
+  "samples": [
+    {
+      "verdict": "needs-attention",
+      "summary": "The batch chunking loop in worker.js unsafely assumes config.maxBatch is a positive integer, risking an infinite loop or silent data loss.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Unsafe loop increment with unvalidated config.maxBatch",
+          "body": "In drain(), the chunking loop uses `i += config.maxBatch` without verifying that `config.maxBatch` is a positive integer. If `config.maxBatch` is 0 or negative, the loop will never terminate and will freeze the process. If `config.maxBatch` is undefined or NaN, `i` becomes `NaN`, causing `i < ids.length` to evaluate to false and silently returning empty chunks.",
+          "file": "src/worker.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 0.95,
+          "recommendation": "Validate that `config.maxBatch` is a positive integer greater than 0 before running the loop, or provide a safe default value."
+        }
+      ],
+      "latencyMs": 27768
+    },
+    {
+      "verdict": "approve",
+      "summary": "The changes safely filter out items with missing or nullish IDs and correctly chunk the validated IDs for queue processing.",
+      "findings": [],
+      "latencyMs": 35069
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "The batch chunking loop in drain() unsafely assumes config.maxBatch is a positive integer, creating a risk of an infinite loop or data loss.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Unvalidated loop step risks infinite loop",
+          "body": "In src/worker.js, drain() increments the loop index via `i += config.maxBatch` without verifying that config.maxBatch is a positive integer. If config.maxBatch is 0 or negative, non-empty batches trigger an infinite loop that hangs the Node.js event loop. If config.maxBatch is undefined or NaN, i becomes NaN and the loop terminates prematurely, returning incomplete or empty chunks.",
+          "file": "src/worker.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 0.9,
+          "recommendation": "Validate that config.maxBatch is an integer greater than 0 before entering the loop (or supply a safe default/throw a configuration error if invalid)."
+        }
+      ],
+      "latencyMs": 41932
+    }
+  ],
+  "raw": "{\"conversation_id\":\"042d88c2-6819-4503-b5f8-b7199a81d7b6\",\"status\":\"SUCCESS\",\"response\":\"{\\n  \\\"verdict\\\": \\\"needs-attention\\\",\\n  \\\"summary\\\": \\\"The batch chunking loop in drain() unsafely assumes config.maxBatch is a positive integer, creating a risk of an infinite loop or data loss.\\\",\\n  \\\"findings\\\": [\\n    {\\n      \\\"severity\\\": \\\"high\\\",\\n      \\\"title\\\": \\\"Unvalidated loop step risks infinite loop\\\",\\n      \\\"body\\\": \\\"In src/worker.js, drain() increments the loop index via `i += config.maxBatch` without verifying that config.maxBatch is a positive integer. If config.maxBatch is 0 or negative, non-empty batches trigger an infinite loop that hangs the Node.js event loop. If config.maxBatch is undefined or NaN, i becomes NaN and the loop terminates prematurely, returning incomplete or empty chunks.\\\",\\n      \\\"file\\\": \\\"src/worker.js\\\",\\n      \\\"line_start\\\": 7,\\n      \\\"line_end\\\": 9,\\n      \\\"confidence\\\": 0.9,\\n      \\\"recommendation\\\": \\\"Validate that config.maxBatch is an integer greater than 0 before entering the loop (or supply a safe default/throw a configuration error if invalid).\\\"\\n    }\\n  ],\\n  \\\"next_steps\\\": [\\n    \\\"Add validation or a safe fallback for config.maxBatch in src/worker.js before chunking.\\\",\\n    \\\"Add unit tests for drain() verifying chunking behavior with various batch sizes and configuration values.\\\"\\n  ]\\n}\\n\",\"duration_seconds\":37.690064,\"num_turns\":1,\"usage\":{\"input_tokens\":19177,\"output_tokens\":11512,\"thinking_tokens\":11251,\"cache_read_tokens\":0,\"total_tokens\":30689}}\n"
+}
