@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+## 0.22.3 — 2026-08-24 — What the plugin actually handed its caller
+
+Both entries are the same shape: the plugin produced something, a consumer needed
+it, and nobody had checked that the consumer could read it. One was a field that was
+never written; the other was a whole payload that was written and then rejected.
+
+- **The stop-review gate emitted a `decision` the Stop schema rejects.** Letting a
+  stop through means *omitting* `decision` — the schema accepts only
+  `"approve"` | `"block"` — and three of the gate's four exits wrote
+  `{"decision": "proceed"}`. Claude Code answered with
+  `Hook JSON output validation failed — (root): Invalid input` and acted on none of
+  the payload, so on those three paths the gate had never delivered anything: not the
+  silent pass, not the clean verdict, and not the `systemMessage` that the fail-open
+  branch exists specifically to make visible when the review could not run. The
+  `needs-attention` path uses a legal value, was not reached in the observed failure,
+  and is unchanged.
+
+  The two stop-gate tests read `decision.decision === "proceed"` straight off the
+  implementation, which is why they stayed green while the output was being thrown
+  away downstream — they pinned the value the hook happened to write, not the
+  contract it has to satisfy. They now assert that no `decision` key is present.
+  Mutation-confirmed. The same schema rule had already been found and fixed once in
+  `~/.claude/hooks/unreviewed-changes-stop-hook.mjs`, with a comment spelling it out;
+  it never reached the plugin, so a comment above `emitDecision` states it here too.
+
 - **`review --json` reports the engine that ran.** The payload carried the review, the
   target and the engine's raw stdout, but never which engine produced them. Under
   `--engine auto` — or `GEMINI_ENGINE`, which applies to every process a session
