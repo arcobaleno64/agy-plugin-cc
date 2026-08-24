@@ -184,11 +184,47 @@ export function installUnavailableAgy(binDir) {
   }
 }
 
+const PATH_SEP = process.platform === "win32" ? ";" : ":";
+
+// Every entry PATHEXT would try for a bare command name on Windows, plus the
+// bare name itself for POSIX.
+const EXECUTABLE_SUFFIXES = process.platform === "win32"
+  ? ["", ".com", ".exe", ".bat", ".cmd"]
+  : [""];
+
+function directoryHoldsCommand(dir, command) {
+  return EXECUTABLE_SUFFIXES.some((suffix) => {
+    try {
+      return fs.statSync(path.join(dir, `${command}${suffix}`)).isFile();
+    } catch {
+      return false;
+    }
+  });
+}
+
+// Prepending binDir is not enough to make a stand-in the only gemini/agy a child
+// process can reach. It relies on every layer below — `where.exe`, cmd.exe's own
+// PATHEXT walk, and each caller's resolution — agreeing to stop at the first
+// match, and a full-suite run has produced `agy.available: true` against a stub
+// that does nothing but `exit 1`. The developer machine that reproduced it has a
+// real agy installed; CI does not, which is why the suite was green there and
+// intermittently red here.
+//
+// So close the door instead of racing for the front of the queue: drop any PATH
+// directory that holds a real gemini or agy. Nothing else is removed, so the
+// child still finds node, git and the system tools it needs.
+export function pathWithoutRealEngines(binDir, inherited = process.env.PATH) {
+  const kept = String(inherited ?? "")
+    .split(PATH_SEP)
+    .filter(Boolean)
+    .filter((dir) => !["gemini", "agy"].some((command) => directoryHoldsCommand(dir, command)));
+  return [binDir, ...kept].join(PATH_SEP);
+}
+
 export function buildEnv(binDir) {
-  const sep = process.platform === "win32" ? ";" : ":";
   return {
     ...process.env,
-    PATH: `${binDir}${sep}${process.env.PATH}`,
+    PATH: pathWithoutRealEngines(binDir),
     GEMINI_ENGINE: "gemini",
     GEMINI_HOME: path.join(binDir, "gemini-home"),
     // These fixtures control credentials through GEMINI_HOME. Without this the
@@ -202,7 +238,6 @@ export function buildEnv(binDir) {
 // Like buildEnv but does not force an engine and points GEMINI_HOME at an empty
 // directory; pair with installUnavailableEngines for "not ready" assertions.
 export function buildEnvUnavailable(binDir) {
-  const sep = process.platform === "win32" ? ";" : ":";
   const env = { ...process.env };
   // Must resolve to "auto" regardless of the calling shell's own engine
   // preference (e.g. a developer's GEMINI_ENGINE=agy), so delete it rather
@@ -210,7 +245,7 @@ export function buildEnvUnavailable(binDir) {
   delete env.GEMINI_ENGINE;
   return {
     ...env,
-    PATH: `${binDir}${sep}${process.env.PATH}`,
+    PATH: pathWithoutRealEngines(binDir),
     GEMINI_HOME: path.join(binDir, "gemini-home"),
     GEMINI_COMPANION_DISABLE_KEYCHAIN: "1"
   };

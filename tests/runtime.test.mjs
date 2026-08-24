@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   buildEnv,
+  pathWithoutRealEngines,
   buildFailingAgyEnv,
   buildEnvUnavailable,
   installCapturingAgyExecutable,
@@ -2094,4 +2095,25 @@ test("stop-gate fails OPEN with a visible warning when the review cannot run", (
   assert.match(decision.systemMessage ?? "", /skipped/i);
   // The same warning is written to stderr as a belt-and-suspenders fallback.
   assert.match(result.stderr, /review gate skipped/i);
+});
+
+test("the fixture PATH drops directories holding a real gemini or agy", () => {
+  // A stand-in that merely goes first on PATH is only as isolated as the
+  // resolution below it. Dropping the real installation's directory is what makes
+  // "not available" mean not available, rather than "not available unless
+  // something further down the PATH answers".
+  const sep = process.platform === "win32" ? ";" : ":";
+  const ext = process.platform === "win32" ? ".cmd" : "";
+
+  const binDir = makeTempDir();
+  const realish = makeTempDir();
+  const innocent = makeTempDir();
+  fs.writeFileSync(path.join(realish, `agy${ext}`), "");
+  fs.writeFileSync(path.join(innocent, `ripgrep${ext}`), "");
+
+  const built = pathWithoutRealEngines(binDir, [realish, innocent].join(sep)).split(sep);
+
+  assert.equal(built[0], binDir, "the stand-in still goes first");
+  assert.ok(!built.includes(realish), "a directory holding a real agy is dropped");
+  assert.ok(built.includes(innocent), "everything else is kept, so node and git stay reachable");
 });
