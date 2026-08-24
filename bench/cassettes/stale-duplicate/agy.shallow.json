@@ -1,0 +1,54 @@
+{
+  "caseId": "stale-duplicate",
+  "cell": "agy.shallow",
+  "recordedAt": "2026-08-24T15:27:51.675Z",
+  "verdict": "needs-attention",
+  "summary": "Unvalidated batch configuration in worker chunking logic can cause infinite loops or silent data loss.",
+  "findings": [
+    {
+      "severity": "medium",
+      "title": "Unvalidated `config.maxBatch` allows infinite loop or silent batch drop",
+      "body": "In `src/worker.js`, `drain()` increments the loop counter using `i += config.maxBatch`. If `config.maxBatch` is non-positive (<= 0), the loop will never advance and will hang the process on non-empty batches. If `config.maxBatch` is undefined or not a number, `i` evaluates to `NaN`, causing the loop condition `i < ids.length` to immediately evaluate to false and return an empty `chunks` array, silently dropping all batch items.",
+      "file": "src/worker.js",
+      "line_start": 7,
+      "line_end": 9,
+      "confidence": 0.95,
+      "recommendation": "Validate that `config.maxBatch` is a positive integer (e.g., `const maxBatch = Number.isInteger(config?.maxBatch) && config.maxBatch > 0 ? config.maxBatch : throw new Error('Invalid maxBatch')`) before running the chunking loop."
+    }
+  ],
+  "latencyMs": 22864,
+  "engineVersion": "1.1.19",
+  "engineObserved": "agy",
+  "samples": [
+    {
+      "verdict": "approve",
+      "summary": "The batch validation correctly filters invalid IDs and worker chunking is implemented cleanly.",
+      "findings": [],
+      "latencyMs": 26299
+    },
+    {
+      "verdict": "approve",
+      "summary": "The batch validation filtering and worker chunking implementation are correct and introduce no material defects.",
+      "findings": [],
+      "latencyMs": 26479
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Unvalidated batch configuration in worker chunking logic can cause infinite loops or silent data loss.",
+      "findings": [
+        {
+          "severity": "medium",
+          "title": "Unvalidated `config.maxBatch` allows infinite loop or silent batch drop",
+          "body": "In `src/worker.js`, `drain()` increments the loop counter using `i += config.maxBatch`. If `config.maxBatch` is non-positive (<= 0), the loop will never advance and will hang the process on non-empty batches. If `config.maxBatch` is undefined or not a number, `i` evaluates to `NaN`, causing the loop condition `i < ids.length` to immediately evaluate to false and return an empty `chunks` array, silently dropping all batch items.",
+          "file": "src/worker.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 0.95,
+          "recommendation": "Validate that `config.maxBatch` is a positive integer (e.g., `const maxBatch = Number.isInteger(config?.maxBatch) && config.maxBatch > 0 ? config.maxBatch : throw new Error('Invalid maxBatch')`) before running the chunking loop."
+        }
+      ],
+      "latencyMs": 22864
+    }
+  ],
+  "raw": "{\n  \"review\": \"Review\",\n  \"target\": {\n    \"mode\": \"working-tree\",\n    \"label\": \"working tree diff\",\n    \"explicit\": true\n  },\n  \"engine\": \"agy\",\n  \"gemini\": {\n    \"status\": 0,\n    \"stdout\": \"{\\n  \\\"verdict\\\": \\\"needs-attention\\\",\\n  \\\"summary\\\": \\\"Unvalidated batch configuration in worker chunking logic can cause infinite loops or silent data loss.\\\",\\n  \\\"findings\\\": [\\n    {\\n      \\\"severity\\\": \\\"medium\\\",\\n      \\\"title\\\": \\\"Unvalidated `config.maxBatch` allows infinite loop or silent batch drop\\\",\\n      \\\"body\\\": \\\"In `src/worker.js`, `drain()` increments the loop counter using `i += config.maxBatch`. If `config.maxBatch` is non-positive (<= 0), the loop will never advance and will hang the process on non-empty batches. If `config.maxBatch` is undefined or not a number, `i` evaluates to `NaN`, causing the loop condition `i < ids.length` to immediately evaluate to false and return an empty `chunks` array, silently dropping all batch items.\\\",\\n      \\\"file\\\": \\\"src/worker.js\\\",\\n      \\\"line_start\\\": 7,\\n      \\\"line_end\\\": 9,\\n      \\\"confidence\\\": 0.95,\\n      \\\"recommendation\\\": \\\"Validate that `config.maxBatch` is a positive integer (e.g., `const maxBatch = Number.isInteger(config?.maxBatch) && config.maxBatch > 0 ? config.maxBatch : throw new Error('Invalid maxBatch')`) before running the chunking loop.\\\"\\n    }\\n  ],\\n  \\\"next_steps\\\": [\\n    \\\"Add validation or fallback handling for `config.maxBatch` in `src/worker.js`.\\\",\\n    \\\"Add unit test cases for `drain()` handling edge cases of missing or invalid `config.maxBatch` values.\\\"\\n  ]\\n}\",\n    \"stderr\": \"\"\n  },\n  \"result\": {\n    \"verdict\": \"needs-attention\",\n    \"summary\": \"Unvalidated batch configuration in worker chunking logic can cause infinite loops or silent data loss.\",\n    \"findings\": [\n      {\n        \"severity\": \"medium\",\n        \"title\": \"Unvalidated `config.maxBatch` allows infinite loop or silent batch drop\",\n        \"body\": \"In `src/worker.js`, `drain()` increments the loop counter using `i += config.maxBatch`. If `config.maxBatch` is non-positive (<= 0), the loop will never advance and will hang the process on non-empty batches. If `config.maxBatch` is undefined or not a number, `i` evaluates to `NaN`, causing the loop condition `i < ids.length` to immediately evaluate to false and return an empty `chunks` array, silently dropping all batch items.\",\n        \"file\": \"src/worker.js\",\n        \"line_start\": 7,\n        \"line_end\": 9,\n        \"confidence\": 0.95,\n        \"recommendation\": \"Validate that `config.maxBatch` is a positive integer (e.g., `const maxBatch = Number.isInteger(config?.maxBatch) && config.maxBatch > 0 ? config.maxBatch : throw new Error('Invalid maxBatch')`) before running the chunking loop.\"\n      }\n    ],\n    \"next_steps\": [\n      \"Add validation or fallback handling for `config.maxBatch` in `src/worker.js`.\",\n      \"Add unit test cases for `drain()` handling edge cases of missing or invalid `config.maxBatch` values.\"\n    ]\n  }\n}\n"
+}

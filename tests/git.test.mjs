@@ -1,9 +1,10 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { allocateBudget, assembleReviewContent, collectReviewContext, describeReviewTarget, formatUntrackedFile, getWorkingTreeState, resolveReviewTarget } from "../plugins/gemini/scripts/lib/git.mjs";
+import { allocateBudget, assembleReviewContent, collectReviewContext, describeReviewTarget, ensureGitRepository, formatUntrackedFile, getWorkingTreeState, resolveReviewTarget } from "../plugins/gemini/scripts/lib/git.mjs";
 import { initGitRepo, makeTempDir, run, writeExecutable } from "./helpers.mjs";
 
 function commitInitial(cwd) {
@@ -498,4 +499,17 @@ test("an auto scope is reported as inferred, and --base is not", () => {
   assert.match(describeReviewTarget(resolveReviewTarget(cwd, {})), /inferred/);
   assert.doesNotMatch(describeReviewTarget(resolveReviewTarget(cwd, { base: "HEAD~1" })), /inferred/);
   assert.doesNotMatch(describeReviewTarget(resolveReviewTarget(cwd, { scope: "working-tree" })), /inferred/);
+});
+
+test("a missing working directory is not reported as a missing git", () => {
+  // spawn reports ENOENT for both absences and names the command in `error.path`
+  // either way, so the old branch told a machine with git installed that git was
+  // not installed. That message sent a caller to debug PATH for a bad --cwd.
+  const gone = path.join(os.tmpdir(), `bench-gone-${Date.now()}`);
+  assert.equal(fs.existsSync(gone), false);
+
+  assert.throws(
+    () => ensureGitRepository(gone),
+    (err) => /does not exist/.test(err.message) && !/not installed/.test(err.message)
+  );
 });

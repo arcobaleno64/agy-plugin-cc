@@ -53,6 +53,28 @@ one scorer grades all of them.
 > measurement; adding repeats is not — see finding 4 below on why the spread statistic
 > cannot shrink.
 >
+> **Measured, on agy 1.1.19 across all seven cases, three samples each:**
+>
+> | case | model | shallow | deep | prompt | exploration |
+> |---|:-:|:-:|:-:|:-:|:-:|
+> | async-lifecycle | 91 | 70 | 74 | −21 | +4 |
+> | auth-basic | 95 | 81 | 83 | −14 | +2 |
+> | path-and-input | 72 | 69 | 69 | −3 | 0 |
+> | vacuous-tests | 71 | 82 | 88 | +11 | +6 |
+> | **caller-contract** | 0 | 0 | **68** | 0 | **+68** |
+> | **repo-context** | 97 | 37 | **90** | −60 | **+53** |
+> | **stale-duplicate** | 43 | 18 | **67** | −25 | **+49** |
+> | **mean** | | | | **−16.0** | **+26.0** |
+>
+> The −4.4 harness lift reported over the original five cases was two opposing effects
+> cancelling. Exploration is worth **+26** on average and its gains land exactly where
+> the design says they should — +68, +53, +49 on the three repository-scoped cases,
+> against +4, +2, 0, +6 on the four file-scoped ones. The plugin's own review prompt,
+> run without tools, is worth **−16** against the bench's neutral prompt, and that
+> penalty is concentrated on the same repository-scoped cases (−60, −25). A prompt that
+> tells the model to fold in dependency manifests and callers appears to cost accuracy
+> when it cannot go and read them.
+>
 > `caller-contract` and `stale-duplicate` were added for exactly that, joining
 > `repo-context` as the cases whose planted defects are repository-scoped (`file: "*"`).
 > They are the first evidence on this board that exploration does anything at all:

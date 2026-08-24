@@ -1,0 +1,166 @@
+{
+  "caseId": "vacuous-tests",
+  "cell": "agy.shallow",
+  "recordedAt": "2026-08-24T15:33:17.643Z",
+  "verdict": "needs-attention",
+  "summary": "The test suite contains unhandled asynchronous assertions causing false passes/uncaught exceptions, invalid order assertions, and incomplete test coverage.",
+  "findings": [
+    {
+      "severity": "high",
+      "title": "Asynchronous assertion in process.nextTick causes uncaught exception and false test pass",
+      "body": "The test on lines 20-25 completes synchronously before the process.nextTick callback executes. Furthermore, no deletion or expiration function is invoked after populating the session store. When nextTick fires, assert.equal(sessions.size, 0) fails outside the test runner execution context, triggering an uncaught exception while previously registering a false positive test pass.",
+      "file": "test/session.test.js",
+      "line_start": 20,
+      "line_end": 25,
+      "confidence": 0.95,
+      "recommendation": "Invoke the deletion logic (e.g. expire('abc') or sessions.delete('abc')) and assert store state synchronously within the test execution scope instead of deferring to process.nextTick."
+    },
+    {
+      "severity": "medium",
+      "title": "Flawed indexOf comparison allows false positive test passes",
+      "body": "On lines 10-13, lines.indexOf('expired') < lines.indexOf('fresh') evaluates to true if 'expired' is not present in lines (returning -1) and 'fresh' is found at index >= 0. This masks missing expired session output.",
+      "file": "test/session.test.js",
+      "line_start": 10,
+      "line_end": 13,
+      "confidence": 0.95,
+      "recommendation": "Assert that both 'expired' and 'fresh' exist (e.g. assert.notEqual(lines.indexOf(...), -1)) before checking their relative index ordering."
+    },
+    {
+      "severity": "low",
+      "title": "Malformed payload test lacks assertions and tests valid JSON",
+      "body": "The test 'parseSession handles a malformed payload' on lines 6-8 passes valid JSON ('{\"id\":\"abc\",\"expiresAt\":0}') and does not assert return values or verify that invalid input is handled.",
+      "file": "test/session.test.js",
+      "line_start": 6,
+      "line_end": 8,
+      "confidence": 0.9,
+      "recommendation": "Pass actual malformed payloads (e.g. invalid JSON strings, missing fields, or malformed data types) and assert the expected error handling behavior."
+    }
+  ],
+  "latencyMs": 19067,
+  "engineVersion": "1.1.19",
+  "engineObserved": "agy",
+  "samples": [
+    {
+      "verdict": "needs-attention",
+      "summary": "The test suite contains an unawaited async assertion causing unhandled exceptions, a faulty indexOf comparison allowing false positives, and a skipped test.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Unawaited callback in process.nextTick causes test to pass prematurely and throw unhandled error",
+          "body": "In test/session.test.js (lines 20-25), the test callback is synchronous and finishes before process.nextTick runs. Furthermore, sessions.delete is never invoked, so assert.equal(sessions.size, 0) fails asynchronously outside the test execution context, triggering an uncaught exception.",
+          "file": "test/session.test.js",
+          "line_start": 20,
+          "line_end": 25,
+          "confidence": 0.95,
+          "recommendation": "Return a Promise or wrap async execution properly, call the deletion logic being tested, and clear shared session state."
+        },
+        {
+          "severity": "medium",
+          "title": "Comparison of indexOf results produces false positive when item is absent",
+          "body": "In test/session.test.js (lines 10-13), lines.indexOf(\"expired\") < lines.indexOf(\"fresh\") evaluates to true if 'expired' is not found (-1) and 'fresh' is found at index 0 or higher. Also, the test invokes render() without populating sessions beforehand.",
+          "file": "test/session.test.js",
+          "line_start": 10,
+          "line_end": 13,
+          "confidence": 0.9,
+          "recommendation": "Explicitly assert that both 'expired' and 'fresh' exist (indexOf !== -1) before comparing relative positions, and populate test fixture data before rendering."
+        },
+        {
+          "severity": "low",
+          "title": "Core expiration test is skipped",
+          "body": "In test/session.test.js (lines 15-18), test.skip is used for expire(), leaving session removal untested in test runs.",
+          "file": "test/session.test.js",
+          "line_start": 15,
+          "line_end": 18,
+          "confidence": 0.9,
+          "recommendation": "Remove test.skip, verify expire() implementation, and ensure sessions state is cleaned up after testing."
+        }
+      ],
+      "latencyMs": 20883
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "New session test suite contains unhandled asynchronous assertions, false-positive index checks, an unasserted malformed payload test, and a skipped test case.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Asynchronous assertion in synchronous test causes unhandled errors",
+          "body": "In test/session.test.js, the test function is synchronous but performs assert.equal inside process.nextTick. In node:test, synchronous tests complete immediately upon return, causing deferred assertions to run after the test has passed and throw unhandled exceptions outside the test context. Furthermore, no deletion or expiration logic is executed before asserting size.",
+          "file": "test/session.test.js",
+          "line_start": 20,
+          "line_end": 25,
+          "confidence": 0.95,
+          "recommendation": "Convert the test to async or return a Promise, invoke the deletion logic, and await the store update before asserting sessions.size === 0."
+        },
+        {
+          "severity": "medium",
+          "title": "Missing substring index comparison yields false positive test passes",
+          "body": "In test/session.test.js, comparing lines.indexOf('expired') < lines.indexOf('fresh') will evaluate to true if 'expired' is absent (-1) and 'fresh' is present at index >= 0 (since -1 < index), producing a false pass when expired entries are missing from render().",
+          "file": "test/session.test.js",
+          "line_start": 10,
+          "line_end": 13,
+          "confidence": 0.95,
+          "recommendation": "Assert that both lines.indexOf('expired') >= 0 and lines.indexOf('fresh') >= 0 before asserting their relative index ordering."
+        },
+        {
+          "severity": "medium",
+          "title": "Malformed payload test uses valid JSON and lacks assertions",
+          "body": "The test named 'parseSession handles a malformed payload' passes a syntactically valid JSON string ('{\"id\":\"abc\",\"expiresAt\":0}') and contains no assertions to verify return value or error handling behaviour.",
+          "file": "test/session.test.js",
+          "line_start": 6,
+          "line_end": 8,
+          "confidence": 0.9,
+          "recommendation": "Pass a genuinely malformed payload (such as invalid JSON or non-string input) and assert expected error throwing (e.g. assert.throws) or fallback return handling."
+        },
+        {
+          "severity": "low",
+          "title": "Skipped test case left in newly added test suite",
+          "body": "test.skip('expire() removes the session') disables verification of the expire() helper, leaving session expiration untested.",
+          "file": "test/session.test.js",
+          "line_start": 15,
+          "line_end": 18,
+          "confidence": 0.9,
+          "recommendation": "Enable the test by removing .skip and ensure expire('abc') passes against the session store."
+        }
+      ],
+      "latencyMs": 19044
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "The test suite contains unhandled asynchronous assertions causing false passes/uncaught exceptions, invalid order assertions, and incomplete test coverage.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Asynchronous assertion in process.nextTick causes uncaught exception and false test pass",
+          "body": "The test on lines 20-25 completes synchronously before the process.nextTick callback executes. Furthermore, no deletion or expiration function is invoked after populating the session store. When nextTick fires, assert.equal(sessions.size, 0) fails outside the test runner execution context, triggering an uncaught exception while previously registering a false positive test pass.",
+          "file": "test/session.test.js",
+          "line_start": 20,
+          "line_end": 25,
+          "confidence": 0.95,
+          "recommendation": "Invoke the deletion logic (e.g. expire('abc') or sessions.delete('abc')) and assert store state synchronously within the test execution scope instead of deferring to process.nextTick."
+        },
+        {
+          "severity": "medium",
+          "title": "Flawed indexOf comparison allows false positive test passes",
+          "body": "On lines 10-13, lines.indexOf('expired') < lines.indexOf('fresh') evaluates to true if 'expired' is not present in lines (returning -1) and 'fresh' is found at index >= 0. This masks missing expired session output.",
+          "file": "test/session.test.js",
+          "line_start": 10,
+          "line_end": 13,
+          "confidence": 0.95,
+          "recommendation": "Assert that both 'expired' and 'fresh' exist (e.g. assert.notEqual(lines.indexOf(...), -1)) before checking their relative index ordering."
+        },
+        {
+          "severity": "low",
+          "title": "Malformed payload test lacks assertions and tests valid JSON",
+          "body": "The test 'parseSession handles a malformed payload' on lines 6-8 passes valid JSON ('{\"id\":\"abc\",\"expiresAt\":0}') and does not assert return values or verify that invalid input is handled.",
+          "file": "test/session.test.js",
+          "line_start": 6,
+          "line_end": 8,
+          "confidence": 0.9,
+          "recommendation": "Pass actual malformed payloads (e.g. invalid JSON strings, missing fields, or malformed data types) and assert the expected error handling behavior."
+        }
+      ],
+      "latencyMs": 19067
+    }
+  ],
+  "raw": "{\n  \"review\": \"Review\",\n  \"target\": {\n    \"mode\": \"working-tree\",\n    \"label\": \"working tree diff\",\n    \"explicit\": true\n  },\n  \"engine\": \"agy\",\n  \"gemini\": {\n    \"status\": 0,\n    \"stdout\": \"{\\n  \\\"verdict\\\": \\\"needs-attention\\\",\\n  \\\"summary\\\": \\\"The test suite contains unhandled asynchronous assertions causing false passes/uncaught exceptions, invalid order assertions, and incomplete test coverage.\\\",\\n  \\\"findings\\\": [\\n    {\\n      \\\"severity\\\": \\\"high\\\",\\n      \\\"title\\\": \\\"Asynchronous assertion in process.nextTick causes uncaught exception and false test pass\\\",\\n      \\\"body\\\": \\\"The test on lines 20-25 completes synchronously before the process.nextTick callback executes. Furthermore, no deletion or expiration function is invoked after populating the session store. When nextTick fires, assert.equal(sessions.size, 0) fails outside the test runner execution context, triggering an uncaught exception while previously registering a false positive test pass.\\\",\\n      \\\"file\\\": \\\"test/session.test.js\\\",\\n      \\\"line_start\\\": 20,\\n      \\\"line_end\\\": 25,\\n      \\\"confidence\\\": 0.95,\\n      \\\"recommendation\\\": \\\"Invoke the deletion logic (e.g. expire('abc') or sessions.delete('abc')) and assert store state synchronously within the test execution scope instead of deferring to process.nextTick.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"medium\\\",\\n      \\\"title\\\": \\\"Flawed indexOf comparison allows false positive test passes\\\",\\n      \\\"body\\\": \\\"On lines 10-13, lines.indexOf('expired') < lines.indexOf('fresh') evaluates to true if 'expired' is not present in lines (returning -1) and 'fresh' is found at index >= 0. This masks missing expired session output.\\\",\\n      \\\"file\\\": \\\"test/session.test.js\\\",\\n      \\\"line_start\\\": 10,\\n      \\\"line_end\\\": 13,\\n      \\\"confidence\\\": 0.95,\\n      \\\"recommendation\\\": \\\"Assert that both 'expired' and 'fresh' exist (e.g. assert.notEqual(lines.indexOf(...), -1)) before checking their relative index ordering.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"low\\\",\\n      \\\"title\\\": \\\"Malformed payload test lacks assertions and tests valid JSON\\\",\\n      \\\"body\\\": \\\"The test 'parseSession handles a malformed payload' on lines 6-8 passes valid JSON ('{\\\\\\\"id\\\\\\\":\\\\\\\"abc\\\\\\\",\\\\\\\"expiresAt\\\\\\\":0}') and does not assert return values or verify that invalid input is handled.\\\",\\n      \\\"file\\\": \\\"test/session.test.js\\\",\\n      \\\"line_start\\\": 6,\\n      \\\"line_end\\\": 8,\\n      \\\"confidence\\\": 0.9,\\n      \\\"recommendation\\\": \\\"Pass actual malformed payloads (e.g. invalid JSON strings, missing fields, or malformed data types) and assert the expected error handling behavior.\\\"\\n    }\\n  ],\\n  \\\"next_steps\\\": [\\n    \\\"Fix test/session.test.js line 20-25 by calling the deletion function and removing the detached process.nextTick callback.\\\",\\n    \\\"Update the ordering assertions in test/session.test.js to verify substring existence before checking position.\\\",\\n    \\\"Add explicit assertions for malformed payload handling and unskip test.skip on line 15.\\\"\\n  ]\\n}\",\n    \"stderr\": \"\"\n  },\n  \"result\": {\n    \"verdict\": \"needs-attention\",\n    \"summary\": \"The test suite contains unhandled asynchronous assertions causing false passes/uncaught exceptions, invalid order assertions, and incomplete test coverage.\",\n    \"findings\": [\n      {\n        \"severity\": \"high\",\n        \"title\": \"Asynchronous assertion in process.nextTick causes uncaught exception and false test pass\",\n        \"body\": \"The test on lines 20-25 completes synchronously before the process.nextTick callback executes. Furthermore, no deletion or expiration function is invoked after populating the session store. When nextTick fires, assert.equal(sessions.size, 0) fails outside the test runner execution context, triggering an uncaught exception while previously registering a false positive test pass.\",\n        \"file\": \"test/session.test.js\",\n        \"line_start\": 20,\n        \"line_end\": 25,\n        \"confidence\": 0.95,\n        \"recommendation\": \"Invoke the dele"
+}

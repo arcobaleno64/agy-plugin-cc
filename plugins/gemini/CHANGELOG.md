@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- **The harness lift, split: exploration is worth +26 and the plugin's own review
+  prompt is worth −16.** The `*.shallow` control cells now record, and the −4.4 lift
+  reported this morning turns out to have been two opposing effects cancelling.
+  Measured on agy 1.1.19, seven cases, three samples each: `model → shallow` (prompt
+  only) averages −16.0, `shallow → deep` (exploration only) averages +26.0.
+
+  Both halves land where the design predicts. Exploration is worth +68, +53 and +49 on
+  the three repository-scoped cases and +4, +2, 0, +6 on the four file-scoped ones. The
+  prompt penalty concentrates on those same repository-scoped cases (−60 on
+  `repo-context`, −25 on `stale-duplicate`), which is worth someone's attention: a
+  prompt that tells the model to fold in dependency manifests, callers and untracked
+  files appears to cost accuracy when it has no tools to go and read them.
+
+  Two defects had to be fixed to get the reading. The runner decided whether to
+  materialize a repository from `harness === "agentic"`, which is true of every cell
+  that runs a companion except these two — so they ran with `--cwd` pointing at
+  nothing. `needsRepo` is now declared on the cell instead of inferred.
+
+- **`ensureGitRepository` stops blaming PATH for a directory that does not exist.**
+  spawn reports ENOENT for both absences and names the command in `error.path` either
+  way, so a missing `cwd` surfaced as `git is not installed. Install Git and retry.` on
+  a machine with git plainly installed — and sent this session to debug PATH. It now
+  checks the directory and says which absence it found. Mutation-confirmed.
+
 - **Two repository-scoped corpus cases, and the first evidence on this board that
   exploration does anything.** The harness axis existed to measure defects a reviewer
   can only find by looking beyond the diff, and exactly one case

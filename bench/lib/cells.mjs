@@ -12,6 +12,11 @@
 // is the exploration. They are deliberately outside every axis ranking: their only
 // job is to be a fixed end for those two deltas.
 //
+// `needsRepo` is declared rather than inferred. It used to be read off
+// `harness === "agentic"`, which is true of every cell that runs a companion — until
+// these two, which run one without exploring. Inferring it left them with no
+// materialized repository and a `--cwd` pointing at nothing.
+//
 // The adversarial axis is separate rather than folded into the harness axis, because
 // the prompts are not interchangeable: this plugin's `review.md` asks for a pragmatic
 // review and `adversarial-review.md` asks the model to break confidence in the change.
@@ -32,8 +37,8 @@ export const CELLS = {
   "gemini.deep": { tool: "gemini", track: "plugin-native", harness: "agentic", label: "Gemini (--deep, agentic)" },
   "codex.native": { tool: "codex", track: "plugin-native", harness: "agentic", label: "Codex (native review, agentic)" },
   "agy.deep": { tool: "agy", track: "plugin-native", harness: "agentic", label: "AGY (--deep, agentic)" },
-  "gemini.shallow": { tool: "gemini", track: "plugin-shallow", harness: "single-shot", label: "Gemini (plugin review, no --deep)" },
-  "agy.shallow": { tool: "agy", track: "plugin-shallow", harness: "single-shot", label: "AGY (plugin review, no --deep)" },
+  "gemini.shallow": { tool: "gemini", track: "plugin-shallow", harness: "single-shot", needsRepo: true, label: "Gemini (plugin review, no --deep)" },
+  "agy.shallow": { tool: "agy", track: "plugin-shallow", harness: "single-shot", needsRepo: true, label: "AGY (plugin review, no --deep)" },
   "gemini.adversarial": { tool: "gemini", track: "plugin-adversarial", harness: "agentic", label: "Gemini (adversarial, agentic)" },
   "codex.adversarial": { tool: "codex", track: "plugin-adversarial", harness: "agentic", label: "Codex (adversarial, agentic)" },
   "agy.adversarial": { tool: "agy", track: "plugin-adversarial", harness: "agentic", label: "AGY (adversarial, agentic)" }
