@@ -138,7 +138,7 @@ function resolveAgyBinary() {
   return agyBinaryCache;
 }
 
-function runAgyModel(promptText) {
+function runAgyModel(promptText, { spawnImpl = spawnSync } = {}) {
   return timed(() => {
     // AGY >=1.1.2 enters print mode from a piped prompt, so --print is omitted:
     // passing it here would make the next flag AGY's positional prompt.
@@ -155,7 +155,7 @@ function runAgyModel(promptText) {
     // an absolute .exe, so a planted `agy.bat` on PATH cannot take the call.
     const bin = resolveAgyBinary();
     if (!bin) return fail("agy: no agy executable on PATH");
-    const res = spawnSync(
+    const res = spawnImpl(
       bin,
       ["--disable-slash-commands", "--output-format", "json", "--print-timeout", printTimeout],
       { input: promptText, encoding: "utf8", timeout: TIMEOUT_MS }
@@ -165,7 +165,16 @@ function runAgyModel(promptText) {
     const envelope = extractJsonObject(res.stdout);
     const text = envelope?.response ?? envelope?.result?.response ?? res.stdout;
     const review = normalizeReview(extractJsonObject(text));
-    if (!review) return fail(`agy: could not parse review JSON (${(res.stderr || "").slice(0, 160)})`);
+    // AGY reports a refused run inside the envelope's `error`, with nothing on
+    // stderr — so echoing stderr alone printed `could not parse review JSON ()`
+    // and hid the reason. That cost three recording attempts on 2026-08-24, when
+    // the real answer was `Individual quota reached ... Resets in 94h2m50s` and the
+    // cell looked like a parser or model defect instead of a spent account. Same
+    // lesson as the codex branch below, which learned it from its own usage limit.
+    if (!review) {
+      const reason = envelope?.error ?? envelope?.result?.error ?? res.stderr ?? "";
+      return fail(`agy: could not parse review JSON (${String(reason).slice(0, 160)})`);
+    }
     return { ok: true, ...review, raw: res.stdout?.slice(0, 4000) };
   });
 }
@@ -234,12 +243,12 @@ export function assertExpectedEngine(payload, expected) {
 // the two lines that invoke `assertExpectedEngine` left every test green — the
 // helper was correct and unreachable, which is the same shape as the defect this
 // whole check exists to prevent.
-export function runCompanionReview(companionPath, repoDir, extraArgs, expectEngine = null, { spawnImpl = spawnSync } = {}) {
+export function runCompanionReview(companionPath, repoDir, extraArgs, expectEngine = null, { spawnImpl = spawnSync, subcommand = "review" } = {}) {
   return timed(() => {
     if (!companionPath) return fail("companion path not configured");
     const res = spawnImpl(
       process.execPath,
-      [companionPath, "review", "--scope", "working-tree", "--json", ...extraArgs, "--cwd", repoDir],
+      [companionPath, subcommand, "--scope", "working-tree", "--json", ...extraArgs, "--cwd", repoDir],
       { cwd: repoDir, encoding: "utf8", timeout: TIMEOUT_MS, env: companionSpawnEnv() }
     );
     if (res.error) return fail(`companion spawn: ${res.error.message}`);
@@ -272,9 +281,19 @@ function dispatchCell(cell, ctx) {
       return runCompanionReview(CODEX_COMPANION, ctx.repoDir, []);
     case "agy.deep":
       return runCompanionReview(GEMINI_COMPANION, ctx.repoDir, ["--deep", "--engine", "agy"], "agy");
+    case "gemini.adversarial":
+      return runCompanionReview(GEMINI_COMPANION, ctx.repoDir, ["--deep", "--engine", "gemini"], "gemini", { subcommand: "adversarial-review" });
+    case "agy.adversarial":
+      return runCompanionReview(GEMINI_COMPANION, ctx.repoDir, ["--deep", "--engine", "agy"], "agy", { subcommand: "adversarial-review" });
+    case "codex.adversarial":
+      // codex's `review` maps to its built-in reviewer, whose --json payload has no
+      // `result` at all (openai/codex-plugin-cc#679). `adversarial-review` is the
+      // codex path that emits schema-shaped findings, which is why the adversarial
+      // axis can carry a codex reading while `codex.native` cannot.
+      return runCompanionReview(CODEX_COMPANION, ctx.repoDir, [], null, { subcommand: "adversarial-review" });
     default:
       return fail(`unknown cell ${cell}`);
   }
 }
 
-export const _internal = { extractJsonObject, normalizeReview, geminiInnerText, companionSpawnEnv, assertExpectedEngine, runCompanionReview };
+export const _internal = { extractJsonObject, normalizeReview, geminiInnerText, companionSpawnEnv, assertExpectedEngine, runCompanionReview, runAgyModel };

@@ -487,3 +487,93 @@ test("a companion that cannot say which engine ran is a failure, not a pass", ()
 
   assert.equal(adapters.assertExpectedEngine({ engine: null }, null), null, "a cell with no expectation is unaffected");
 });
+
+test("a refused AGY run reports the reason AGY gave, not an empty parenthesis", () => {
+  // AGY puts a refusal in the envelope's `error` and leaves stderr empty. The
+  // failure message used to echo stderr alone, so a spent account read as
+  // `could not parse review JSON ()` — indistinguishable from a parser bug, and
+  // diagnosed as one for three recording attempts.
+  const quotaEnvelope = {
+    conversation_id: "5504cb18",
+    status: "ERROR",
+    response: "",
+    error: "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 94h2m50s."
+  };
+  const stub = () => ({ status: 1, stdout: JSON.stringify(quotaEnvelope), stderr: "" });
+
+  const refused = adapters.runAgyModel("review this", { spawnImpl: stub });
+  assert.equal(refused.ok, false, "an envelope carrying no review is still a failure");
+  assert.match(String(refused.error), /Individual quota reached/);
+});
+
+test("a cell whose cases were recorded on different versions says so", () => {
+  // Taking the first cassette's version to stand for the cell is how a table states
+  // what a column is supposed to hold rather than what it holds. `agy.model` really
+  // did end up four cases on 1.1.19 and one on 1.1.15 after a re-record was refused.
+  const row = (caseId, engineVersion) => ({
+    caseId,
+    cell: "agy.model",
+    status: "ok",
+    score: { composite: 90, recall: 1, precision: 1, falsePositives: 0, bonus: 0, severityExactRate: 1, missed: [] },
+    latencyMs: 1000,
+    provenance: { seeded: false, recordedAt: "2026-08-24T00:00:00.000Z", engineVersion, samples: 3 }
+  });
+
+  const mixed = buildScorecard([row("c1", "1.1.19"), row("c2", "1.1.19"), row("c3", "1.1.15")]);
+  assert.match(mixed.markdown, /1\.1\.19 ×3 · 1 case on 1\.1\.15/);
+
+  const uniform = buildScorecard([row("c1", "1.1.19"), row("c2", "1.1.19")]);
+  assert.doesNotMatch(uniform.markdown, /case on/, "a cell recorded on one version says nothing extra");
+});
+
+test("the adversarial cells run their tool's adversarial subcommand, not review", () => {
+  // The whole reason the adversarial axis exists is that these are a different
+  // reviewer, so a cell that quietly ran `review` would make the axis a duplicate
+  // of the harness one under a different name.
+  const seen = [];
+  const stub = (_bin, args) => {
+    seen.push(args);
+    return {
+      status: 0,
+      stdout: JSON.stringify({ engine: "agy", result: { verdict: "approve", summary: "s", findings: [] } }),
+      stderr: ""
+    };
+  };
+
+  adapters.runCompanionReview("/companion.mjs", "/repo", ["--deep"], "agy", {
+    spawnImpl: stub,
+    subcommand: "adversarial-review"
+  });
+  assert.equal(seen[0][1], "adversarial-review");
+
+  adapters.runCompanionReview("/companion.mjs", "/repo", ["--deep"], "agy", { spawnImpl: stub });
+  assert.equal(seen[1][1], "review", "the default stays what every existing cell passes");
+});
+
+test("the scorecard carries an adversarial axis of its own", () => {
+  // Folding these into the harness axis would rank a prompt that asks the model to
+  // break confidence in the change against one that asks for a pragmatic review.
+  const row = (cell, composite) => ({
+    caseId: "c1",
+    cell,
+    status: "ok",
+    score: { composite, recall: 1, precision: 1, falsePositives: 0, bonus: 0, severityExactRate: 1, missed: [] },
+    latencyMs: 1000,
+    provenance: { seeded: false, recordedAt: "2026-08-24T00:00:00.000Z", engineVersion: "1.1.19", samples: 3 }
+  });
+
+  const card = buildScorecard([row("agy.adversarial", 90), row("codex.adversarial", 60), row("agy.deep", 80)]);
+  const lineFor = (name) => String(card.markdown.split(/\r?\n/).find((l) => l.includes(`**${name}**`)));
+
+  // Assert what each axis *contains*, not merely that a row with the right title was
+  // printed: pointing the adversarial axis at the harness track still renders the
+  // row, so a title-only assertion passes while the axis reads the wrong cells.
+  const adversarial = lineFor("Adversarial");
+  assert.match(adversarial, /agy 90/);
+  assert.match(adversarial, /codex 60/);
+  assert.doesNotMatch(adversarial, /80/, "agy.deep belongs to the harness axis, not this one");
+
+  const harness = lineFor("Harness");
+  assert.match(harness, /agy 80/);
+  assert.doesNotMatch(harness, /90|60/, "the adversarial cells must not leak into the harness axis");
+});

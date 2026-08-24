@@ -1,155 +1,156 @@
 {
   "caseId": "path-and-input",
   "cell": "agy.model",
-  "recordedAt": "2026-08-19T08:26:59.739Z",
+  "recordedAt": "2026-08-24T05:01:57.870Z",
   "verdict": "needs-attention",
-  "summary": "The diff introduces critical command injection, arbitrary path traversal vulnerabilities, and unvalidated index access.",
+  "summary": "Unsanitised user input enables command injection and path traversal; array access is unbounded.",
   "findings": [
     {
       "severity": "critical",
-      "title": "Command injection vulnerability in archive",
-      "body": "In `archive`, the `name` parameter is directly interpolated into the shell command string passed to `execSync`. An attacker providing shell metacharacters in `name` can execute arbitrary system commands.",
+      "title": "Command injection in archive()",
+      "body": "The `name` parameter is interpolated directly into a shell command string passed to `execSync`. An attacker-controlled `name` such as `\"; rm -rf / #\"` executes arbitrary OS commands. `path.join(ROOT, name)` in the second interpolation is equally unsanitised.",
       "file": "src/files.js",
-      "line_start": 12,
-      "line_end": 14,
-      "confidence": 1,
-      "recommendation": "Use `execFileSync` with an argument array instead of a shell string (e.g., `execFileSync('tar', ['-czf', `${name}.tar.gz`, targetPath])`) and sanitize/validate `name`."
+      "line_start": 13,
+      "line_end": 13,
+      "confidence": 0.99,
+      "recommendation": "Never build shell strings from user input. Use `execFileSync('tar', ['-czf', outPath, srcPath])` (no shell) and validate/sanitise `name` (reject path separators, null bytes, shell metacharacters)."
     },
     {
-      "severity": "high",
-      "title": "Arbitrary file read via path traversal in readUpload",
-      "body": "In `readUpload`, `path.join(ROOT, name)` does not prevent directory traversal sequences such as `..`. An attacker can supply a relative path to read arbitrary files from the filesystem.",
+      "severity": "critical",
+      "title": "Path traversal in readUpload()",
+      "body": "`path.join('/srv/uploads', '../../etc/passwd')` resolves to `/etc/passwd`. Because `name` is not validated, any caller can read arbitrary files on the filesystem as the process user.",
       "file": "src/files.js",
-      "line_start": 7,
-      "line_end": 10,
-      "confidence": 1,
-      "recommendation": "Sanitize `name` by stripping directory separators or ensure `path.resolve(ROOT, name).startsWith(path.resolve(ROOT) + path.sep)` before reading."
+      "line_start": 8,
+      "line_end": 9,
+      "confidence": 0.98,
+      "recommendation": "After joining, call `path.resolve(target)` and verify it starts with `ROOT + path.sep` (or use `path.relative(ROOT, target)` and reject results starting with `..`). Reject null bytes as well."
     },
     {
       "severity": "medium",
-      "title": "Unvalidated input and missing bounds check in pickPage",
-      "body": "In `pickPage`, `parseInt(body.page)` lacks a radix, does not check if `body` or `body.page` is defined, and does not validate whether the resulting index is within the valid bounds of `pages` (or if it evaluates to `NaN`).",
+      "title": "Unbounded and unvalidated array access in pickPage()",
+      "body": "`parseInt(body.page)` can return `NaN` (yields `undefined`), a negative number (yields `undefined` or a prototype property via numeric coercion), or an index beyond `pages.length`. No error is surfaced; callers silently receive `undefined`, likely causing downstream failures or information disclosure if `pages` is an object with unexpected keys.",
       "file": "src/files.js",
-      "line_start": 16,
-      "line_end": 19,
-      "confidence": 0.95,
-      "recommendation": "Validate `body?.page`, parse using `Number.parseInt(body.page, 10)`, and verify `Number.isInteger(page) && page >= 0 && page < pages.length` before accessing `pages`."
+      "line_start": 17,
+      "line_end": 18,
+      "confidence": 0.85,
+      "recommendation": "Validate that the parsed page is a finite integer within `[0, pages.length)` and return an explicit error or default when it is not."
     }
   ],
-  "latencyMs": 25093,
-  "engineVersion": "1.1.15",
+  "latencyMs": 43749,
+  "engineVersion": "1.1.19",
+  "engineObserved": null,
   "samples": [
     {
       "verdict": "needs-attention",
-      "summary": "The diff introduces critical security vulnerabilities including remote command injection and path traversal, alongside unvalidated input handling.",
+      "summary": "User-controlled input flows unsanitized into file-system reads and a shell command, enabling path-traversal and remote-code-execution.",
       "findings": [
         {
           "severity": "critical",
-          "title": "Command injection via unescaped shell string in archive",
-          "body": "In archive(), user-controlled input 'name' is directly interpolated into a shell command passed to execSync, enabling arbitrary remote command execution.",
+          "title": "Command injection via unsanitised shell interpolation",
+          "body": "In `archive()`, `name` is interpolated directly into a string passed to `execSync`. An attacker-controlled `name` such as `\"; rm -rf / #\"` would execute arbitrary OS commands. `execSync` runs a full shell, so all shell meta-characters are live.",
           "file": "src/files.js",
-          "line_start": 12,
-          "line_end": 14,
-          "confidence": 1,
-          "recommendation": "Replace execSync with execFileSync or spawnSync passing arguments as an array, e.g. execFileSync('tar', ['-czf', `${name}.tar.gz`, targetPath])."
+          "line_start": 13,
+          "line_end": 13,
+          "confidence": 0.99,
+          "recommendation": "Use `execFileSync('tar', ['-czf', `${name}.tar.gz`, path.join(ROOT, name)])` to avoid a shell, and validate/sanitise `name` to reject path separators and special characters."
         },
         {
-          "severity": "high",
-          "title": "Path traversal in readUpload and archive",
-          "body": "Using path.join(ROOT, name) without path containment verification allows path traversal (e.g. '../../etc/passwd') to access files outside the /srv/uploads directory.",
+          "severity": "critical",
+          "title": "Path traversal in readUpload allows arbitrary file read",
+          "body": "`path.join(ROOT, name)` does not confine the result to ROOT. A `name` of `../../etc/shadow` resolves outside `/srv/uploads`, letting callers read any file the process can access. No check (e.g. `realpath` starts-with guard) is performed.",
           "file": "src/files.js",
-          "line_start": 7,
-          "line_end": 10,
-          "confidence": 1,
-          "recommendation": "Resolve the absolute path and verify it starts with path.resolve(ROOT) + path.sep, or strip directory components using path.basename(name)."
+          "line_start": 8,
+          "line_end": 9,
+          "confidence": 0.98,
+          "recommendation": "After joining, resolve with `path.resolve()` and verify the result starts with `ROOT + path.sep` (or use `realpath` and compare). Reject the request otherwise."
         },
         {
           "severity": "medium",
-          "title": "Unchecked property access and array index bounds in pickPage",
-          "body": "pickPage() accesses body.page without null-checking body, parses without an explicit radix, and accesses pages[page] without bounds validation, risking runtime exceptions or undefined returns.",
+          "title": "Unbounded array access in pickPage",
+          "body": "`parseInt(body.page)` can produce `NaN`, a negative number, or an index beyond `pages.length`. The function silently returns `undefined` in all these cases, which will likely propagate as a runtime error or data leak downstream. There is no bounds check.",
           "file": "src/files.js",
-          "line_start": 16,
-          "line_end": 19,
-          "confidence": 0.95,
-          "recommendation": "Validate body?.page, specify base 10 in parseInt(body.page, 10), and ensure the index is a non-negative integer within Array.isArray(pages) bounds."
+          "line_start": 17,
+          "line_end": 18,
+          "confidence": 0.85,
+          "recommendation": "Validate that `page` is a finite integer in range `[0, pages.length)` and return an explicit error or default when it is not."
         }
       ],
-      "latencyMs": 15409
+      "latencyMs": 44084
     },
     {
       "verdict": "needs-attention",
-      "summary": "Critical security vulnerabilities including command injection and path traversal, along with unsafe input access, were identified.",
+      "summary": "File contains a path-traversal vulnerability, a shell command-injection vulnerability, and an unbounded array access.",
       "findings": [
         {
           "severity": "critical",
-          "title": "Command injection via unescaped shell argument in archive",
-          "body": "The archive function directly interpolates the unvalidated 'name' argument into a shell string executed by execSync. An attacker passing shell metacharacters in 'name' can execute arbitrary system commands.",
-          "file": "src/files.js",
-          "line_start": 12,
-          "line_end": 14,
-          "confidence": 1,
-          "recommendation": "Use execFileSync or spawnSync with an array of arguments rather than shell interpolation, or validate that 'name' matches a strict alphanumeric whitelist."
-        },
-        {
-          "severity": "high",
           "title": "Path traversal in readUpload",
-          "body": "readUpload combines ROOT and 'name' using path.join without ensuring the resolved path remains inside ROOT. A name containing relative segments like '../' allows reading arbitrary files from the filesystem.",
+          "body": "path.join(\"/srv/uploads\", name) does not prevent directory traversal. A caller supplying name = \"../../etc/passwd\" produces \"/etc/passwd\", allowing arbitrary file reads outside the uploads root.",
           "file": "src/files.js",
-          "line_start": 7,
-          "line_end": 10,
-          "confidence": 1,
-          "recommendation": "Resolve the full target path and verify that path.resolve(ROOT, name).startsWith(path.resolve(ROOT) + path.sep), or reject names containing directory separators."
+          "line_start": 8,
+          "line_end": 9,
+          "confidence": 0.98,
+          "recommendation": "After joining, call path.resolve and verify the result starts with ROOT (e.g. `if (!resolved.startsWith(ROOT + path.sep)) throw …`), or use path.basename(name) to strip directory components."
+        },
+        {
+          "severity": "critical",
+          "title": "Shell command injection in archive",
+          "body": "The `name` parameter is interpolated unsanitised into a shell string passed to execSync. An attacker supplying name = `; rm -rf / #` achieves arbitrary command execution.",
+          "file": "src/files.js",
+          "line_start": 13,
+          "line_end": 13,
+          "confidence": 0.98,
+          "recommendation": "Use execFileSync('tar', ['-czf', `${name}.tar.gz`, path.join(ROOT, name)]) to avoid shell interpolation, and validate/sanitise `name` beforehand (e.g. reject anything that is not a simple filename)."
         },
         {
           "severity": "medium",
-          "title": "Unsafe property access and unvalidated index in pickPage",
-          "body": "pickPage accesses body.page without verifying that body is defined, resulting in a runtime TypeError if body is null or undefined. Additionally, parseInt(body.page) without a radix or bounds check can produce NaN or out-of-bounds access.",
+          "title": "Unbounded and unvalidated array index in pickPage",
+          "body": "parseInt(body.page) can return NaN, a negative number, or an index beyond the array length. pages[NaN] silently returns undefined, and negative indices access non-existent properties. No falsy/undefined check is performed on the return value, so callers receive undefined without warning.",
           "file": "src/files.js",
-          "line_start": 16,
-          "line_end": 19,
-          "confidence": 0.95,
-          "recommendation": "Safely check body?.page, parse with parseInt(body.page, 10), and ensure the parsed value is a valid integer within the bounds of the pages array."
+          "line_start": 17,
+          "line_end": 18,
+          "confidence": 0.85,
+          "recommendation": "Validate that the parsed page is a finite integer within [0, pages.length) and return a clear error or default when it is not."
         }
       ],
-      "latencyMs": 14794
+      "latencyMs": 41441
     },
     {
       "verdict": "needs-attention",
-      "summary": "The diff introduces critical command injection, arbitrary path traversal vulnerabilities, and unvalidated index access.",
+      "summary": "Unsanitised user input enables command injection and path traversal; array access is unbounded.",
       "findings": [
         {
           "severity": "critical",
-          "title": "Command injection vulnerability in archive",
-          "body": "In `archive`, the `name` parameter is directly interpolated into the shell command string passed to `execSync`. An attacker providing shell metacharacters in `name` can execute arbitrary system commands.",
+          "title": "Command injection in archive()",
+          "body": "The `name` parameter is interpolated directly into a shell command string passed to `execSync`. An attacker-controlled `name` such as `\"; rm -rf / #\"` executes arbitrary OS commands. `path.join(ROOT, name)` in the second interpolation is equally unsanitised.",
           "file": "src/files.js",
-          "line_start": 12,
-          "line_end": 14,
-          "confidence": 1,
-          "recommendation": "Use `execFileSync` with an argument array instead of a shell string (e.g., `execFileSync('tar', ['-czf', `${name}.tar.gz`, targetPath])`) and sanitize/validate `name`."
+          "line_start": 13,
+          "line_end": 13,
+          "confidence": 0.99,
+          "recommendation": "Never build shell strings from user input. Use `execFileSync('tar', ['-czf', outPath, srcPath])` (no shell) and validate/sanitise `name` (reject path separators, null bytes, shell metacharacters)."
         },
         {
-          "severity": "high",
-          "title": "Arbitrary file read via path traversal in readUpload",
-          "body": "In `readUpload`, `path.join(ROOT, name)` does not prevent directory traversal sequences such as `..`. An attacker can supply a relative path to read arbitrary files from the filesystem.",
+          "severity": "critical",
+          "title": "Path traversal in readUpload()",
+          "body": "`path.join('/srv/uploads', '../../etc/passwd')` resolves to `/etc/passwd`. Because `name` is not validated, any caller can read arbitrary files on the filesystem as the process user.",
           "file": "src/files.js",
-          "line_start": 7,
-          "line_end": 10,
-          "confidence": 1,
-          "recommendation": "Sanitize `name` by stripping directory separators or ensure `path.resolve(ROOT, name).startsWith(path.resolve(ROOT) + path.sep)` before reading."
+          "line_start": 8,
+          "line_end": 9,
+          "confidence": 0.98,
+          "recommendation": "After joining, call `path.resolve(target)` and verify it starts with `ROOT + path.sep` (or use `path.relative(ROOT, target)` and reject results starting with `..`). Reject null bytes as well."
         },
         {
           "severity": "medium",
-          "title": "Unvalidated input and missing bounds check in pickPage",
-          "body": "In `pickPage`, `parseInt(body.page)` lacks a radix, does not check if `body` or `body.page` is defined, and does not validate whether the resulting index is within the valid bounds of `pages` (or if it evaluates to `NaN`).",
+          "title": "Unbounded and unvalidated array access in pickPage()",
+          "body": "`parseInt(body.page)` can return `NaN` (yields `undefined`), a negative number (yields `undefined` or a prototype property via numeric coercion), or an index beyond `pages.length`. No error is surfaced; callers silently receive `undefined`, likely causing downstream failures or information disclosure if `pages` is an object with unexpected keys.",
           "file": "src/files.js",
-          "line_start": 16,
-          "line_end": 19,
-          "confidence": 0.95,
-          "recommendation": "Validate `body?.page`, parse using `Number.parseInt(body.page, 10)`, and verify `Number.isInteger(page) && page >= 0 && page < pages.length` before accessing `pages`."
+          "line_start": 17,
+          "line_end": 18,
+          "confidence": 0.85,
+          "recommendation": "Validate that the parsed page is a finite integer within `[0, pages.length)` and return an explicit error or default when it is not."
         }
       ],
-      "latencyMs": 25093
+      "latencyMs": 43749
     }
   ],
-  "raw": "{\"conversation_id\":\"c034bae4-eac3-4266-ae5f-fdc66e13f311\",\"status\":\"SUCCESS\",\"response\":\"{\\n  \\\"verdict\\\": \\\"needs-attention\\\",\\n  \\\"summary\\\": \\\"The diff introduces critical command injection, arbitrary path traversal vulnerabilities, and unvalidated index access.\\\",\\n  \\\"findings\\\": [\\n    {\\n      \\\"severity\\\": \\\"critical\\\",\\n      \\\"title\\\": \\\"Command injection vulnerability in archive\\\",\\n      \\\"body\\\": \\\"In `archive`, the `name` parameter is directly interpolated into the shell command string passed to `execSync`. An attacker providing shell metacharacters in `name` can execute arbitrary system commands.\\\",\\n      \\\"file\\\": \\\"src/files.js\\\",\\n      \\\"line_start\\\": 12,\\n      \\\"line_end\\\": 14,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Use `execFileSync` with an argument array instead of a shell string (e.g., `execFileSync('tar', ['-czf', `${name}.tar.gz`, targetPath])`) and sanitize/validate `name`.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"high\\\",\\n      \\\"title\\\": \\\"Arbitrary file read via path traversal in readUpload\\\",\\n      \\\"body\\\": \\\"In `readUpload`, `path.join(ROOT, name)` does not prevent directory traversal sequences such as `..`. An attacker can supply a relative path to read arbitrary files from the filesystem.\\\",\\n      \\\"file\\\": \\\"src/files.js\\\",\\n      \\\"line_start\\\": 7,\\n      \\\"line_end\\\": 10,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Sanitize `name` by stripping directory separators or ensure `path.resolve(ROOT, name).startsWith(path.resolve(ROOT) + path.sep)` before reading.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"medium\\\",\\n      \\\"title\\\": \\\"Unvalidated input and missing bounds check in pickPage\\\",\\n      \\\"body\\\": \\\"In `pickPage`, `parseInt(body.page)` lacks a radix, does not check if `body` or `body.page` is defined, and does not validate whether the resulting index is within the valid bounds of `pages` (or if it evaluates to `NaN`).\\\",\\n      \\\"file\\\": \\\"src/files.js\\\",\\n      \\\"line_start\\\": 16,\\n      \\\"line_end\\\": 19,\\n      \\\"confidence\\\": 0.95,\\n      \\\"recommendation\\\": \\\"Validate `body?.page`, parse using `Number.parseInt(body.page, 10)`, and verify `Number.isInteger(page) \\u0026\\u0026 page \\u003e= 0 \\u0026\\u0026 page \\u003c pages.length` before accessing `pages`.\\\"\\n    }\\n  ],\\n  \\\"next_steps\\\": [\\n    \\\"Replace `execSync` with `execFileSync` using safe argument arrays.\\\",\\n    \\\"Implement path traversal guards for all functions accessing `ROOT`.\\\",\\n    \\\"Add parameter validation and array bounds checks to `pickPage`.\\\"\\n  ]\\n}\\n\",\"duration_seconds\":21.7661162,\"num_turns\":1,\"usage\":{\"input_tokens\":18985,\"output_tokens\":2286,\"thinking_tokens\":1703,\"cache_read_tokens\":0,\"total_tokens\":21271}}\n"
+  "raw": "{\"conversation_id\":\"bde8d4ea-9afc-4d59-93e8-8bc581dd294f\",\"status\":\"SUCCESS\",\"response\":\"{\\\"verdict\\\":\\\"needs-attention\\\",\\\"summary\\\":\\\"Unsanitised user input enables command injection and path traversal; array access is unbounded.\\\",\\\"findings\\\":[{\\\"severity\\\":\\\"critical\\\",\\\"title\\\":\\\"Command injection in archive()\\\",\\\"body\\\":\\\"The `name` parameter is interpolated directly into a shell command string passed to `execSync`. An attacker-controlled `name` such as `\\\\\\\"; rm -rf / #\\\\\\\"` executes arbitrary OS commands. `path.join(ROOT, name)` in the second interpolation is equally unsanitised.\\\",\\\"file\\\":\\\"src/files.js\\\",\\\"line_start\\\":13,\\\"line_end\\\":13,\\\"confidence\\\":0.99,\\\"recommendation\\\":\\\"Never build shell strings from user input. Use `execFileSync('tar', ['-czf', outPath, srcPath])` (no shell) and validate/sanitise `name` (reject path separators, null bytes, shell metacharacters).\\\"},{\\\"severity\\\":\\\"critical\\\",\\\"title\\\":\\\"Path traversal in readUpload()\\\",\\\"body\\\":\\\"`path.join('/srv/uploads', '../../etc/passwd')` resolves to `/etc/passwd`. Because `name` is not validated, any caller can read arbitrary files on the filesystem as the process user.\\\",\\\"file\\\":\\\"src/files.js\\\",\\\"line_start\\\":8,\\\"line_end\\\":9,\\\"confidence\\\":0.98,\\\"recommendation\\\":\\\"After joining, call `path.resolve(target)` and verify it starts with `ROOT + path.sep` (or use `path.relative(ROOT, target)` and reject results starting with `..`). Reject null bytes as well.\\\"},{\\\"severity\\\":\\\"medium\\\",\\\"title\\\":\\\"Unbounded and unvalidated array access in pickPage()\\\",\\\"body\\\":\\\"`parseInt(body.page)` can return `NaN` (yields `undefined`), a negative number (yields `undefined` or a prototype property via numeric coercion), or an index beyond `pages.length`. No error is surfaced; callers silently receive `undefined`, likely causing downstream failures or information disclosure if `pages` is an object with unexpected keys.\\\",\\\"file\\\":\\\"src/files.js\\\",\\\"line_start\\\":17,\\\"line_end\\\":18,\\\"confidence\\\":0.85,\\\"recommendation\\\":\\\"Validate that the parsed page is a finite integer within `[0, pages.length)` and return an explicit error or default when it is not.\\\"}],\\\"next_steps\\\":[\\\"Fix command injection: replace execSync template string with execFileSync and an argument array\\\",\\\"Fix path traversal: add a resolved-path containment check against ROOT before reading\\\",\\\"Add input validation and bounds checking in pickPage\\\"]}\\n\",\"duration_seconds\":40.0299439,\"num_turns\":1,\"usage\":{\"input_tokens\":22534,\"output_tokens\":1093,\"thinking_tokens\":0,\"cache_read_tokens\":0,\"total_tokens\":23627}}\n"
 }

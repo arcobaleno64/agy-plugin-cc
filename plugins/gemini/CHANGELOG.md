@@ -2,6 +2,145 @@
 
 ## Unreleased
 
+- **The bench grew a third axis: each tool's adversarial reviewer, measured
+  separately from its default one.** `gemini.adversarial`, `codex.adversarial` and
+  `agy.adversarial` join on a new `plugin-adversarial` track, and the scorecard ranks
+  them in their own row. They are not more entries on the harness axis on purpose:
+  `prompts/review.md` asks for a pragmatic review and `prompts/adversarial-review.md`
+  asks the model to break confidence in the change, and with composite weighted
+  `recall*70` the adversarial prompt wins that column by construction. Ranking one
+  against the other would have been the third instance today of a column stating what
+  it was supposed to hold rather than what it holds.
+
+  `runCompanionReview` gained a `subcommand` option (default `review`, so every
+  existing cell is unchanged) and the three cells pass `adversarial-review`. Both new
+  behaviours are mutation-confirmed — including, on the second attempt, the axis test:
+  the first version asserted only that a row with the right title was printed, which
+  still passed when the axis was pointed at the harness track. It now asserts which
+  cells' numbers land in which row.
+
+  `codex.adversarial` and `agy.adversarial` are recorded on all five cases
+  (codex-cli 0.149.0, agy 1.1.19, three samples each). This is also the only axis codex
+  can be measured on at all while #679 stands.
+
+- **The gemini cells are on 0.56.0, except where the engine stops answering.**
+  `gemini.model` recorded all five cases; `gemini.deep` recorded four. On
+  `vacuous-tests` a `--deep` review returns nothing at 420s — empty stdout, empty
+  stderr, reproduced three times — while the other four finish in ~35s, so that cassette
+  stays at 0.55.1 and the scorecard now shows the mixed read rather than hiding it.
+  `gemini.adversarial` could not be recorded at all: both cases attempted were killed
+  at the cap with no output, though the same cases complete under `review --deep` and
+  every adversarial case completes under `--engine agy`. It tracks prompt weight on the
+  gemini engine, not the case and not the subcommand. Logged to field notes.
+
+- **The bench cassettes were re-recorded toward one version per tool, and the two
+  cells that could not be are now documented with the reason.** `codex.model` is the
+  one that finished: all five cases on codex-cli 0.149.0, three samples each, which
+  closes the three cases that had been skipped since the account hit its usage limit
+  and re-records the two that were still on 0.147.0. `agy.model` and `agy.deep`
+  followed on 1.1.19, all five cases each. `gemini.model` and `gemini.deep` did not
+  move.
+
+  What blocked each one is the useful part. AGY refused the fifth `agy.model`
+  recording, and `agy.deep` with it, with `Individual quota reached ... Resets in
+  94h2m50s`; once the account reset both cells were finished, so AGY now reads as one
+  version across all ten cassettes. The gemini cells need a
+  credential this machine does not currently have: the stored OAuth token expired
+  2026-08-20 and no `GEMINI_API_KEY` is exported, which leaves them one patch version
+  behind (0.55.1 against a local 0.56.0) — the smallest drift on the board.
+  `codex.native` runs now that `BENCH_CODEX_COMPANION` points at codex plugin 1.0.6,
+  but its `--json` payload carries no `result` — by construction, not by failure. In
+  1.0.6 `review` maps to codex's built-in reviewer, which returns prose and a payload
+  with no `result`, `rawOutput` or `parseError` key at all, while `adversarial-review`
+  passes `--output-schema` and does emit a `result` conforming to the plugin's own
+  review schema. The adapter scores `payload.result`, so all five cases skip; pointing
+  the cell at `adversarial-review` instead would change what it measures, so that is a
+  decision rather than a fix. Filed upstream as openai/codex-plugin-cc#679. A failed live record leaves the previous
+  cassette untouched, so nothing was lost to any of this.
+
+- **A bench cell recorded on more than one version now says both.** The scorecard
+  took the first cassette's provenance to stand for the whole cell, which held only
+  while every case in it shared a version. `agy.model` stopped sharing one the moment
+  its fifth re-record was refused: four cases on 1.1.19, one still on 1.1.15, and the
+  table printed `1.1.19` for all five. That is the `gemini.deep` mix-up in miniature —
+  a column stating what it was supposed to hold rather than what it holds — so the row
+  now reads `live 2026-08-24 · 1.1.19 ×3 · 1 case on 1.1.15`, and a cell with one
+  version says nothing extra. Mutation-confirmed.
+
+- **The bench's AGY adapter now prints the reason AGY gave for refusing a run.** AGY
+  puts a refusal in the JSON envelope's `error` and leaves stderr empty, and the
+  failure message echoed stderr alone — so a spent account rendered as
+  `agy: could not parse review JSON ()`. Three re-recording attempts were spent
+  reading that as a parser or model defect before the envelope was opened by hand and
+  said `Individual quota reached`. The message now prefers `envelope.error`, and
+  `runAgyModel` gained the same `spawnImpl` seam its companion neighbour already has
+  so the behaviour is tested through the function that performs it. Mutation-confirmed:
+  reverting to stderr-only fails the new test. The codex branch had already learned
+  this exact lesson from its own usage limit; the comment there now has a twin.
+
+- **First AEO baseline: Codex answered all five benchmark queries, and the health
+  score is 0%.** `bench/aeo-responses/` had a format, a provenance rule and a runner,
+  and nothing to score. It now holds five captured answers — one per query in
+  `BENCHMARK_QUERIES` — taken from `codex exec --ephemeral --ignore-user-config
+  --skip-git-repo-check -s read-only` with its working root pointed at an empty
+  directory, one fresh session per query, each query pasted verbatim. Measured
+  2026-08-24 on codex-cli 0.149.0.
+
+  Direct recommendation 0%, citation inclusion 20%, average keyword coverage 55%,
+  overall 0% over 5 of 5 queries. The report itself is not committed —
+  `docs/benchmarks/` is gitignored, so this entry is the record.
+
+  What the number is actually made of, because "0%" on its own would be read as
+  "the assistant knows nothing":
+
+  - Q1 (heterogeneous adversarial review in Claude Code) is the only query that
+    triggered no web search at all, and it recommended `/ccg` — a different tool.
+    Run twice, same answer, so that is the model's prior, not sampling noise.
+  - Q3 is the one query that cited a repository URL, and its answer is accurate down
+    to `shell:false`, stdin-delivered prompts, and `.env*` redaction being a
+    `/gemini:transfer` guarantee rather than a review-wide one — after twelve web
+    searches. It still scores as not-recommended, because the pass rule wants the
+    brand in the *first paragraph*. So the 0% pass rate is a placement failure on
+    that query, not an ignorance failure.
+  - Q4 recommended somebody else's project (`kriscendobot/garden`); triad-flow did
+    not appear.
+
+  Each fixture's provenance line carries its own `web search:` count, which is the
+  variable that separates Q1 from the rest. The first version of these lines claimed
+  "no web search" for all five; the run JSONL says that holds only for Q1, and the
+  lines were corrected before scoring.
+
+- **The AGY version gates were re-measured against 1.1.19; no threshold moved.**
+  Seven releases landed between 1.1.12 and 1.1.19, and two of them read like they
+  could have broken the wrapper: 1.1.17 consolidated the agent execution harness
+  onto a single path, and 1.1.18 made a valueless prompt flag and a stray trailing
+  argument into errors. Neither touches the argv this plugin builds — the stdin
+  path emits no `--print` at all and nothing but flag/value pairs, and the
+  positional path passes `--print <prompt>` with its value attached.
+
+  Measured, not read off the notes, and through `detectEngine` + `buildCliArgs` +
+  `runCommand` rather than a shell (a leading `/` handed to `agy` from Git Bash is
+  rewritten into a path, which is how an earlier attempt spent a real turn and
+  measured nothing). Six of the seven gates cost nothing to check, because a
+  read-only slash command carries the whole argv without starting a turn:
+  `supportsAgyStdinPrompt`, `supportsAgyStructuredOutput`,
+  `supportsAgyStreamJson`, `supportsAgyWorkspaceDir` and
+  `supportsAgyReadOnlySlashCommands` all hold in one `/quota` run reporting
+  `num_turns: 0` with every token count at zero, and `supportsAgyModelSelection`
+  holds in a `/model` run that reports back `gemini-3.1-pro-high`,
+  `is_default: false`. Only `supportsAgySlashCommandOptOut` needs a real turn to
+  prove — with the flag set, `/quota` reaches the model as literal text, which is
+  the flag working — and that one cost 22,146 tokens.
+
+  Two findings that change nothing in the code but are worth writing down. AGY
+  rejects `--effort` on its own with `--effort is not supported for the current
+  model` on this account, because the OAuth model list bakes the effort tier into
+  the id (`gemini-3.7-flash-high`); the refusal arrives as a well-formed ERROR
+  envelope with exit 1 and zero tokens, so it fails legibly rather than silently.
+  And `agy models --output-format json` still prints usage and ignores the flag on
+  1.1.19 (upstream issue #777, still open); this plugin never invokes those
+  subcommands, so it is unaffected.
+
 ## 0.22.3 — 2026-08-24 — What the plugin actually handed its caller
 
 Both entries are the same shape: the plugin produced something, a consumer needed

@@ -1,0 +1,116 @@
+{
+  "caseId": "path-and-input",
+  "cell": "agy.adversarial",
+  "recordedAt": "2026-08-24T11:21:45.196Z",
+  "verdict": "needs-attention",
+  "summary": "Do not ship: introduces critical command injection in archive() and path traversal in readUpload().",
+  "findings": [
+    {
+      "severity": "critical",
+      "title": "Command injection in archive()",
+      "body": "The archive function constructs a shell command string by directly interpolating the 'name' parameter into execSync. An attacker supplying shell metacharacters (such as ';', '&&', or '$(...)') within 'name' can execute arbitrary system commands with the privileges of the Node.js process.",
+      "file": "src/files.js",
+      "line_start": 12,
+      "line_end": 14,
+      "confidence": 1,
+      "recommendation": "Use child_process.execFileSync or child_process.spawn with an array of arguments rather than shell string interpolation, and validate/sanitize input parameters."
+    },
+    {
+      "severity": "high",
+      "title": "Path traversal in readUpload()",
+      "body": "readUpload concatenates ROOT and 'name' using path.join without verifying that the resolved path stays within ROOT. Supplying relative path traversal sequences (e.g., '../../etc/passwd') allows reading arbitrary files from the host filesystem.",
+      "file": "src/files.js",
+      "line_start": 7,
+      "line_end": 10,
+      "confidence": 1,
+      "recommendation": "Sanitize 'name' using path.basename(name) or verify that path.resolve(ROOT, name).startsWith(path.resolve(ROOT) + path.sep) before reading."
+    }
+  ],
+  "latencyMs": 21809,
+  "engineVersion": "1.1.19",
+  "engineObserved": "agy",
+  "samples": [
+    {
+      "verdict": "needs-attention",
+      "summary": "Block shipping due to critical remote command execution and arbitrary file read vulnerabilities in file handling utilities.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Remote command execution via shell command interpolation in archive()",
+          "body": "The `archive` function interpolates the `name` parameter directly into a shell command passed to `execSync`. An attacker supplying shell metacharacters (such as `;`, `|`, `&`, or backticks) in `name` can execute arbitrary commands with the privileges of the Node.js process, resulting in full server compromise.",
+          "file": "src/files.js",
+          "line_start": 12,
+          "line_end": 14,
+          "confidence": 1,
+          "recommendation": "Replace `execSync` with `execFile` or `spawn` using an arguments array rather than invoking a shell with string interpolation, and enforce strict alphanumeric/safe character validation on `name`."
+        },
+        {
+          "severity": "high",
+          "title": "Arbitrary file disclosure via path traversal in readUpload()",
+          "body": "`path.join(ROOT, name)` does not restrict directory traversal if `name` contains relative traversal segments (`../`). An attacker can supply traversal sequences to escape `/srv/uploads` and read arbitrary files on the host filesystem accessible to the process.",
+          "file": "src/files.js",
+          "line_start": 7,
+          "line_end": 10,
+          "confidence": 1,
+          "recommendation": "Resolve the target path using `path.resolve(ROOT, name)` and verify that `target.startsWith(path.resolve(ROOT) + path.sep)` before reading from the filesystem."
+        }
+      ],
+      "latencyMs": 32762
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: the changes introduce critical remote command execution and arbitrary file read vulnerabilities via unsanitized inputs.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Command injection in archive function via shell string interpolation",
+          "body": "The archive function directly interpolates the `name` argument into a shell command executed via `execSync`. If `name` contains shell metacharacters (e.g., `;`, `|`, `&`, or command substitutions), an attacker can execute arbitrary shell commands with the privileges of the Node.js process.",
+          "file": "src/files.js",
+          "line_start": 12,
+          "line_end": 14,
+          "confidence": 1,
+          "recommendation": "Replace `execSync` shell string execution with `execFileSync` or `spawnSync` using a discrete arguments array, and validate/sanitize `name` against an allowlist."
+        },
+        {
+          "severity": "high",
+          "title": "Path traversal leading to arbitrary file read in readUpload",
+          "body": "The `readUpload` function constructs target paths with `path.join(ROOT, name)` without verifying that the resolved path stays within `ROOT`. An input containing directory traversal sequences (e.g., `../../etc/passwd`) allows unauthenticated reading of arbitrary files on the host filesystem.",
+          "file": "src/files.js",
+          "line_start": 7,
+          "line_end": 10,
+          "confidence": 1,
+          "recommendation": "Resolve the absolute path using `path.resolve(ROOT, name)` and assert that the target starts with `path.resolve(ROOT) + path.sep`, or restrict `name` to `path.basename(name)`."
+        }
+      ],
+      "latencyMs": 24233
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: introduces critical command injection in archive() and path traversal in readUpload().",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Command injection in archive()",
+          "body": "The archive function constructs a shell command string by directly interpolating the 'name' parameter into execSync. An attacker supplying shell metacharacters (such as ';', '&&', or '$(...)') within 'name' can execute arbitrary system commands with the privileges of the Node.js process.",
+          "file": "src/files.js",
+          "line_start": 12,
+          "line_end": 14,
+          "confidence": 1,
+          "recommendation": "Use child_process.execFileSync or child_process.spawn with an array of arguments rather than shell string interpolation, and validate/sanitize input parameters."
+        },
+        {
+          "severity": "high",
+          "title": "Path traversal in readUpload()",
+          "body": "readUpload concatenates ROOT and 'name' using path.join without verifying that the resolved path stays within ROOT. Supplying relative path traversal sequences (e.g., '../../etc/passwd') allows reading arbitrary files from the host filesystem.",
+          "file": "src/files.js",
+          "line_start": 7,
+          "line_end": 10,
+          "confidence": 1,
+          "recommendation": "Sanitize 'name' using path.basename(name) or verify that path.resolve(ROOT, name).startsWith(path.resolve(ROOT) + path.sep) before reading."
+        }
+      ],
+      "latencyMs": 21809
+    }
+  ],
+  "raw": "{\n  \"review\": \"Adversarial Review\",\n  \"target\": {\n    \"mode\": \"working-tree\",\n    \"label\": \"working tree diff\",\n    \"explicit\": true\n  },\n  \"engine\": \"agy\",\n  \"gemini\": {\n    \"status\": 0,\n    \"stdout\": \"{\\n  \\\"verdict\\\": \\\"needs-attention\\\",\\n  \\\"summary\\\": \\\"Do not ship: introduces critical command injection in archive() and path traversal in readUpload().\\\",\\n  \\\"findings\\\": [\\n    {\\n      \\\"severity\\\": \\\"critical\\\",\\n      \\\"title\\\": \\\"Command injection in archive()\\\",\\n      \\\"body\\\": \\\"The archive function constructs a shell command string by directly interpolating the 'name' parameter into execSync. An attacker supplying shell metacharacters (such as ';', '&&', or '$(...)') within 'name' can execute arbitrary system commands with the privileges of the Node.js process.\\\",\\n      \\\"file\\\": \\\"src/files.js\\\",\\n      \\\"line_start\\\": 12,\\n      \\\"line_end\\\": 14,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Use child_process.execFileSync or child_process.spawn with an array of arguments rather than shell string interpolation, and validate/sanitize input parameters.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"high\\\",\\n      \\\"title\\\": \\\"Path traversal in readUpload()\\\",\\n      \\\"body\\\": \\\"readUpload concatenates ROOT and 'name' using path.join without verifying that the resolved path stays within ROOT. Supplying relative path traversal sequences (e.g., '../../etc/passwd') allows reading arbitrary files from the host filesystem.\\\",\\n      \\\"file\\\": \\\"src/files.js\\\",\\n      \\\"line_start\\\": 7,\\n      \\\"line_end\\\": 10,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Sanitize 'name' using path.basename(name) or verify that path.resolve(ROOT, name).startsWith(path.resolve(ROOT) + path.sep) before reading.\\\"\\n    }\\n  ],\\n  \\\"next_steps\\\": [\\n    \\\"Refactor archive() to use execFileSync or spawn without a shell.\\\",\\n    \\\"Enforce strict path containment checks on all filesystem operations in src/files.js.\\\"\\n  ]\\n}\",\n    \"stderr\": \"\"\n  },\n  \"result\": {\n    \"verdict\": \"needs-attention\",\n    \"summary\": \"Do not ship: introduces critical command injection in archive() and path traversal in readUpload().\",\n    \"findings\": [\n      {\n        \"severity\": \"critical\",\n        \"title\": \"Command injection in archive()\",\n        \"body\": \"The archive function constructs a shell command string by directly interpolating the 'name' parameter into execSync. An attacker supplying shell metacharacters (such as ';', '&&', or '$(...)') within 'name' can execute arbitrary system commands with the privileges of the Node.js process.\",\n        \"file\": \"src/files.js\",\n        \"line_start\": 12,\n        \"line_end\": 14,\n        \"confidence\": 1,\n        \"recommendation\": \"Use child_process.execFileSync or child_process.spawn with an array of arguments rather than shell string interpolation, and validate/sanitize input parameters.\"\n      },\n      {\n        \"severity\": \"high\",\n        \"title\": \"Path traversal in readUpload()\",\n        \"body\": \"readUpload concatenates ROOT and 'name' using path.join without verifying that the resolved path stays within ROOT. Supplying relative path traversal sequences (e.g., '../../etc/passwd') allows reading arbitrary files from the host filesystem.\",\n        \"file\": \"src/files.js\",\n        \"line_start\": 7,\n        \"line_end\": 10,\n        \"confidence\": 1,\n        \"recommendation\": \"Sanitize 'name' using path.basename(name) or verify that path.resolve(ROOT, name).startsWith(path.resolve(ROOT) + path.sep) before reading.\"\n      }\n    ],\n    \"next_steps\": [\n      \"Refactor archive() to use execFileSync or spawn without a shell.\",\n      \"Enforce strict path containment checks on all filesystem operations in src/files.js.\"\n    ]\n  }\n}\n"
+}

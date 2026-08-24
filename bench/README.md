@@ -5,7 +5,7 @@ on code review, scored automatically against planted ground truth. It operationa
 the manual comparison in [`docs/MODEL_COMPARISON.md`](../docs/MODEL_COMPARISON.md):
 the interesting question is **model vs harness**, so the benchmark measures both.
 
-## Two axes, six cells
+## Three axes, nine cells
 
 All three tools emit the **same** structured review JSON (see
 [`review-output.schema.json`](review-output.schema.json), identical to the gemini
@@ -20,10 +20,27 @@ one scorer grades all of them.
 | `codex.native` | codex's native agentic reviewer via its companion | harness |
 | `agy.model` | `agy` on the same neutral prompt + diff, unoriented, tools forbidden | model (single-shot) |
 | `agy.deep` | `gemini-companion review --deep --engine agy` (agentic repo exploration) | harness |
+| `gemini.adversarial` | `gemini-companion adversarial-review --deep --engine gemini` | adversarial |
+| `codex.adversarial` | `codex-companion adversarial-review` | adversarial |
+| `agy.adversarial` | `gemini-companion adversarial-review --deep --engine agy` | adversarial |
 
 - **Model axis** = every `*.model` cell (same prompt, no tools).
-- **Harness axis** = every agentic cell (each tool's repo-exploring reviewer).
+- **Harness axis** = each tool's default repo-exploring reviewer.
+- **Adversarial axis** = each tool's adversarial reviewer.
 - **Harness lift** = within a tool, `model → agentic` composite delta.
+
+The adversarial cells are a third axis rather than more entries on the harness one,
+because the two prompts are not interchangeable: `prompts/review.md` asks for a
+pragmatic review, `prompts/adversarial-review.md` asks the model to break confidence
+in the change. Composite is `recall*70 + precision*20 + severityExact*10`, so the
+adversarial prompt is expected to score higher on recall and worse on false positives
+by construction. Ranking one against the other would be a column stating what it is
+supposed to hold rather than what it holds.
+
+It is also the only axis codex can currently be measured on end-to-end: `codex.native`
+runs codex's built-in reviewer, whose `--json` payload carries no `result`
+([openai/codex-plugin-cc#679](https://github.com/openai/codex-plugin-cc/issues/679)),
+while `adversarial-review` emits schema-shaped findings.
 
 The axes are read off `lib/cells.mjs`, not off a list of tool names, so a cell added
 there joins both the ranking and its own lift without touching the report.
@@ -67,19 +84,50 @@ A cassette recorded from a real run carries `recordedAt`, the `engineVersion` it
 recorded against, every repeat in `samples`, and no `source`; a seeded one carries a
 `source` field. The scorecard prints all of it per cell. Current committed state:
 
-- **`gemini.model`, `agy.model`, `agy.deep` — live-recorded on all five cases**,
-  three samples each, all on 2026-08-19: the two older cases on gemini 0.54.4 / agy
-  1.1.14, the three new ones on gemini 0.55.1 / agy 1.1.15.
-- **`gemini.deep` — re-recorded on all five cases** (gemini 0.55.1, three samples
-  each), after its previous five cassettes turned out to be AGY. See below. This is
-  the first genuine gemini reading the harness axis has ever had.
-- **`codex.model` — live-recorded on two cases only** (codex-cli 0.147.0). The three
-  new cases are unrecorded because the account hit its usage limit mid-session: exit 1,
-  empty stdout, `ERROR: You've hit your usage limit ... try again at Aug 25th, 2026` on
-  stderr. Recordable again after that date; until then it prints
-  `skipped (no cassette)` on three of five cases and its aggregate covers two.
-- **`codex.native` — still seeded.** `BENCH_CODEX_COMPANION` was unset, so it was
-  skipped rather than recorded.
+- **`codex.model` — live-recorded on all five cases** (codex-cli 0.149.0, three
+  samples each, 2026-08-24). The three cases that were missing while the account sat
+  at its usage limit were recorded once it reset, and the two older ones were
+  re-recorded on the same version so the cell reads as one tool at one version.
+- **`agy.model`, `agy.deep` — live-recorded on all five cases** (agy 1.1.19, three
+  samples each, 2026-08-24). Both cells sat mid-refresh for part of that day: AGY
+  refused four recordings with `Individual quota reached ... Resets in 94h2m50s`, and
+  they were finished once the account reset. A failed live record leaves the existing
+  cassette untouched, so nothing was lost while the cell was half-refreshed — and
+  while it was, the scorecard said so rather than printing the newer version for
+  every case.
+- **`gemini.model` — all five cases on gemini 0.56.0** (three samples each,
+  2026-08-24), recorded once a `GEMINI_API_KEY` was available; the stored OAuth token
+  had expired on 2026-08-20.
+- **`gemini.deep` — four of five cases on 0.56.0**, `vacuous-tests` still on 0.55.1.
+  That case does not merely miss the 180s cap on 0.56.0, it produces nothing at 420s
+  with empty stdout and empty stderr, reproduced three times, while the other four
+  finish in ~35s. `gemini.deep`'s cassettes remain the only genuine gemini reading the
+  harness axis has — see the AGY mix-up below.
+- **`gemini.adversarial` — unrecorded.** The same hang, wider: both cases attempted
+  (`async-lifecycle`, `auth-basic`) were killed at the cap with no output, while the
+  identical cases complete under `review --deep` and every adversarial case completes
+  under `--engine agy`. It tracks prompt weight on the gemini engine, not the case and
+  not the subcommand.
+- **`codex.adversarial`, `agy.adversarial` — live-recorded on all five cases**
+  (codex-cli 0.149.0 and agy 1.1.19, three samples each, 2026-08-24).
+- **`codex.native` — still seeded, and now for a known reason.** Pointing
+  `BENCH_CODEX_COMPANION` at the installed codex plugin 1.0.6 makes the cell run: the
+  companion completes, exits 0, and returns a payload carrying `review`, `target`,
+  `threadId` and a prose `codex.stdout`. It carries no `result`, and that is by
+  construction rather than by failure. In 1.0.6 the companion has two review paths:
+  `review` maps to codex's built-in reviewer (`runAppServerReview`), whose payload is
+  prose only — no `outputSchema` is passed and no `result`, `rawOutput` or
+  `parseError` key exists on it — while `adversarial-review` goes through the prompt
+  template with `--output-schema` and does emit `result` conforming to the plugin's
+  own `schemas/review-output.schema.json` (verified here on the same repo: `result`
+  present, `parseError: null`).
+
+  The adapter scores `payload.result`, so all five cases report `skipped (companion:
+  no result in payload)`. Recording this cell means either the companion emitting
+  schema-shaped output on the `review` path, or this cell switching to
+  `adversarial-review` — which changes what the cell measures, so it is a decision,
+  not a fix. Filed upstream as
+  [openai/codex-plugin-cc#679](https://github.com/openai/codex-plugin-cc/issues/679).
 - **`gemini.deep` records headlessly after all.** An older note here said it could
   not — that `gemini --deep` exits non-zero with empty stdout because tool approvals
   need a TTY. Given a key and `GEMINI_CLI_TRUST_WORKSPACE`, gemini 0.55.1 recorded all

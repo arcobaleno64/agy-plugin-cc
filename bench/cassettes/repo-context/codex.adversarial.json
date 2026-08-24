@@ -1,0 +1,146 @@
+{
+  "caseId": "repo-context",
+  "cell": "codex.adversarial",
+  "recordedAt": "2026-08-24T11:15:07.090Z",
+  "verdict": "needs-attention",
+  "summary": "Do not ship: the diff includes stale process state and a JWT issuer that accepts weak signing configuration and unrestricted claims.",
+  "findings": [
+    {
+      "severity": "high",
+      "title": "JWT signing accepts any non-empty secret without strength validation",
+      "body": "`issue()` signs authentication tokens directly with `JWT_SECRET`. `jsonwebtoken` rejects a missing secret, but accepts short or predictable non-empty values; a misconfigured deployment can therefore start successfully while issuing forgeable HS256 tokens. The impact depends on how these tokens are trusted, but compromise of authorization claims would be severe.",
+      "file": "src/token.js",
+      "line_start": 4,
+      "line_end": 4,
+      "confidence": 0.9,
+      "recommendation": "Validate `JWT_SECRET` during application startup, require cryptographically random key material of an enforced minimum strength, and fail startup before serving requests when validation fails."
+    },
+    {
+      "severity": "medium",
+      "title": "Token issuer permits callers to inject arbitrary authorization and reserved claims",
+      "body": "The entire caller-supplied object is signed without an allowlist or normalization. If any caller can derive this payload from request or profile data, it can mint claims such as elevated roles, `sub`, `aud`, or `iss` under the server's signature. That trust-boundary exposure is an inference because callers are not included in the context, but this API does not enforce the invariant itself.",
+      "file": "src/token.js",
+      "line_start": 3,
+      "line_end": 4,
+      "confidence": 0.76,
+      "recommendation": "Construct the signed payload from an explicit allowlist of server-controlled claims, reject reserved claims from caller input, and set and verify fixed issuer, audience, subject, and algorithm values."
+    },
+    {
+      "severity": "medium",
+      "title": "Repository contains non-portable live process state",
+      "body": "The new state file permanently records a job as `running` with PID 4242. That PID and lifecycle state become stale as soon as the originating process exits or the checkout moves to another machine. Any recovery or orchestration code trusting this file could falsely suppress work or act on an unrelated process that later reuses the PID.",
+      "file": ".omc/state/job.json",
+      "line_start": 1,
+      "line_end": 1,
+      "confidence": 0.98,
+      "recommendation": "Remove the runtime state file from the change and ignore `.omc/state/` or the specific generated artifact; recreate job state at runtime with liveness and ownership validation."
+    }
+  ],
+  "latencyMs": 35683,
+  "engineVersion": "codex-cli 0.149.0",
+  "engineObserved": null,
+  "samples": [
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: the change persists stale runtime state and exposes an unrestricted JWT-signing primitive without validating its signing configuration.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Arbitrary caller-supplied claims are signed without an allowlist",
+          "body": "`issue` signs the entire supplied payload unchanged. Any caller that passes request-derived or otherwise insufficiently trusted data can mint reserved or authorization-sensitive claims such as `sub`, `role`, `scope`, `aud`, or `iss`. The repository context does not show callers, so exploitability is inferred, but this API establishes no trust boundary itself.",
+          "file": "src/token.js",
+          "line_start": 3,
+          "line_end": 4,
+          "confidence": 0.86,
+          "recommendation": "Accept explicit trusted fields instead of an arbitrary payload, construct claims internally, and set/validate issuer, audience, subject, and algorithm consistently with verification."
+        },
+        {
+          "severity": "medium",
+          "title": "Missing JWT secret fails only during token issuance",
+          "body": "`process.env.JWT_SECRET` is passed directly to `jwt.sign`. If the variable is missing or empty in any deployment, issuance throws synchronously on the live request path, creating an authentication outage without an actionable startup failure.",
+          "file": "src/token.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 0.98,
+          "recommendation": "Validate `JWT_SECRET` at startup, reject empty or inadequate values, and fail deployment with a clear configuration error before serving requests."
+        },
+        {
+          "severity": "medium",
+          "title": "Ephemeral process state is included in the deliverable",
+          "body": "The file records job `task-123` as running under PID 4242. That PID and status describe one local execution and will be stale elsewhere; tooling that consumes this state may falsely treat the job as active or target an unrelated process after PID reuse.",
+          "file": ".omc/state/job.json",
+          "line_start": 1,
+          "line_end": 1,
+          "confidence": 0.94,
+          "recommendation": "Remove the runtime state file from the change and ignore `.omc/state/` (or the specific generated file) unless the repository explicitly requires a sanitized state fixture."
+        }
+      ],
+      "latencyMs": 25428
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: token issuance has a latent configuration-dependent outage path, and the diff includes host-specific live-job state.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "JWT configuration failure is deferred into the request path",
+          "body": "`issue()` reads `JWT_SECRET` only when signing and does not validate that it exists or has an acceptable value. If the variable is missing or empty, `jsonwebtoken.sign` throws synchronously when a token is requested, turning deployment misconfiguration into a user-visible authentication outage instead of a startup failure. No local error handling or configuration guard is present in this module.",
+          "file": "src/token.js",
+          "line_start": 3,
+          "line_end": 4,
+          "confidence": 0.98,
+          "recommendation": "Validate `JWT_SECRET` during application startup, reject missing or invalid secrets before serving traffic, and add tests covering absent-secret behavior and successful issuance."
+        },
+        {
+          "severity": "medium",
+          "title": "Host-specific running-job state is being added to the repository",
+          "body": "This file records a concrete PID and claims the job is currently running. Those values describe ephemeral process state on one machine and become stale immediately on another checkout or after process exit. If the state consumer trusts this file, it can attach to, signal, or suppress work based on unrelated PID 4242; at minimum, source control will repeatedly distribute false operational state. The exact consumer impact is inferred because its implementation is not included.",
+          "file": ".omc/state/job.json",
+          "line_start": 1,
+          "line_end": 1,
+          "confidence": 0.91,
+          "recommendation": "Remove the runtime state file from the change, ignore `.omc/state/` or the specific state artifact, and have the consumer verify process identity/liveness rather than trusting persisted PID status."
+        }
+      ],
+      "latencyMs": 30692
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: the diff includes stale process state and a JWT issuer that accepts weak signing configuration and unrestricted claims.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "JWT signing accepts any non-empty secret without strength validation",
+          "body": "`issue()` signs authentication tokens directly with `JWT_SECRET`. `jsonwebtoken` rejects a missing secret, but accepts short or predictable non-empty values; a misconfigured deployment can therefore start successfully while issuing forgeable HS256 tokens. The impact depends on how these tokens are trusted, but compromise of authorization claims would be severe.",
+          "file": "src/token.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 0.9,
+          "recommendation": "Validate `JWT_SECRET` during application startup, require cryptographically random key material of an enforced minimum strength, and fail startup before serving requests when validation fails."
+        },
+        {
+          "severity": "medium",
+          "title": "Token issuer permits callers to inject arbitrary authorization and reserved claims",
+          "body": "The entire caller-supplied object is signed without an allowlist or normalization. If any caller can derive this payload from request or profile data, it can mint claims such as elevated roles, `sub`, `aud`, or `iss` under the server's signature. That trust-boundary exposure is an inference because callers are not included in the context, but this API does not enforce the invariant itself.",
+          "file": "src/token.js",
+          "line_start": 3,
+          "line_end": 4,
+          "confidence": 0.76,
+          "recommendation": "Construct the signed payload from an explicit allowlist of server-controlled claims, reject reserved claims from caller input, and set and verify fixed issuer, audience, subject, and algorithm values."
+        },
+        {
+          "severity": "medium",
+          "title": "Repository contains non-portable live process state",
+          "body": "The new state file permanently records a job as `running` with PID 4242. That PID and lifecycle state become stale as soon as the originating process exits or the checkout moves to another machine. Any recovery or orchestration code trusting this file could falsely suppress work or act on an unrelated process that later reuses the PID.",
+          "file": ".omc/state/job.json",
+          "line_start": 1,
+          "line_end": 1,
+          "confidence": 0.98,
+          "recommendation": "Remove the runtime state file from the change and ignore `.omc/state/` or the specific generated artifact; recreate job state at runtime with liveness and ownership validation."
+        }
+      ],
+      "latencyMs": 35683
+    }
+  ],
+  "raw": "{\n  \"review\": \"Adversarial Review\",\n  \"target\": {\n    \"mode\": \"working-tree\",\n    \"label\": \"working tree diff\",\n    \"explicit\": true\n  },\n  \"threadId\": \"01a0337a-b24f-7312-91a5-7bc3f20180e0\",\n  \"context\": {\n    \"repoRoot\": \"C:/Users/arcobaleno/AppData/Local/Temp/bench-repo-context-1RXLNu\",\n    \"branch\": \"main\",\n    \"summary\": \"Reviewing 0 staged, 2 unstaged, and 0 untracked file(s).\"\n  },\n  \"codex\": {\n    \"status\": 0,\n    \"stderr\": \"\",\n    \"stdout\": \"{\\\"verdict\\\":\\\"needs-attention\\\",\\\"summary\\\":\\\"Do not ship: the diff includes stale process state and a JWT issuer that accepts weak signing configuration and unrestricted claims.\\\",\\\"findings\\\":[{\\\"severity\\\":\\\"high\\\",\\\"title\\\":\\\"JWT signing accepts any non-empty secret without strength validation\\\",\\\"body\\\":\\\"`issue()` signs authentication tokens directly with `JWT_SECRET`. `jsonwebtoken` rejects a missing secret, but accepts short or predictable non-empty values; a misconfigured deployment can therefore start successfully while issuing forgeable HS256 tokens. The impact depends on how these tokens are trusted, but compromise of authorization claims would be severe.\\\",\\\"file\\\":\\\"src/token.js\\\",\\\"line_start\\\":4,\\\"line_end\\\":4,\\\"confidence\\\":0.9,\\\"recommendation\\\":\\\"Validate `JWT_SECRET` during application startup, require cryptographically random key material of an enforced minimum strength, and fail startup before serving requests when validation fails.\\\"},{\\\"severity\\\":\\\"medium\\\",\\\"title\\\":\\\"Token issuer permits callers to inject arbitrary authorization and reserved claims\\\",\\\"body\\\":\\\"The entire caller-supplied object is signed without an allowlist or normalization. If any caller can derive this payload from request or profile data, it can mint claims such as elevated roles, `sub`, `aud`, or `iss` under the server's signature. That trust-boundary exposure is an inference because callers are not included in the context, but this API does not enforce the invariant itself.\\\",\\\"file\\\":\\\"src/token.js\\\",\\\"line_start\\\":3,\\\"line_end\\\":4,\\\"confidence\\\":0.76,\\\"recommendation\\\":\\\"Construct the signed payload from an explicit allowlist of server-controlled claims, reject reserved claims from caller input, and set and verify fixed issuer, audience, subject, and algorithm values.\\\"},{\\\"severity\\\":\\\"medium\\\",\\\"title\\\":\\\"Repository contains non-portable live process state\\\",\\\"body\\\":\\\"The new state file permanently records a job as `running` with PID 4242. That PID and lifecycle state become stale as soon as the originating process exits or the checkout moves to another machine. Any recovery or orchestration code trusting this file could falsely suppress work or act on an unrelated process that later reuses the PID.\\\",\\\"file\\\":\\\".omc/state/job.json\\\",\\\"line_start\\\":1,\\\"line_end\\\":1,\\\"confidence\\\":0.98,\\\"recommendation\\\":\\\"Remove the runtime state file from the change and ignore `.omc/state/` or the specific generated artifact; recreate job state at runtime with liveness and ownership validation.\\\"}],\\\"next_steps\\\":[\\\"Remove the generated job-state artifact.\\\",\\\"Harden the JWT configuration and claim boundary, then add tests for weak secrets and injected privileged or reserved claims.\\\"]}\",\n    \"reasoning\": []\n  },\n  \"result\": {\n    \"verdict\": \"needs-attention\",\n    \"summary\": \"Do not ship: the diff includes stale process state and a JWT issuer that accepts weak signing configuration and unrestricted claims.\",\n    \"findings\": [\n      {\n        \"severity\": \"high\",\n        \"title\": \"JWT signing accepts any non-empty secret without strength validation\",\n        \"body\": \"`issue()` signs authentication tokens directly with `JWT_SECRET`. `jsonwebtoken` rejects a missing secret, but accepts short or predictable non-empty values; a misconfigured deployment can therefore start successfully while issuing forgeable HS256 tokens. The impact depends on how these tokens are trusted, but compromise of authorization claims would be severe.\",\n        \"file\": \"src/token.js\",\n        \"line_start\": 4,\n        \"li"
+}

@@ -1,195 +1,196 @@
 {
   "caseId": "vacuous-tests",
   "cell": "agy.deep",
-  "recordedAt": "2026-08-19T08:33:21.204Z",
+  "recordedAt": "2026-08-24T09:49:24.105Z",
   "verdict": "needs-attention",
-  "summary": "The newly added test suite contains failing assertions, an unhandled asynchronous failure that crashes the process, and vacuous or skipped test cases.",
+  "summary": "The test suite contains skipped, vacuous, and improperly synchronized tests that fail to validate session parsing, ordering, and deletion.",
   "findings": [
     {
       "severity": "high",
-      "title": "Uncaught async assertion and missing session deletion",
-      "body": "In test/session.test.js lines 20-25, the test 'deleting a session empties the store' places its assertion inside an unawaited process.nextTick callback without returning a Promise or handling async completion. Furthermore, no deletion or expire() call is performed after setting the session, leaving sessions.size as 1 and causing an AssertionError to throw after the test runner finishes, crashing with an uncaughtException.",
+      "title": "Asynchronous assertion in synchronous test passes vacuously without executing deletion",
+      "body": "The test schedules an assertion inside process.nextTick within a synchronous test function, causing the test runner to complete and pass before the callback runs. Furthermore, neither expire() nor sessions.delete() is called after setting the session, so the session is never actually deleted.",
       "file": "test/session.test.js",
       "line_start": 20,
       "line_end": 25,
       "confidence": 1,
-      "recommendation": "Invoke expire('abc') or sessions.delete('abc') and perform assert.equal(sessions.size, 0) synchronously within the test body rather than inside process.nextTick."
-    },
-    {
-      "severity": "high",
-      "title": "Failing test due to unseeded sessions map and invalid index check",
-      "body": "In test/session.test.js lines 10-13, the test 'an expired session is listed before a fresh one' calls render() without populating the sessions store with both expired and fresh session records. Because render() returns an empty array, lines.indexOf('expired') and lines.indexOf('fresh') both evaluate to -1, making the condition -1 < -1 false and causing assert.ok() to throw an AssertionError.",
-      "file": "test/session.test.js",
-      "line_start": 10,
-      "line_end": 13,
-      "confidence": 1,
-      "recommendation": "Seed sessions with both an expired session (e.g., expiresAt in the past) and a fresh session (expiresAt in the future) before calling render(), and assert that both are found at non-negative indices in the expected relative order."
+      "recommendation": "Invoke expire('abc') or the deletion logic directly, remove process.nextTick (or return a Promise), and assert that sessions.size === 0."
     },
     {
       "severity": "medium",
-      "title": "Vacuous test with no assertions and valid JSON payload",
-      "body": "In test/session.test.js lines 6-8, 'parseSession handles a malformed payload' supplies valid JSON and contains no assert calls, meaning neither malformed payload rejection nor valid return value structures are actually tested.",
+      "title": "render() ordering test relies on unseeded state and flawed indexOf comparison",
+      "body": "The test executes render() without seeding the sessions Map with both fresh and expired sessions. When an expired session is missing, lines.indexOf('expired') returns -1, which evaluates to less than index 0 (a fresh session at index 0), yielding a false positive. It also leaks/depends on shared global state.",
+      "file": "test/session.test.js",
+      "line_start": 10,
+      "line_end": 13,
+      "confidence": 0.95,
+      "recommendation": "Explicitly populate sessions with both fresh and expired entries before calling render(), clean up state after the test, and assert exact list ordering."
+    },
+    {
+      "severity": "medium",
+      "title": "parseSession malformed payload test lacks invalid inputs and assertions",
+      "body": "The test passes valid JSON ('{\"id\":\"abc\",\"expiresAt\":0}') rather than a malformed payload and contains no assertion checks. It fails to verify error handling or return values when invalid payloads are provided.",
       "file": "test/session.test.js",
       "line_start": 6,
       "line_end": 8,
-      "confidence": 1,
-      "recommendation": "Update the test to pass invalid JSON and assert that it throws using assert.throws(() => parseSession('{bad json}'), SyntaxError), and add a separate test asserting the return object structure for valid JSON."
+      "confidence": 0.95,
+      "recommendation": "Pass actual malformed JSON and assert that parseSession throws or handles the error as expected, and add assertions for valid parsing."
     },
     {
       "severity": "low",
-      "title": "Skipped test leaves expire function unverified",
-      "body": "In test/session.test.js lines 15-18, the test for expire() is marked with test.skip, leaving the deletion behavior untested in the active test suite.",
+      "title": "expire() test is skipped",
+      "body": "The test for expire() is disabled with test.skip, leaving core session expiration logic unverified in the test suite.",
       "file": "test/session.test.js",
       "line_start": 15,
       "line_end": 18,
-      "confidence": 0.95,
-      "recommendation": "Enable the test by replacing test.skip with test, and ensure sessions state is cleaned up between test runs."
+      "confidence": 1,
+      "recommendation": "Enable the test by replacing test.skip with test and ensure sessions state is reset before and after running."
     }
   ],
-  "latencyMs": 27086,
-  "engineVersion": "1.1.15",
+  "latencyMs": 28128,
+  "engineVersion": "1.1.19",
+  "engineObserved": "agy",
   "samples": [
     {
       "verdict": "needs-attention",
-      "summary": "The test suite contains unhandled asynchronous assertion failures, failing ordering assertions on empty state, vacuous test cases, and a skipped core test.",
+      "summary": "The test suite contains unawaited asynchronous assertions, vacuous test cases with missing assertions, and flawed comparison logic that can yield false positives.",
       "findings": [
         {
           "severity": "high",
-          "title": "Asynchronous assertion in synchronous test escapes runner and causes unhandled error",
-          "body": "In test/session.test.js (lines 20-25), the test function is synchronous but executes its assertion inside process.nextTick(). The test runner marks the test as passed before the callback executes. When the callback runs, sessions.size is 1 (because no deletion was performed), causing an assertion failure outside the test lifecycle as an unhandled exception.",
+          "title": "Unawaited asynchronous assertion in synchronous test",
+          "body": "In test/session.test.js (lines 20-25), the assertion is wrapped inside process.nextTick within a synchronous node:test test case. The test runner marks the test as passed immediately when the synchronous function returns, before nextTick runs. Any assertion failure inside nextTick will trigger an uncaught exception outside the test lifecycle rather than failing the test case. In addition, no session deletion operation is performed prior to checking sessions.size.",
           "file": "test/session.test.js",
           "line_start": 20,
           "line_end": 25,
           "confidence": 1,
-          "recommendation": "Execute assertions synchronously after explicitly invoking expire('abc'), or return a Promise/use async handling if testing asynchronous behaviour."
-        },
-        {
-          "severity": "high",
-          "title": "Ordering test runs on unpopulated sessions Map and fails assertion",
-          "body": "In test/session.test.js (lines 10-13), render() is called without populating the sessions Map. It returns an empty array, resulting in indexOf('expired') and indexOf('fresh') both returning -1. The expression -1 < -1 evaluates to false, causing assert.ok to throw an AssertionError when the test executes.",
-          "file": "test/session.test.js",
-          "line_start": 10,
-          "line_end": 13,
-          "confidence": 1,
-          "recommendation": "Populate sessions with both an expired and a fresh session before calling render(), and assert that both items exist in the output array in addition to checking their relative order."
+          "recommendation": "Remove process.nextTick, invoke the session deletion method (e.g. expire() or sessions.delete()), and synchronously assert that sessions.size equals 0."
         },
         {
           "severity": "medium",
-          "title": "Malformed payload test provides valid JSON and lacks assertions",
-          "body": "In test/session.test.js (lines 6-8), the test titled 'parseSession handles a malformed payload' supplies valid JSON ('{\"id\":\"abc\",\"expiresAt\":0}') and contains no assertions. It does not test malformed payloads or verify the function's return value or error handling.",
+          "title": "Malformed payload test uses valid JSON and lacks assertions",
+          "body": "In test/session.test.js (lines 6-8), the test titled 'parseSession handles a malformed payload' provides a valid JSON string ('{\"id\":\"abc\",\"expiresAt\":0}') and does not assert anything about the function's return value or thrown exceptions, making the test vacuous.",
           "file": "test/session.test.js",
           "line_start": 6,
           "line_end": 8,
           "confidence": 0.95,
-          "recommendation": "Pass actual invalid input (e.g. invalid JSON strings) and assert expected error handling using assert.throws()."
+          "recommendation": "Pass an invalid payload and verify expected behavior using assert.throws() or by asserting the parsed output."
+        },
+        {
+          "severity": "medium",
+          "title": "Flawed indexOf comparison allows false positives when substring is missing",
+          "body": "In test/session.test.js (lines 10-13), assert.ok(lines.indexOf(\"expired\") < lines.indexOf(\"fresh\")) evaluates to true if 'expired' is absent (-1) and 'fresh' is found at index 0 or higher (-1 < 0). The test also relies on ambient state without seeding expired and fresh sessions first.",
+          "file": "test/session.test.js",
+          "line_start": 10,
+          "line_end": 13,
+          "confidence": 0.95,
+          "recommendation": "Populate sessions with test data before calling render(), verify that both indexOf values are not equal to -1, and then compare their positions."
+        },
+        {
+          "severity": "low",
+          "title": "Skipped test leaves expire() unverified",
+          "body": "In test/session.test.js (lines 15-18), test.skip is used on the expire() test, preventing it from executing in the test suite.",
+          "file": "test/session.test.js",
+          "line_start": 15,
+          "line_end": 18,
+          "confidence": 0.9,
+          "recommendation": "Remove .skip from test.skip to enable the test and ensure expire() passes verification."
+        }
+      ],
+      "latencyMs": 24621
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "The test suite contains a failing assertion from unseeded state, an asynchronous unhandled exception due to improper callback usage, and vacuous or skipped test cases.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Unseeded session store causes immediate test failure on render assertion",
+          "body": "In test/session.test.js, the test 'an expired session is listed before a fresh one' invokes render() on an empty sessions Map. Both lines.indexOf('expired') and lines.indexOf('fresh') evaluate to -1, causing assert.ok(-1 < -1) to throw an AssertionError and fail test execution.",
+          "file": "test/session.test.js",
+          "line_start": 10,
+          "line_end": 13,
+          "confidence": 1,
+          "recommendation": "Seed the sessions Map with an expired session and a fresh session prior to calling render(), and ensure test state is cleared after execution."
+        },
+        {
+          "severity": "high",
+          "title": "Asynchronous callback in synchronous test triggers uncaughtException after completion",
+          "body": "In test/session.test.js, the test 'deleting a session empties the store' performs assertions inside process.nextTick without returning a Promise or using async/await. The test runner marks the test finished prematurely, and the subsequent callback execution asserts 1 === 0 (since no deletion function was called), resulting in an uncaughtException outside the test lifecycle.",
+          "file": "test/session.test.js",
+          "line_start": 20,
+          "line_end": 25,
+          "confidence": 1,
+          "recommendation": "Invoke expire('abc') or sessions.delete('abc') and perform the assert.equal(sessions.size, 0) check synchronously within the test function."
+        },
+        {
+          "severity": "medium",
+          "title": "Malformed payload test lacks assertions and supplies valid JSON",
+          "body": "In test/session.test.js, 'parseSession handles a malformed payload' passes valid JSON ('{\"id\":\"abc\",\"expiresAt\":0}') rather than malformed input and contains no assertions, leaving error handling unverified.",
+          "file": "test/session.test.js",
+          "line_start": 6,
+          "line_end": 8,
+          "confidence": 1,
+          "recommendation": "Pass an invalid JSON string to parseSession and wrap the call in assert.throws() to assert appropriate error handling."
         },
         {
           "severity": "low",
           "title": "Core session expiration test is skipped",
-          "body": "In test/session.test.js (lines 15-18), test.skip is used on the test verifying expire() functionality, leaving the expiration logic unverified during test suite runs.",
+          "body": "In test/session.test.js, test.skip is used for 'expire() removes the session', leaving the expire function unverified during test runs.",
           "file": "test/session.test.js",
           "line_start": 15,
           "line_end": 18,
           "confidence": 1,
-          "recommendation": "Remove .skip from test.skip to ensure expire() is continuously validated."
+          "recommendation": "Enable the test by replacing test.skip with test and adding beforeEach/afterEach hooks to reset sessions state."
         }
       ],
-      "latencyMs": 32224
+      "latencyMs": 33069
     },
     {
       "verdict": "needs-attention",
-      "summary": "The test suite contains a broken test assertion, an unawaited callback causing unhandled runtime exceptions, a vacuous test lacking assertions, and a skipped test case.",
+      "summary": "The test suite contains skipped, vacuous, and improperly synchronized tests that fail to validate session parsing, ordering, and deletion.",
       "findings": [
         {
           "severity": "high",
-          "title": "Unawaited asynchronous assertion triggers unhandled exception and passes vacuously",
-          "body": "The test schedules an assertion inside process.nextTick without returning a Promise or handling completion. The test runner records a pass before the callback runs, and when the callback executes it throws an unhandled AssertionError because sessions.size is 1 instead of 0 (no deletion function was called).",
+          "title": "Asynchronous assertion in synchronous test passes vacuously without executing deletion",
+          "body": "The test schedules an assertion inside process.nextTick within a synchronous test function, causing the test runner to complete and pass before the callback runs. Furthermore, neither expire() nor sessions.delete() is called after setting the session, so the session is never actually deleted.",
           "file": "test/session.test.js",
           "line_start": 20,
           "line_end": 25,
           "confidence": 1,
-          "recommendation": "Invoke expire('abc') synchronously and assert assert.equal(sessions.size, 0) directly without process.nextTick."
-        },
-        {
-          "severity": "high",
-          "title": "Failing test due to unpopulated state and flawed indexOf ordering comparison",
-          "body": "The test calls render() without populating sessions. Because sessions is empty, render() returns [], causing both indexOf calls to return -1 and failing the assertion. Furthermore, comparing indexOf directly is fragile because -1 < 0 evaluates to true when 'expired' is missing but 'fresh' is present.",
-          "file": "test/session.test.js",
-          "line_start": 10,
-          "line_end": 13,
-          "confidence": 1,
-          "recommendation": "Seed sessions with both an expired and a fresh session fixture and assert the rendered output array directly (e.g. assert.deepEqual(render(), ['expired', 'fresh']))."
+          "recommendation": "Invoke expire('abc') or the deletion logic directly, remove process.nextTick (or return a Promise), and assert that sessions.size === 0."
         },
         {
           "severity": "medium",
-          "title": "Malformed payload test lacks assertions and tests valid JSON",
-          "body": "The test 'parseSession handles a malformed payload' supplies valid JSON and contains no assertion. It does not verify error handling or fallback behavior when given genuinely malformed input.",
-          "file": "test/session.test.js",
-          "line_start": 6,
-          "line_end": 8,
-          "confidence": 1,
-          "recommendation": "Pass invalid JSON or incomplete input and assert expected error handling with assert.throws(() => parseSession('invalid-json'))."
-        },
-        {
-          "severity": "low",
-          "title": "Skipped test leaves session expiration logic untested",
-          "body": "The test for expire() is skipped using test.skip, leaving the expiration function without active automated test coverage.",
-          "file": "test/session.test.js",
-          "line_start": 15,
-          "line_end": 18,
-          "confidence": 0.95,
-          "recommendation": "Remove .skip from test.skip to enable verification of expire()."
-        }
-      ],
-      "latencyMs": 29260
-    },
-    {
-      "verdict": "needs-attention",
-      "summary": "The newly added test suite contains failing assertions, an unhandled asynchronous failure that crashes the process, and vacuous or skipped test cases.",
-      "findings": [
-        {
-          "severity": "high",
-          "title": "Uncaught async assertion and missing session deletion",
-          "body": "In test/session.test.js lines 20-25, the test 'deleting a session empties the store' places its assertion inside an unawaited process.nextTick callback without returning a Promise or handling async completion. Furthermore, no deletion or expire() call is performed after setting the session, leaving sessions.size as 1 and causing an AssertionError to throw after the test runner finishes, crashing with an uncaughtException.",
-          "file": "test/session.test.js",
-          "line_start": 20,
-          "line_end": 25,
-          "confidence": 1,
-          "recommendation": "Invoke expire('abc') or sessions.delete('abc') and perform assert.equal(sessions.size, 0) synchronously within the test body rather than inside process.nextTick."
-        },
-        {
-          "severity": "high",
-          "title": "Failing test due to unseeded sessions map and invalid index check",
-          "body": "In test/session.test.js lines 10-13, the test 'an expired session is listed before a fresh one' calls render() without populating the sessions store with both expired and fresh session records. Because render() returns an empty array, lines.indexOf('expired') and lines.indexOf('fresh') both evaluate to -1, making the condition -1 < -1 false and causing assert.ok() to throw an AssertionError.",
+          "title": "render() ordering test relies on unseeded state and flawed indexOf comparison",
+          "body": "The test executes render() without seeding the sessions Map with both fresh and expired sessions. When an expired session is missing, lines.indexOf('expired') returns -1, which evaluates to less than index 0 (a fresh session at index 0), yielding a false positive. It also leaks/depends on shared global state.",
           "file": "test/session.test.js",
           "line_start": 10,
           "line_end": 13,
-          "confidence": 1,
-          "recommendation": "Seed sessions with both an expired session (e.g., expiresAt in the past) and a fresh session (expiresAt in the future) before calling render(), and assert that both are found at non-negative indices in the expected relative order."
+          "confidence": 0.95,
+          "recommendation": "Explicitly populate sessions with both fresh and expired entries before calling render(), clean up state after the test, and assert exact list ordering."
         },
         {
           "severity": "medium",
-          "title": "Vacuous test with no assertions and valid JSON payload",
-          "body": "In test/session.test.js lines 6-8, 'parseSession handles a malformed payload' supplies valid JSON and contains no assert calls, meaning neither malformed payload rejection nor valid return value structures are actually tested.",
+          "title": "parseSession malformed payload test lacks invalid inputs and assertions",
+          "body": "The test passes valid JSON ('{\"id\":\"abc\",\"expiresAt\":0}') rather than a malformed payload and contains no assertion checks. It fails to verify error handling or return values when invalid payloads are provided.",
           "file": "test/session.test.js",
           "line_start": 6,
           "line_end": 8,
-          "confidence": 1,
-          "recommendation": "Update the test to pass invalid JSON and assert that it throws using assert.throws(() => parseSession('{bad json}'), SyntaxError), and add a separate test asserting the return object structure for valid JSON."
+          "confidence": 0.95,
+          "recommendation": "Pass actual malformed JSON and assert that parseSession throws or handles the error as expected, and add assertions for valid parsing."
         },
         {
           "severity": "low",
-          "title": "Skipped test leaves expire function unverified",
-          "body": "In test/session.test.js lines 15-18, the test for expire() is marked with test.skip, leaving the deletion behavior untested in the active test suite.",
+          "title": "expire() test is skipped",
+          "body": "The test for expire() is disabled with test.skip, leaving core session expiration logic unverified in the test suite.",
           "file": "test/session.test.js",
           "line_start": 15,
           "line_end": 18,
-          "confidence": 0.95,
-          "recommendation": "Enable the test by replacing test.skip with test, and ensure sessions state is cleaned up between test runs."
+          "confidence": 1,
+          "recommendation": "Enable the test by replacing test.skip with test and ensure sessions state is reset before and after running."
         }
       ],
-      "latencyMs": 27086
+      "latencyMs": 28128
     }
   ],
-  "raw": "{\n  \"review\": \"Review\",\n  \"target\": {\n    \"mode\": \"working-tree\",\n    \"label\": \"working tree diff\",\n    \"explicit\": true\n  },\n  \"gemini\": {\n    \"status\": 0,\n    \"stdout\": \"{\\n  \\\"verdict\\\": \\\"needs-attention\\\",\\n  \\\"summary\\\": \\\"The newly added test suite contains failing assertions, an unhandled asynchronous failure that crashes the process, and vacuous or skipped test cases.\\\",\\n  \\\"findings\\\": [\\n    {\\n      \\\"severity\\\": \\\"high\\\",\\n      \\\"title\\\": \\\"Uncaught async assertion and missing session deletion\\\",\\n      \\\"body\\\": \\\"In test/session.test.js lines 20-25, the test 'deleting a session empties the store' places its assertion inside an unawaited process.nextTick callback without returning a Promise or handling async completion. Furthermore, no deletion or expire() call is performed after setting the session, leaving sessions.size as 1 and causing an AssertionError to throw after the test runner finishes, crashing with an uncaughtException.\\\",\\n      \\\"file\\\": \\\"test/session.test.js\\\",\\n      \\\"line_start\\\": 20,\\n      \\\"line_end\\\": 25,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Invoke expire('abc') or sessions.delete('abc') and perform assert.equal(sessions.size, 0) synchronously within the test body rather than inside process.nextTick.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"high\\\",\\n      \\\"title\\\": \\\"Failing test due to unseeded sessions map and invalid index check\\\",\\n      \\\"body\\\": \\\"In test/session.test.js lines 10-13, the test 'an expired session is listed before a fresh one' calls render() without populating the sessions store with both expired and fresh session records. Because render() returns an empty array, lines.indexOf('expired') and lines.indexOf('fresh') both evaluate to -1, making the condition -1 < -1 false and causing assert.ok() to throw an AssertionError.\\\",\\n      \\\"file\\\": \\\"test/session.test.js\\\",\\n      \\\"line_start\\\": 10,\\n      \\\"line_end\\\": 13,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Seed sessions with both an expired session (e.g., expiresAt in the past) and a fresh session (expiresAt in the future) before calling render(), and assert that both are found at non-negative indices in the expected relative order.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"medium\\\",\\n      \\\"title\\\": \\\"Vacuous test with no assertions and valid JSON payload\\\",\\n      \\\"body\\\": \\\"In test/session.test.js lines 6-8, 'parseSession handles a malformed payload' supplies valid JSON and contains no assert calls, meaning neither malformed payload rejection nor valid return value structures are actually tested.\\\",\\n      \\\"file\\\": \\\"test/session.test.js\\\",\\n      \\\"line_start\\\": 6,\\n      \\\"line_end\\\": 8,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Update the test to pass invalid JSON and assert that it throws using assert.throws(() => parseSession('{bad json}'), SyntaxError), and add a separate test asserting the return object structure for valid JSON.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"low\\\",\\n      \\\"title\\\": \\\"Skipped test leaves expire function unverified\\\",\\n      \\\"body\\\": \\\"In test/session.test.js lines 15-18, the test for expire() is marked with test.skip, leaving the deletion behavior untested in the active test suite.\\\",\\n      \\\"file\\\": \\\"test/session.test.js\\\",\\n      \\\"line_start\\\": 15,\\n      \\\"line_end\\\": 18,\\n      \\\"confidence\\\": 0.95,\\n      \\\"recommendation\\\": \\\"Enable the test by replacing test.skip with test, and ensure sessions state is cleaned up between test runs.\\\"\\n    }\\n  ],\\n  \\\"next_steps\\\": [\\n    \\\"Seed test data before calling render() in test/session.test.js\\\",\\n    \\\"Remove process.nextTick and execute deletion assertions synchronously in test/session.test.js\\\",\\n    \\\"Add assert.throws to verify malformed input handling in parseSession tests\\\",\\n    \\\"Unskip test.skip on expire() and verify the full test suite passes with node --test\\\"\\n  ]\\n}\",\n    \"stderr\": \"\"\n  },\n  \"result\": {\n    \"verdict\": \"needs-attention\",\n    \"summary\": \"The newly "
+  "raw": "{\n  \"review\": \"Review\",\n  \"target\": {\n    \"mode\": \"working-tree\",\n    \"label\": \"working tree diff\",\n    \"explicit\": true\n  },\n  \"engine\": \"agy\",\n  \"gemini\": {\n    \"status\": 0,\n    \"stdout\": \"{\\n  \\\"verdict\\\": \\\"needs-attention\\\",\\n  \\\"summary\\\": \\\"The test suite contains skipped, vacuous, and improperly synchronized tests that fail to validate session parsing, ordering, and deletion.\\\",\\n  \\\"findings\\\": [\\n    {\\n      \\\"severity\\\": \\\"high\\\",\\n      \\\"title\\\": \\\"Asynchronous assertion in synchronous test passes vacuously without executing deletion\\\",\\n      \\\"body\\\": \\\"The test schedules an assertion inside process.nextTick within a synchronous test function, causing the test runner to complete and pass before the callback runs. Furthermore, neither expire() nor sessions.delete() is called after setting the session, so the session is never actually deleted.\\\",\\n      \\\"file\\\": \\\"test/session.test.js\\\",\\n      \\\"line_start\\\": 20,\\n      \\\"line_end\\\": 25,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Invoke expire('abc') or the deletion logic directly, remove process.nextTick (or return a Promise), and assert that sessions.size === 0.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"medium\\\",\\n      \\\"title\\\": \\\"render() ordering test relies on unseeded state and flawed indexOf comparison\\\",\\n      \\\"body\\\": \\\"The test executes render() without seeding the sessions Map with both fresh and expired sessions. When an expired session is missing, lines.indexOf('expired') returns -1, which evaluates to less than index 0 (a fresh session at index 0), yielding a false positive. It also leaks/depends on shared global state.\\\",\\n      \\\"file\\\": \\\"test/session.test.js\\\",\\n      \\\"line_start\\\": 10,\\n      \\\"line_end\\\": 13,\\n      \\\"confidence\\\": 0.95,\\n      \\\"recommendation\\\": \\\"Explicitly populate sessions with both fresh and expired entries before calling render(), clean up state after the test, and assert exact list ordering.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"medium\\\",\\n      \\\"title\\\": \\\"parseSession malformed payload test lacks invalid inputs and assertions\\\",\\n      \\\"body\\\": \\\"The test passes valid JSON ('{\\\\\\\"id\\\\\\\":\\\\\\\"abc\\\\\\\",\\\\\\\"expiresAt\\\\\\\":0}') rather than a malformed payload and contains no assertion checks. It fails to verify error handling or return values when invalid payloads are provided.\\\",\\n      \\\"file\\\": \\\"test/session.test.js\\\",\\n      \\\"line_start\\\": 6,\\n      \\\"line_end\\\": 8,\\n      \\\"confidence\\\": 0.95,\\n      \\\"recommendation\\\": \\\"Pass actual malformed JSON and assert that parseSession throws or handles the error as expected, and add assertions for valid parsing.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"low\\\",\\n      \\\"title\\\": \\\"expire() test is skipped\\\",\\n      \\\"body\\\": \\\"The test for expire() is disabled with test.skip, leaving core session expiration logic unverified in the test suite.\\\",\\n      \\\"file\\\": \\\"test/session.test.js\\\",\\n      \\\"line_start\\\": 15,\\n      \\\"line_end\\\": 18,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Enable the test by replacing test.skip with test and ensure sessions state is reset before and after running.\\\"\\n    }\\n  ],\\n  \\\"next_steps\\\": [\\n    \\\"Fix test/session.test.js to seed and clean up the shared sessions Map around each test case.\\\",\\n    \\\"Correct the deletion test to invoke expire() and assert synchronously.\\\",\\n    \\\"Add assertions for malformed input in parseSession and unskip the expire() test.\\\"\\n  ]\\n}\",\n    \"stderr\": \"\"\n  },\n  \"result\": {\n    \"verdict\": \"needs-attention\",\n    \"summary\": \"The test suite contains skipped, vacuous, and improperly synchronized tests that fail to validate session parsing, ordering, and deletion.\",\n    \"findings\": [\n      {\n        \"severity\": \"high\",\n        \"title\": \"Asynchronous assertion in synchronous test passes vacuously without executing deletion\",\n        \"body\": \"The test schedules an assertion inside process.nextTick within a synchronous test function, causing the test runner to complete and pass before "
 }

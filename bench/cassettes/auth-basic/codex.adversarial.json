@@ -1,0 +1,166 @@
+{
+  "caseId": "auth-basic",
+  "cell": "codex.adversarial",
+  "recordedAt": "2026-08-24T11:12:13.428Z",
+  "verdict": "needs-attention",
+  "summary": "Do not ship: the new authentication path is vulnerable to SQL injection and uses a source-controlled JWT signing key, enabling account compromise and forged sessions.",
+  "findings": [
+    {
+      "severity": "critical",
+      "title": "Username interpolation permits SQL injection in the authentication query",
+      "body": "`username` is concatenated directly into SQL. An attacker can alter the WHERE clause or append database-specific payloads through the login input. Depending on the database driver's result behavior, this can bypass authentication, expose user records, or modify data; the injection itself is directly established even though the exact downstream exploit depends on `db.query`.",
+      "file": "src/auth.js",
+      "line_start": 7,
+      "line_end": 9,
+      "confidence": 0.99,
+      "recommendation": "Use a parameterized query with a bound username value and select only the required columns. Add tests using quote, tautology, comment, and stacked-query payloads supported by the configured database."
+    },
+    {
+      "severity": "critical",
+      "title": "Hardcoded JWT secret allows session forgery",
+      "body": "The signing key is embedded in source code and used directly to mint authentication tokens. Anyone who can read the repository, a packaged artifact, or leaked source can generate valid tokens for arbitrary `sub` values. The key also cannot be rotated safely per environment without changing and redeploying code.",
+      "file": "src/auth.js",
+      "line_start": 4,
+      "line_end": 4,
+      "confidence": 0.99,
+      "recommendation": "Load a high-entropy signing key from a managed secret, fail startup when it is absent or weak, separate keys by environment, and implement key rotation using explicit key identifiers."
+    },
+    {
+      "severity": "high",
+      "title": "Password verification appears to compare raw credentials directly",
+      "body": "The login path compares the supplied password directly with `user.password`, with no password-hash verification. Unless `db.query` performs undocumented transformation, this requires stored plaintext or equivalently recoverable passwords, turning any database disclosure into immediate credential compromise. Loose equality also permits type coercion.",
+      "file": "src/auth.js",
+      "line_start": 13,
+      "line_end": 16,
+      "confidence": 0.94,
+      "recommendation": "Store passwords using a password-specific hash such as Argon2id or bcrypt and verify with its constant-time library API. Use a dummy hash for unknown users to reduce account-enumeration timing differences."
+    }
+  ],
+  "latencyMs": 27144,
+  "engineVersion": "codex-cli 0.149.0",
+  "engineObserved": null,
+  "samples": [
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: the new authentication path is SQL-injectable and uses a committed JWT signing secret, enabling account compromise and token forgery.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Username is interpolated directly into an SQL query",
+          "body": "An attacker-controlled username is concatenated into the WHERE clause. A value such as `' OR '1'='1' --` can alter the query and may make login operate on an unintended user; impact depends on the database driver's result semantics, but authentication bypass and user-data exposure are credible.",
+          "file": "src/auth.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 0.99,
+          "recommendation": "Use a parameterized query with a bound username value, select only required columns, and add a test proving SQL metacharacters are treated as data."
+        },
+        {
+          "severity": "critical",
+          "title": "Committed JWT secret allows token forgery",
+          "body": "Every deployment using this source shares a publicly readable signing key. Anyone who obtains the code can mint arbitrary JWTs, including tokens with another user's `sub`; tokens also have no expiration, extending compromise indefinitely.",
+          "file": "src/auth.js",
+          "line_start": 4,
+          "line_end": 16,
+          "confidence": 0.99,
+          "recommendation": "Load a high-entropy secret from managed runtime configuration, rotate this exposed key before deployment, set and validate expiration plus issuer/audience claims, and fail startup when the secret is absent."
+        },
+        {
+          "severity": "high",
+          "title": "Password verification uses direct loose equality",
+          "body": "The supplied password is compared directly with the database value using coercive `==`. This indicates plaintext-equivalent verification and permits type coercion rather than cryptographic password validation, exposing stored credentials and potentially accepting non-identical values.",
+          "file": "src/auth.js",
+          "line_start": 12,
+          "line_end": 15,
+          "confidence": 0.96,
+          "recommendation": "Store passwords using a password-hashing function with unique salts and verify them through its constant-time comparison API; require string inputs and reject malformed values before querying."
+        }
+      ],
+      "latencyMs": 46701
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: the new authentication path permits SQL injection, exposes its JWT signing key, and performs unsafe password verification.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Username is interpolated directly into an SQL query",
+          "body": "An attacker-controlled username is concatenated into the WHERE clause. A value such as `' OR 1=1 --` can alter query semantics and potentially select another user's record; depending on the database driver's multi-statement behavior, broader reads or writes may also be possible. This compromises the authentication boundary.",
+          "file": "src/auth.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 0.99,
+          "recommendation": "Use the database driver's parameterized-query API, such as `WHERE name = ?` or `WHERE name = $1`, and pass the username separately. Add injection regression tests."
+        },
+        {
+          "severity": "critical",
+          "title": "Committed JWT secret allows token forgery",
+          "body": "Anyone who can read this source obtains the signing key and can generate a valid token with an arbitrary `sub`, bypassing login entirely. The same fixed key will also be shared across every deployment that uses this code.",
+          "file": "src/auth.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 1,
+          "recommendation": "Load a high-entropy secret from a deployment secret store or environment variable, fail startup when it is absent, and rotate any environment that has used this key."
+        },
+        {
+          "severity": "high",
+          "title": "Passwords are compared directly with loose equality",
+          "body": "The login path compares the supplied password directly to the database value, with no password-hash verification. This implies recoverable plaintext credentials unless hashing occurs outside the shown path, and `==` additionally permits type coercion. A database disclosure would expose every password immediately.",
+          "file": "src/auth.js",
+          "line_start": 13,
+          "line_end": 15,
+          "confidence": 0.96,
+          "recommendation": "Store passwords using a dedicated password hash such as Argon2id or bcrypt and verify them with the library's constant-time comparison API; reject non-string credentials."
+        },
+        {
+          "severity": "high",
+          "title": "Issued authentication tokens never expire",
+          "body": "`jwt.sign` is called without `expiresIn`, so captured tokens remain valid indefinitely unless every verifier adds an independent lifetime policy. This makes token theft persistent and prevents bounded recovery after credential or device compromise.",
+          "file": "src/auth.js",
+          "line_start": 15,
+          "line_end": 15,
+          "confidence": 0.98,
+          "recommendation": "Set a short explicit `expiresIn`, include and validate issuer and audience, and add a refresh or revocation mechanism appropriate to the session model."
+        }
+      ],
+      "latencyMs": 34535
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: the new authentication path is vulnerable to SQL injection and uses a source-controlled JWT signing key, enabling account compromise and forged sessions.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Username interpolation permits SQL injection in the authentication query",
+          "body": "`username` is concatenated directly into SQL. An attacker can alter the WHERE clause or append database-specific payloads through the login input. Depending on the database driver's result behavior, this can bypass authentication, expose user records, or modify data; the injection itself is directly established even though the exact downstream exploit depends on `db.query`.",
+          "file": "src/auth.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 0.99,
+          "recommendation": "Use a parameterized query with a bound username value and select only the required columns. Add tests using quote, tautology, comment, and stacked-query payloads supported by the configured database."
+        },
+        {
+          "severity": "critical",
+          "title": "Hardcoded JWT secret allows session forgery",
+          "body": "The signing key is embedded in source code and used directly to mint authentication tokens. Anyone who can read the repository, a packaged artifact, or leaked source can generate valid tokens for arbitrary `sub` values. The key also cannot be rotated safely per environment without changing and redeploying code.",
+          "file": "src/auth.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 0.99,
+          "recommendation": "Load a high-entropy signing key from a managed secret, fail startup when it is absent or weak, separate keys by environment, and implement key rotation using explicit key identifiers."
+        },
+        {
+          "severity": "high",
+          "title": "Password verification appears to compare raw credentials directly",
+          "body": "The login path compares the supplied password directly with `user.password`, with no password-hash verification. Unless `db.query` performs undocumented transformation, this requires stored plaintext or equivalently recoverable passwords, turning any database disclosure into immediate credential compromise. Loose equality also permits type coercion.",
+          "file": "src/auth.js",
+          "line_start": 13,
+          "line_end": 16,
+          "confidence": 0.94,
+          "recommendation": "Store passwords using a password-specific hash such as Argon2id or bcrypt and verify with its constant-time library API. Use a dummy hash for unknown users to reduce account-enumeration timing differences."
+        }
+      ],
+      "latencyMs": 27144
+    }
+  ],
+  "raw": "{\n  \"review\": \"Adversarial Review\",\n  \"target\": {\n    \"mode\": \"working-tree\",\n    \"label\": \"working tree diff\",\n    \"explicit\": true\n  },\n  \"threadId\": \"01a03378-2f68-7823-976c-df76c1c63f63\",\n  \"context\": {\n    \"repoRoot\": \"C:/Users/arcobaleno/AppData/Local/Temp/bench-auth-basic-pa9kuD\",\n    \"branch\": \"main\",\n    \"summary\": \"Reviewing 0 staged, 1 unstaged, and 0 untracked file(s).\"\n  },\n  \"codex\": {\n    \"status\": 0,\n    \"stderr\": \"\",\n    \"stdout\": \"{\\\"verdict\\\":\\\"needs-attention\\\",\\\"summary\\\":\\\"Do not ship: the new authentication path is vulnerable to SQL injection and uses a source-controlled JWT signing key, enabling account compromise and forged sessions.\\\",\\\"findings\\\":[{\\\"severity\\\":\\\"critical\\\",\\\"title\\\":\\\"Username interpolation permits SQL injection in the authentication query\\\",\\\"body\\\":\\\"`username` is concatenated directly into SQL. An attacker can alter the WHERE clause or append database-specific payloads through the login input. Depending on the database driver's result behavior, this can bypass authentication, expose user records, or modify data; the injection itself is directly established even though the exact downstream exploit depends on `db.query`.\\\",\\\"file\\\":\\\"src/auth.js\\\",\\\"line_start\\\":7,\\\"line_end\\\":9,\\\"confidence\\\":0.99,\\\"recommendation\\\":\\\"Use a parameterized query with a bound username value and select only the required columns. Add tests using quote, tautology, comment, and stacked-query payloads supported by the configured database.\\\"},{\\\"severity\\\":\\\"critical\\\",\\\"title\\\":\\\"Hardcoded JWT secret allows session forgery\\\",\\\"body\\\":\\\"The signing key is embedded in source code and used directly to mint authentication tokens. Anyone who can read the repository, a packaged artifact, or leaked source can generate valid tokens for arbitrary `sub` values. The key also cannot be rotated safely per environment without changing and redeploying code.\\\",\\\"file\\\":\\\"src/auth.js\\\",\\\"line_start\\\":4,\\\"line_end\\\":4,\\\"confidence\\\":0.99,\\\"recommendation\\\":\\\"Load a high-entropy signing key from a managed secret, fail startup when it is absent or weak, separate keys by environment, and implement key rotation using explicit key identifiers.\\\"},{\\\"severity\\\":\\\"high\\\",\\\"title\\\":\\\"Password verification appears to compare raw credentials directly\\\",\\\"body\\\":\\\"The login path compares the supplied password directly with `user.password`, with no password-hash verification. Unless `db.query` performs undocumented transformation, this requires stored plaintext or equivalently recoverable passwords, turning any database disclosure into immediate credential compromise. Loose equality also permits type coercion.\\\",\\\"file\\\":\\\"src/auth.js\\\",\\\"line_start\\\":13,\\\"line_end\\\":16,\\\"confidence\\\":0.94,\\\"recommendation\\\":\\\"Store passwords using a password-specific hash such as Argon2id or bcrypt and verify with its constant-time library API. Use a dummy hash for unknown users to reduce account-enumeration timing differences.\\\"}],\\\"next_steps\\\":[\\\"Block shipment until all three authentication defects are fixed.\\\",\\\"Add adversarial tests for SQL payloads, forged JWTs, missing or rotated keys, invalid users, and incorrect passwords.\\\"]}\",\n    \"reasoning\": []\n  },\n  \"result\": {\n    \"verdict\": \"needs-attention\",\n    \"summary\": \"Do not ship: the new authentication path is vulnerable to SQL injection and uses a source-controlled JWT signing key, enabling account compromise and forged sessions.\",\n    \"findings\": [\n      {\n        \"severity\": \"critical\",\n        \"title\": \"Username interpolation permits SQL injection in the authentication query\",\n        \"body\": \"`username` is concatenated directly into SQL. An attacker can alter the WHERE clause or append database-specific payloads through the login input. Depending on the database driver's result behavior, this can bypass authentication, expose user records, or modify data; the injection itself is directly established even though the exact downstream exploit depends on `db.query`.\",\n        \"file\": \"src/a"
+}
