@@ -1,0 +1,32 @@
+{
+  "caseId": "caller-contract",
+  "cell": "codex.model",
+  "recordedAt": "2026-08-24T23:23:43.203Z",
+  "verdict": "approve",
+  "summary": "The result-envelope implementation correctly distinguishes found and absent users within the provided diff.",
+  "findings": [],
+  "latencyMs": 14382,
+  "engineVersion": "codex-cli 0.149.0",
+  "engineObserved": null,
+  "samples": [
+    {
+      "verdict": "approve",
+      "summary": "The result-envelope implementation is internally consistent and introduces no material defect visible in the provided diff.",
+      "findings": [],
+      "latencyMs": 17989
+    },
+    {
+      "verdict": "approve",
+      "summary": "The result-envelope change is internally consistent and introduces no material defect visible in the diff.",
+      "findings": [],
+      "latencyMs": 16628
+    },
+    {
+      "verdict": "approve",
+      "summary": "The result-envelope implementation correctly distinguishes found and absent users within the provided diff.",
+      "findings": [],
+      "latencyMs": 14382
+    }
+  ],
+  "raw": "{\"verdict\":\"approve\",\"summary\":\"The result-envelope implementation correctly distinguishes found and absent users within the provided diff.\",\"findings\":[],\"next_steps\":[]}\n"
+}

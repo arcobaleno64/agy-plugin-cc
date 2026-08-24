@@ -2,18 +2,79 @@
 
 ## Unreleased
 
-- **The harness lift, split: exploration is worth +26 and the plugin's own review
-  prompt is worth −16.** The `*.shallow` control cells now record, and the −4.4 lift
-  reported this morning turns out to have been two opposing effects cancelling.
-  Measured on agy 1.1.19, seven cases, three samples each: `model → shallow` (prompt
-  only) averages −16.0, `shallow → deep` (exploration only) averages +26.0.
+- **codex now reads on the two repository-scoped cases too.** `codex.model` and
+  `codex.adversarial` recorded on `caller-contract` and `stale-duplicate`, three
+  samples each, codex-cli 0.149.0 — twelve live runs, no cassette overwritten.
 
-  Both halves land where the design predicts. Exploration is worth +68, +53 and +49 on
-  the three repository-scoped cases and +4, +2, 0, +6 on the four file-scoped ones. The
-  prompt penalty concentrates on those same repository-scoped cases (−60 on
-  `repo-context`, −25 on `stale-duplicate`), which is worth someone's attention: a
-  prompt that tells the model to fold in dependency manifests, callers and untracked
-  files appears to cost accuracy when it has no tools to go and read them.
+  | case | codex.model | codex.adversarial | agy.model | agy.deep |
+  |---|:-:|:-:|:-:|:-:|
+  | caller-contract | 0 | 43 | 0 | 68 |
+  | stale-duplicate | 62 | 65 | 43 | 67 |
+
+  `caller-contract` is 0 for both single-shot cells, which is the case working: its
+  two defects sit in callers the diff never touches, so there is nothing in the diff
+  to find. Codex's adversarial reviewer explores, and it clears its own single-shot
+  reading on both — a harness reading, not a prompt one, and the same direction agy's
+  `--deep` shows.
+
+  `codex.adversarial` needs `BENCH_CODEX_COMPANION`; without it the cell reports
+  `skipped (companion path not configured)` and costs nothing, which is how the first
+  half of this recording ran before the variable was set.
+
+- **The scorer credited a finding for naming a defect's subject without making its
+  claim.** `repo-context` plants an undeclared dependency with `file: "*"`, so it is
+  matched on words alone — and one of those words was the bare module name. Every
+  reviewer that discussed `src/token.js` wrote "jsonwebtoken" somewhere, so a finding
+  about an unvalidated secret was credited with catching a missing manifest entry it
+  never mentioned. `agy.model` on that case was reading 96.7; it is 55.0.
+
+  A ground-truth `match` now takes `all` (every-of: the subject) alongside `keywords`
+  (any-of: the claim), and the three wildcard cases declare both. Mutation-confirmed
+  against ignoring `all` and against relaxing it to any-of.
+
+  This mattered more than its size: the false credit was worth 42 points to one cell
+  and nothing to others, and a board whose whole purpose is comparing cells is worse
+  off being wrong unevenly than being wrong uniformly.
+
+  The four file-scoped cases were split the same way. Five defects sharing one file
+  also share a vocabulary, and `undefined`, `leak`, `throws`, `memory` and `..` were
+  carrying credit with no claim attached to them. Findings matching more than one of
+  their case's planted defects fell from 16% to 2.4%, and no cell's mean moved by
+  more than 1.5 points — the correction was concentrated, not diffuse.
+
+  What remains at 2.4% is left deliberately: all ten are findings that report two
+  defects in one entry ("Plaintext Password Comparison and Unchecked Null User"),
+  which the scorer credits once and therefore under-counts. Whether a merged finding
+  should earn both credits is a question about the scorer's semantics, not about
+  keyword looseness, and it is not answered here.
+
+  A `file: "*"` defect that does not declare `match.all` is now a test failure. There
+  the filename disambiguates nothing, so leaving the subject out is silent: the defect
+  goes on matching, just too much.
+
+- **The harness lift, split: exploration is worth +28 and the plugin's own review
+  prompt is worth −13.** The `*.shallow` control cells now record, and the −4.4 lift
+  reported earlier turns out to have been two opposing effects cancelling.
+  Measured on agy 1.1.19, seven cases, three samples each: `model → shallow` (prompt
+  only) averages −13.3, `shallow → deep` (exploration only) averages +27.8.
+
+  Both halves land where the design predicts. Exploration is worth +68, +61 and +49 on
+  the three repository-scoped cases and +2, +2, 0, +12 on the four file-scoped ones. The
+  prompt penalty concentrates on those same repository-scoped cases (−40 on
+  `repo-context`, −25 on `stale-duplicate`).
+
+  What that penalty is not: not the `DEEP REVIEW MODE` block, which the `*.shallow`
+  cells never see, and not a thinner input — probed across all seven cases,
+  `REVIEW_INPUT` runs 645 to 1414 characters against a 400,000 cap with the full diff
+  present in both arms. It is `prompts/review.md` itself, and what in it costs the
+  points is not established. An earlier draft of this entry blamed a prompt "that
+  tells the model to fold in dependency manifests, callers and untracked files";
+  `review.md` says no such thing — lines 75-80 forbid tools outright.
+
+  Refusing every remaining ambiguous credit takes exploration to +12.5, but that is a
+  statement about how a merged finding is counted rather than about the matcher, and
+  most of the swing is `caller-contract`, where two of the four recorded findings
+  report both planted defects in one entry.
 
   Two defects had to be fixed to get the reading. The runner decided whether to
   materialize a repository from `harness === "agentic"`, which is true of every cell

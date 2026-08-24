@@ -1,0 +1,76 @@
+{
+  "caseId": "stale-duplicate",
+  "cell": "codex.adversarial",
+  "recordedAt": "2026-08-24T23:29:39.435Z",
+  "verdict": "needs-attention",
+  "summary": "Do not ship: the new worker silently drops every ID in non-empty batches.",
+  "findings": [
+    {
+      "severity": "high",
+      "title": "Missing maxBatch causes valid IDs to be discarded",
+      "body": "config/default.json does not define maxBatch. Therefore the first slice uses NaN as its end index and produces [], after which i becomes NaN and the loop exits. Reproduced with two valid IDs: drain([{id:'a'},{id:'b'}]) returned {\"queue\":\"ingest\",\"chunks\":[[]]}. Downstream processing would silently lose the entire batch.",
+      "file": "src/worker.js",
+      "line_start": 7,
+      "line_end": 8,
+      "confidence": 1,
+      "recommendation": "Define maxBatch as a positive integer, reject missing or invalid values at startup, and add a test proving a non-empty batch preserves every ID across chunks."
+    }
+  ],
+  "latencyMs": 74192,
+  "engineVersion": "codex-cli 0.149.0",
+  "engineObserved": null,
+  "samples": [
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: the new worker silently discards every non-empty batch because its chunk size is undefined.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Missing maxBatch configuration produces an empty chunk and drops all IDs",
+          "body": "`config/default.json` defines `queueName` and `retryDelayMs` but no `maxBatch`. Therefore `i + config.maxBatch` becomes `NaN`, `ids.slice(0, NaN)` yields an empty array, and the loop terminates after one iteration. This was reproduced with two valid IDs: `drain([{id:1},{id:2}])` returned `{\"queue\":\"ingest\",\"chunks\":[[]]}`. Any caller treating this result as successfully drained can lose the entire batch without an exception.",
+          "file": "src/worker.js",
+          "line_start": 7,
+          "line_end": 8,
+          "confidence": 1,
+          "recommendation": "Define and validate a positive integer `maxBatch` before processing, and add tests asserting that non-empty input preserves every ID across chunks and that missing, zero, negative, or non-numeric chunk sizes fail explicitly."
+        }
+      ],
+      "latencyMs": 42047
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: the new worker silently discards every non-empty batch.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Missing maxBatch produces an empty chunk and drops all IDs",
+          "body": "config/default.json does not define maxBatch. At runtime, slice(0, undefined) becomes slice(0, 0), so the first chunk is empty; then i += undefined makes i NaN and terminates the loop. Direct execution of drain([{id:1},{id:2}]) returned {\"queue\":\"ingest\",\"chunks\":[[]]}, losing both validated IDs without an error.",
+          "file": "src/worker.js",
+          "line_start": 7,
+          "line_end": 8,
+          "confidence": 1,
+          "recommendation": "Define maxBatch as a positive integer, validate it before entering the loop, fail fast on invalid configuration, and add a test asserting that a non-empty batch preserves every ID across chunks."
+        }
+      ],
+      "latencyMs": 47737
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: the new worker silently drops every ID in non-empty batches.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Missing maxBatch causes valid IDs to be discarded",
+          "body": "config/default.json does not define maxBatch. Therefore the first slice uses NaN as its end index and produces [], after which i becomes NaN and the loop exits. Reproduced with two valid IDs: drain([{id:'a'},{id:'b'}]) returned {\"queue\":\"ingest\",\"chunks\":[[]]}. Downstream processing would silently lose the entire batch.",
+          "file": "src/worker.js",
+          "line_start": 7,
+          "line_end": 8,
+          "confidence": 1,
+          "recommendation": "Define maxBatch as a positive integer, reject missing or invalid values at startup, and add a test proving a non-empty batch preserves every ID across chunks."
+        }
+      ],
+      "latencyMs": 74192
+    }
+  ],
+  "raw": "{\n  \"review\": \"Adversarial Review\",\n  \"target\": {\n    \"mode\": \"working-tree\",\n    \"label\": \"working tree diff\",\n    \"explicit\": true\n  },\n  \"threadId\": \"01a0361a-9b74-7573-8817-39e39ec3e900\",\n  \"context\": {\n    \"repoRoot\": \"C:/Users/arcobaleno/AppData/Local/Temp/bench-stale-duplicate-AYQEBP\",\n    \"branch\": \"main\",\n    \"summary\": \"Reviewing 0 staged, 2 unstaged, and 0 untracked file(s).\"\n  },\n  \"codex\": {\n    \"status\": 0,\n    \"stderr\": \"\",\n    \"stdout\": \"{\\\"verdict\\\":\\\"needs-attention\\\",\\\"summary\\\":\\\"Do not ship: the new worker silently drops every ID in non-empty batches.\\\",\\\"findings\\\":[{\\\"severity\\\":\\\"high\\\",\\\"title\\\":\\\"Missing maxBatch causes valid IDs to be discarded\\\",\\\"body\\\":\\\"config/default.json does not define maxBatch. Therefore the first slice uses NaN as its end index and produces [], after which i becomes NaN and the loop exits. Reproduced with two valid IDs: drain([{id:'a'},{id:'b'}]) returned {\\\\\\\"queue\\\\\\\":\\\\\\\"ingest\\\\\\\",\\\\\\\"chunks\\\\\\\":[[]]}. Downstream processing would silently lose the entire batch.\\\",\\\"file\\\":\\\"src/worker.js\\\",\\\"line_start\\\":7,\\\"line_end\\\":8,\\\"confidence\\\":1,\\\"recommendation\\\":\\\"Define maxBatch as a positive integer, reject missing or invalid values at startup, and add a test proving a non-empty batch preserves every ID across chunks.\\\"}],\\\"next_steps\\\":[\\\"Fix and validate maxBatch, then rerun the working-tree review.\\\"]}\",\n    \"reasoning\": []\n  },\n  \"result\": {\n    \"verdict\": \"needs-attention\",\n    \"summary\": \"Do not ship: the new worker silently drops every ID in non-empty batches.\",\n    \"findings\": [\n      {\n        \"severity\": \"high\",\n        \"title\": \"Missing maxBatch causes valid IDs to be discarded\",\n        \"body\": \"config/default.json does not define maxBatch. Therefore the first slice uses NaN as its end index and produces [], after which i becomes NaN and the loop exits. Reproduced with two valid IDs: drain([{id:'a'},{id:'b'}]) returned {\\\"queue\\\":\\\"ingest\\\",\\\"chunks\\\":[[]]}. Downstream processing would silently lose the entire batch.\",\n        \"file\": \"src/worker.js\",\n        \"line_start\": 7,\n        \"line_end\": 8,\n        \"confidence\": 1,\n        \"recommendation\": \"Define maxBatch as a positive integer, reject missing or invalid values at startup, and add a test proving a non-empty batch preserves every ID across chunks.\"\n      }\n    ],\n    \"next_steps\": [\n      \"Fix and validate maxBatch, then rerun the working-tree review.\"\n    ]\n  },\n  \"rawOutput\": \"{\\\"verdict\\\":\\\"needs-attention\\\",\\\"summary\\\":\\\"Do not ship: the new worker silently drops every ID in non-empty batches.\\\",\\\"findings\\\":[{\\\"severity\\\":\\\"high\\\",\\\"title\\\":\\\"Missing maxBatch causes valid IDs to be discarded\\\",\\\"body\\\":\\\"config/default.json does not define maxBatch. Therefore the first slice uses NaN as its end index and produces [], after which i becomes NaN and the loop exits. Reproduced with two valid IDs: drain([{id:'a'},{id:'b'}]) returned {\\\\\\\"queue\\\\\\\":\\\\\\\"ingest\\\\\\\",\\\\\\\"chunks\\\\\\\":[[]]}. Downstream processing would silently lose the entire batch.\\\",\\\"file\\\":\\\"src/worker.js\\\",\\\"line_start\\\":7,\\\"line_end\\\":8,\\\"confidence\\\":1,\\\"recommendation\\\":\\\"Define maxBatch as a positive integer, reject missing or invalid values at startup, and add a test proving a non-empty batch preserves every ID across chunks.\\\"}],\\\"next_steps\\\":[\\\"Fix and validate maxBatch, then rerun the working-tree review.\\\"]}\",\n  \"parseError\": null,\n  \"reasoningSummary\": []\n}\n"
+}

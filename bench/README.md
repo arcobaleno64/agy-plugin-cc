@@ -57,23 +57,44 @@ one scorer grades all of them.
 >
 > | case | model | shallow | deep | prompt | exploration |
 > |---|:-:|:-:|:-:|:-:|:-:|
-> | async-lifecycle | 91 | 70 | 74 | −21 | +4 |
+> | async-lifecycle | 91 | 69 | 71 | −22 | +2 |
 > | auth-basic | 95 | 81 | 83 | −14 | +2 |
 > | path-and-input | 72 | 69 | 69 | −3 | 0 |
-> | vacuous-tests | 71 | 82 | 88 | +11 | +6 |
+> | vacuous-tests | 71 | 82 | 94 | +11 | +12 |
 > | **caller-contract** | 0 | 0 | **68** | 0 | **+68** |
-> | **repo-context** | 97 | 37 | **90** | −60 | **+53** |
+> | **repo-context** | 55 | 15 | **76** | −40 | **+61** |
 > | **stale-duplicate** | 43 | 18 | **67** | −25 | **+49** |
-> | **mean** | | | | **−16.0** | **+26.0** |
+> | **mean** | | | | **−13.3** | **+27.8** |
 >
 > The −4.4 harness lift reported over the original five cases was two opposing effects
-> cancelling. Exploration is worth **+26** on average and its gains land exactly where
-> the design says they should — +68, +53, +49 on the three repository-scoped cases,
-> against +4, +2, 0, +6 on the four file-scoped ones. The plugin's own review prompt,
-> run without tools, is worth **−16** against the bench's neutral prompt, and that
-> penalty is concentrated on the same repository-scoped cases (−60, −25). A prompt that
-> tells the model to fold in dependency manifests and callers appears to cost accuracy
-> when it cannot go and read them.
+> cancelling. Exploration is worth **+28** on average and its gains land exactly where
+> the design says they should — +68, +61, +49 on the three repository-scoped cases,
+> against +2, +2, 0, +12 on the four file-scoped ones. The plugin's own review prompt,
+> run without tools, is worth **−13** against the bench's neutral prompt, and that
+> penalty is concentrated on the same repository-scoped cases (−40, −25).
+>
+> What that penalty is *not*: it is not the `DEEP REVIEW MODE` block, which the
+> `*.shallow` cells never see, and it is not a thinner input — the probe over all
+> seven cases puts `REVIEW_INPUT` between 645 and 1414 characters against a 400,000
+> cap, with the full diff present in both. It is `prompts/review.md` itself, and
+> what in it costs the points is not yet established. Until it is, this is a fact
+> about the two prompts, not a diagnosis of either.
+>
+> **These numbers were read off a matcher that had to be fixed first.** It credited a
+> finding for naming a defect's subject without making its claim, and the credit was
+> not spread evenly: `repo-context`'s `agy.model` was reading 97 for catching an
+> undeclared dependency it never mentioned, which alone put 20 points of the prompt
+> penalty on that case. Tightening every planted defect into a subject (`match.all`)
+> and a claim (`match.keywords`) took the share of recorded findings that match more
+> than one planted defect from 16% to 2.4%, and moved no cell's mean by more than
+> 1.5 points — the correction was concentrated, not diffuse.
+>
+> The 2.4% that remains is a different thing and is left alone: all ten are findings
+> that genuinely report two defects in one entry ("Plaintext Password Comparison and
+> Unchecked Null User"). The scorer credits one of the two, so it under-counts them.
+> Dropping them outright takes exploration to +12.5, but that number is a statement
+> about how a merged finding is counted, not about the matcher, and most of the swing
+> is `caller-contract`, where two of the four recorded findings are merged reports.
 >
 > `caller-contract` and `stale-duplicate` were added for exactly that, joining
 > `repo-context` as the cases whose planted defects are repository-scoped (`file: "*"`).
@@ -144,10 +165,13 @@ A cassette recorded from a real run carries `recordedAt`, the `engineVersion` it
 recorded against, every repeat in `samples`, and no `source`; a seeded one carries a
 `source` field. The scorecard prints all of it per cell. Current committed state:
 
-- **`codex.model` — live-recorded on all five cases** (codex-cli 0.149.0, three
-  samples each, 2026-08-24). The three cases that were missing while the account sat
-  at its usage limit were recorded once it reset, and the two older ones were
-  re-recorded on the same version so the cell reads as one tool at one version.
+- **`codex.model` — live-recorded on all seven cases** (codex-cli 0.149.0, three
+  samples each, 2026-08-24 and 2026-08-25). The three cases that were missing while
+  the account sat at its usage limit were recorded once it reset, and the two older
+  ones were re-recorded on the same version so the cell reads as one tool at one
+  version. The two repository-scoped cases came last: `caller-contract` **0**,
+  `stale-duplicate` **62**. The zero is the case doing its job — both planted defects
+  live outside the diff, and `agy.model` scores 0 on it too.
 - **`agy.model`, `agy.deep` — live-recorded on all five cases** (agy 1.1.19, three
   samples each, 2026-08-24). Both cells sat mid-refresh for part of that day: AGY
   refused four recordings with `Individual quota reached ... Resets in 94h2m50s`, and
@@ -168,8 +192,12 @@ recorded against, every repeat in `samples`, and no `source`; a seeded one carri
   identical cases complete under `review --deep` and every adversarial case completes
   under `--engine agy`. It tracks prompt weight on the gemini engine, not the case and
   not the subcommand.
-- **`codex.adversarial`, `agy.adversarial` — live-recorded on all five cases**
-  (codex-cli 0.149.0 and agy 1.1.19, three samples each, 2026-08-24).
+- **`codex.adversarial` — live-recorded on all seven cases**, `agy.adversarial` on
+  five (codex-cli 0.149.0 and agy 1.1.19, three samples each, 2026-08-24 and
+  2026-08-25). On the two repository-scoped cases codex's adversarial reviewer scores
+  **43** and **65** against its own single-shot **0** and **62** — it explores, so the
+  gain is a harness reading and not a prompt one. `agy.adversarial` has not been run
+  on those two cases yet.
 - **`codex.native` — still seeded, and now for a known reason.** Pointing
   `BENCH_CODEX_COMPANION` at the installed codex plugin 1.0.6 makes the cell run: the
   companion completes, exits 0, and returns a payload carrying `review`, `target`,
@@ -347,6 +375,22 @@ Per cell, findings are matched against the case's `ground-truth.json`:
   keyword is present (keyword is the robust signal; an exact line overlap is the
   fallback for keyword-less defects). `file: "*"` means keyword-only (for defects
   that span files, e.g. an undeclared dependency).
+- `match.keywords` is **any-of** — the reviewer's wording for the claim is free.
+  `match.all` is **every-of** — the subject the finding has to actually be about.
+  A wildcard defect is matched on words alone, and a subject word is a word every
+  finding about that area writes down: `repo-context` listed the bare module name
+  among its any-of keywords, so a finding about an unvalidated secret, which named
+  the module only in passing, was credited with catching a missing manifest entry.
+  That single false credit was worth 42 composite points to one cell and nothing to
+  others — worse than being wrong uniformly, because the board is a comparison
+  between cells. Put the subject in `all` and the claim in `keywords`, and a
+  finding has to carry both. Every case declares both now; a `file: "*"` defect that
+  does not is a test failure, because there the filename disambiguates nothing.
+  The four file-scoped cases were split the same way — five defects sharing one file
+  also share a vocabulary, and words like `undefined`, `leak`, `throws`, `memory` and
+  `..` were carrying credit on their own. Findings matching more than one planted
+  defect fell from 16% to 2.4%, and what is left is genuine: one entry reporting two
+  defects at once, which the scorer credits once.
 - Each finding is assigned to its **single best** unmatched planted defect, so two
   line-adjacent defects are never double-counted.
 - `recall` = planted found / planted total. `precision` = relevant / findings.
@@ -384,7 +428,11 @@ corpus/<case-id>/
   "planted": [
     { "id": "sqli", "category": "injection", "file": "src/auth.js",
       "line_start": 7, "line_end": 9, "severity": "critical",
-      "match": { "keywords": ["sql injection", "concatenat"] } }
+      "match": { "keywords": ["sql injection", "concatenat"] } },
+    { "id": "missing-dependency", "file": "*",
+      "line_start": 1, "line_end": 1, "severity": "high",
+      "match": { "all": ["jsonwebtoken"],
+                 "keywords": ["undeclared", "not in package.json"] } }
   ],
   "allowed_extras": [
     { "id": "jwt-expiry", "file": "src/auth.js", "match": { "keywords": ["expiresin"] } }
