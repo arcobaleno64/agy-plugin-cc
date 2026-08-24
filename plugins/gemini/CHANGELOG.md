@@ -7,10 +7,18 @@
   `agy.adversarial` join on a new `plugin-adversarial` track, and the scorecard ranks
   them in their own row. They are not more entries on the harness axis on purpose:
   `prompts/review.md` asks for a pragmatic review and `prompts/adversarial-review.md`
-  asks the model to break confidence in the change, and with composite weighted
-  `recall*70` the adversarial prompt wins that column by construction. Ranking one
-  against the other would have been the third instance today of a column stating what
-  it was supposed to hold rather than what it holds.
+  asks the model to break confidence in the change. Ranking one against the other
+  would have been the third instance today of a column stating what it was supposed to
+  hold rather than what it holds.
+
+  The reason first written down for that separation was a prediction, and it was
+  wrong: with composite weighted `recall*70`, the adversarial prompt was supposed to
+  win the column by trading precision for recall. It does the opposite. `agy.deep` ->
+  `agy.adversarial`, five cases x3 on 1.1.19: recall 0.81 -> 0.77, precision
+  0.91 -> 0.92, false positives 1.67 -> 1.33. The comments, this entry and the bench
+  README now carry the measurement instead of the guess. The axis stays separate
+  because the prompts are not interchangeable, which was the part that did not depend
+  on which way the scores fell.
 
   `runCompanionReview` gained a `subcommand` option (default `review`, so every
   existing cell is unchanged) and the three cells pass `adversarial-review`. Both new

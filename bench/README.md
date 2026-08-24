@@ -32,10 +32,16 @@ one scorer grades all of them.
 The adversarial cells are a third axis rather than more entries on the harness one,
 because the two prompts are not interchangeable: `prompts/review.md` asks for a
 pragmatic review, `prompts/adversarial-review.md` asks the model to break confidence
-in the change. Composite is `recall*70 + precision*20 + severityExact*10`, so the
-adversarial prompt is expected to score higher on recall and worse on false positives
-by construction. Ranking one against the other would be a column stating what it is
-supposed to hold rather than what it holds.
+in the change. Ranking one against the other would be a column stating what
+it is supposed to hold rather than what it holds.
+
+The prediction behind that separation was wrong, and the measurement is worth keeping
+next to it. Composite is `recall*70 + precision*20 + severityExact*10`, so the guess
+was that the adversarial prompt would buy recall at the cost of false positives.
+Measured on agy 1.1.19 across five cases x3, `agy.deep` -> `agy.adversarial` moved
+recall 0.81 -> 0.77, precision 0.91 -> 0.92 and false positives 1.67 -> 1.33: more
+conservative, not more aggressive. The axis stays separate anyway — the prompts are
+not interchangeable whichever way the scores happen to fall.
 
 It is also the only axis codex can currently be measured on end-to-end: `codex.native`
 runs codex's built-in reviewer, whose `--json` payload carries no `result`

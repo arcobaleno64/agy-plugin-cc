@@ -7,9 +7,16 @@
 // The adversarial axis is separate rather than folded into the harness axis, because
 // the prompts are not interchangeable: this plugin's `review.md` asks for a pragmatic
 // review and `adversarial-review.md` asks the model to break confidence in the change.
-// On a corpus scored mostly on recall, the second wins by construction. Putting an
-// adversarial reading in the same column as a pragmatic one would be a column stating
-// what it is supposed to hold rather than what it holds.
+// Putting an adversarial reading in the same column as a pragmatic one would be a
+// column stating what it is supposed to hold rather than what it holds.
+//
+// The separation was argued before it was measured, and the prediction was wrong in
+// direction. The guess was that a prompt asking the model to break confidence would
+// trade precision for recall on a composite weighted `recall*70`. Measured on agy,
+// 1.1.19, five cases x3: recall 0.81 -> 0.77, precision 0.91 -> 0.92, false positives
+// 1.67 -> 1.33. The adversarial prompt made the reviewer more conservative, not more
+// aggressive. The axis stays separate because the prompts still are not
+// interchangeable, which is a fact about the prompts rather than about the scores.
 export const CELLS = {
   "gemini.model": { tool: "gemini", track: "model-isolated", harness: "single-shot", label: "Gemini (model, single-shot)" },
   "codex.model": { tool: "codex", track: "model-isolated", harness: "single-shot", label: "Codex (model, single-shot)" },
