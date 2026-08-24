@@ -501,7 +501,7 @@ test("a refused AGY run reports the reason AGY gave, not an empty parenthesis", 
   };
   const stub = () => ({ status: 1, stdout: JSON.stringify(quotaEnvelope), stderr: "" });
 
-  const refused = adapters.runAgyModel("review this", { spawnImpl: stub });
+  const refused = adapters.runAgyModel("review this", { spawnImpl: stub, resolveBinaryImpl: () => "/usr/bin/agy" });
   assert.equal(refused.ok, false, "an envelope carrying no review is still a failure");
   assert.match(String(refused.error), /Individual quota reached/);
 });

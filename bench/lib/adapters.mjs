@@ -138,7 +138,7 @@ function resolveAgyBinary() {
   return agyBinaryCache;
 }
 
-function runAgyModel(promptText, { spawnImpl = spawnSync } = {}) {
+function runAgyModel(promptText, { spawnImpl = spawnSync, resolveBinaryImpl = resolveAgyBinary } = {}) {
   return timed(() => {
     // AGY >=1.1.2 enters print mode from a piped prompt, so --print is omitted:
     // passing it here would make the next flag AGY's positional prompt.
@@ -153,7 +153,10 @@ function runAgyModel(promptText, { spawnImpl = spawnSync } = {}) {
     // cell reported ETIMEDOUT. Spawned directly with a resolved path it answers in
     // ~9s. That also matches what the plugin insists on for agy (engine.mjs:51):
     // an absolute .exe, so a planted `agy.bat` on PATH cannot take the call.
-    const bin = resolveAgyBinary();
+    // Seam, for the same reason spawnImpl is one: the binary lookup runs before any
+    // of the envelope handling below, so a machine without agy on PATH — every CI
+    // runner — exits here and never reaches the behaviour a test means to pin.
+    const bin = resolveBinaryImpl();
     if (!bin) return fail("agy: no agy executable on PATH");
     const res = spawnImpl(
       bin,

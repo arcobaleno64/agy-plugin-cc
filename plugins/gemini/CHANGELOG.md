@@ -74,8 +74,12 @@
   reading that as a parser or model defect before the envelope was opened by hand and
   said `Individual quota reached`. The message now prefers `envelope.error`, and
   `runAgyModel` gained the same `spawnImpl` seam its companion neighbour already has
-  so the behaviour is tested through the function that performs it. Mutation-confirmed:
-  reverting to stderr-only fails the new test. The codex branch had already learned
+  so the behaviour is tested through the function that performs it, plus a
+  `resolveBinaryImpl` seam — without it the binary lookup runs first and every machine
+  with no `agy` on PATH returns `no agy executable on PATH` before reaching the
+  behaviour under test, which is exactly how the first version of this test passed
+  locally and failed on all three CI runners. Mutation-confirmed: reverting to
+  stderr-only fails the new test, on a PATH with agy and on one without. The codex branch had already learned
   this exact lesson from its own usage limit; the comment there now has a twin.
 
 - **First AEO baseline: Codex answered all five benchmark queries, and the health
