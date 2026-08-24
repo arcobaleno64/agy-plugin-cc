@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { scoreReview, findingMatchesPlanted, normalizeFile } from "./lib/score.mjs";
+import { CELL_IDS } from "./lib/cells.mjs";
 import { _internal as adapters } from "./lib/adapters.mjs";
 import { buildScorecard } from "./lib/report.mjs";
 import { cassettePath, writeCassette } from "./lib/cassette.mjs";
@@ -186,6 +187,18 @@ test("every repository-scoped defect declares the subject it is about", () => {
     }
   }
   assert.deepEqual(offenders, []);
+});
+
+// The README's cell table is the only place a reader learns what is on the board,
+// and it drifted silently: two cells were added and the table kept describing nine.
+// A table that omits a cell does not look broken, it looks complete.
+test("the README's cell table lists exactly the cells that exist", () => {
+  const readme = fs.readFileSync(path.join(import.meta.dirname, "README.md"), "utf8");
+  const from = readme.indexOf("| Cell | What it is | Isolates |");
+  assert.notEqual(from, -1, "cell table header not found in bench/README.md");
+  const table = readme.slice(from, readme.indexOf("\n\n", from));
+  const documented = [...table.matchAll(/^\| `([a-z]+\.[a-z]+)` \|/gm)].map((m) => m[1]);
+  assert.deepEqual([...documented].sort(), [...CELL_IDS].sort());
 });
 
 test("scoreReview gives full recall and clean precision when both planted defects are found", () => {

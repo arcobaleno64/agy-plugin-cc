@@ -5,7 +5,7 @@ on code review, scored automatically against planted ground truth. It operationa
 the manual comparison in [`docs/MODEL_COMPARISON.md`](../docs/MODEL_COMPARISON.md):
 the interesting question is **model vs harness**, so the benchmark measures both.
 
-## Three axes, nine cells
+## Three axes, a control, and eleven cells
 
 All three tools emit the **same** structured review JSON (see
 [`review-output.schema.json`](review-output.schema.json), identical to the gemini
@@ -20,6 +20,8 @@ one scorer grades all of them.
 | `codex.native` | codex's native agentic reviewer via its companion | harness |
 | `agy.model` | `agy` on the same neutral prompt + diff, unoriented, tools forbidden | model (single-shot) |
 | `agy.deep` | `gemini-companion review --deep --engine agy` (agentic repo exploration) | harness |
+| `gemini.shallow` | `gemini-companion review` **without** `--deep` | control (prompt only) |
+| `agy.shallow` | `gemini-companion review --engine agy`, no `--deep` | control (prompt only) |
 | `gemini.adversarial` | `gemini-companion adversarial-review --deep --engine gemini` | adversarial |
 | `codex.adversarial` | `codex-companion adversarial-review` | adversarial |
 | `agy.adversarial` | `gemini-companion adversarial-review --deep --engine agy` | adversarial |
@@ -27,6 +29,8 @@ one scorer grades all of them.
 - **Model axis** = every `*.model` cell (same prompt, no tools).
 - **Harness axis** = each tool's default repo-exploring reviewer.
 - **Adversarial axis** = each tool's adversarial reviewer.
+- The `*.shallow` cells are a **control, not an axis**: they hold the prompt fixed
+  against `*.deep` so the lift can be split. They enter no verdict row.
 - **Harness lift** = within a tool, `model → agentic` composite delta.
 
 > **The lift is not a measurement of the harness alone.** `model → agentic` changes
@@ -114,9 +118,16 @@ The prediction behind that separation was wrong, and the measurement is worth ke
 next to it. Composite is `recall*70 + precision*20 + severityExact*10`, so the guess
 was that the adversarial prompt would buy recall at the cost of false positives.
 Measured on agy 1.1.19 across five cases x3, `agy.deep` -> `agy.adversarial` moved
-recall 0.81 -> 0.77, precision 0.91 -> 0.92 and false positives 1.67 -> 1.33: more
-conservative, not more aggressive. The axis stays separate anyway — the prompts are
-not interchangeable whichever way the scores happen to fall.
+recall 0.79 -> 0.72, precision 0.88 -> 0.87 and false positives 0.40 -> 0.40. The
+prediction fails on its own terms: the adversarial prompt did not buy recall, and it
+did not spend precision or false positives failing to. It reports less, and that is
+the whole of the difference. The axis stays separate anyway — the prompts are not
+interchangeable whichever way the scores happen to fall.
+
+An earlier version of this paragraph read 0.81 -> 0.77, 0.91 -> 0.92 and 1.67 -> 1.33.
+Those came off the matcher corrected below, which credited a finding for naming a
+defect's subject without making its claim. The direction survived the re-scoring; the
+two numbers that made it look like a precision-for-recall trade did not.
 
 It is also the only axis codex can currently be measured on end-to-end: `codex.native`
 runs codex's built-in reviewer, whose `--json` payload carries no `result`
@@ -172,17 +183,19 @@ recorded against, every repeat in `samples`, and no `source`; a seeded one carri
   version. The two repository-scoped cases came last: `caller-contract` **0**,
   `stale-duplicate` **62**. The zero is the case doing its job — both planted defects
   live outside the diff, and `agy.model` scores 0 on it too.
-- **`agy.model`, `agy.deep` — live-recorded on all five cases** (agy 1.1.19, three
-  samples each, 2026-08-24). Both cells sat mid-refresh for part of that day: AGY
+- **`agy.model`, `agy.deep`, `agy.shallow` — live-recorded on all seven cases**
+  (agy 1.1.19, three samples each, 2026-08-24). Both cells sat mid-refresh for part of that day: AGY
   refused four recordings with `Individual quota reached ... Resets in 94h2m50s`, and
   they were finished once the account reset. A failed live record leaves the existing
   cassette untouched, so nothing was lost while the cell was half-refreshed — and
   while it was, the scorecard said so rather than printing the newer version for
   every case.
-- **`gemini.model` — all five cases on gemini 0.56.0** (three samples each,
+- **`gemini.model` — five of seven cases on gemini 0.56.0** (three samples each,
   2026-08-24), recorded once a `GEMINI_API_KEY` was available; the stored OAuth token
   had expired on 2026-08-20.
-- **`gemini.deep` — four of five cases on 0.56.0**, `vacuous-tests` still on 0.55.1.
+- **`gemini.deep` — four of seven cases on 0.56.0**, `vacuous-tests` still on 0.55.1,
+  and the two repository-scoped cases unrecorded. `gemini.shallow` is unrecorded
+  entirely — the same engine hang.
   That case does not merely miss the 180s cap on 0.56.0, it produces nothing at 420s
   with empty stdout and empty stderr, reproduced three times, while the other four
   finish in ~35s. `gemini.deep`'s cassettes remain the only genuine gemini reading the
@@ -300,55 +313,68 @@ the one that did **not** append stderr to its failure message, so a quota wall a
 labelled `codex: could not parse review JSON`. It carries stderr now, like the gemini
 and agy branches always did.
 
-### What five cases at three samples showed
+### What seven cases at three samples showed
 
 Composite per repeat, and the widest move each cell made between repeats of the same
-recording:
+recording. Every number here is scored by the corrected matcher (§ Scoring); the
+figures this section carried before were read off the loose one and off cassettes that
+have since been re-recorded, so none of them are comparable to these.
 
-| cell | `auth-basic` | `repo-context` | `async-lifecycle` | `path-and-input` | `vacuous-tests` | widest |
-|---|---|---|---|---|---|:-:|
-| `gemini.model` | 94, 92, 79 | 45, 55, 100 | 84, 60, 81 | 69, 69, 86 | 76, 76, 65 | 55 |
-| `agy.model` | 81, 94, 81 | 0, 65, 65 | 65, 67, 84 | 69, 69, 69 | 76, 76, 76 | **65** |
-| `codex.model` | 96, 72, 98 | 0, 45, 0 | — | — | — | 45 |
-| `gemini.deep` | 81, 94, 80 | 88, 83, 88 | 84, 80, 69 | 69, 69, 69 | 79, 38, 58 | 41 |
-| `agy.deep` | 81, 77, 93 | 88, 88, 83 | 81, 62, 81 | 53, 69, 69 | 95, 71, 95 | **24** |
-| ~~`gemini.deep`~~ as it was — AGY, mislabelled | 80, 81, 81 | 88, 88, 88 | 81, 69, 69 | 69, 69, 53 | 76, 53, 93 | 40 |
+| cell | `auth-basic` | `repo-context` | `async-lifecycle` | `path-and-input` | `vacuous-tests` | `caller-contract` | `stale-duplicate` | widest |
+|---|---|---|---|---|---|---|---|:-:|
+| `gemini.model` | 92, 92, 81 | 55, 0, 0 | 84, 81, 81 | 84, 84, 72 | 79, 76, 79 | — | — | 55 |
+| `agy.model` | 94, 96, 94 | 55, 55, 55 | 96, 94, 84 | 72, 72, 72 | 76, 76, 60 | 0, 0, 0 | 65, 0, 65 | **65** |
+| `codex.model` | 86, 72, 86 | 0, 0, 0 | 69, 81, 84 | 53, 69, 53 | 93, 79, 73 | 0, 0, 0 | 65, 65, 55 | 20 |
+| `gemini.deep` | 81, 81, 96 | 83, 88, 45 | 64, 72, 79 | 81, 69, 65 | 79, 55, 58 | — | — | 43 |
+| `agy.deep` | 77, 77, 96 | 88, 88, 52 | 69, 76, 69 | 69, 69, 69 | 93, 95, 93 | 95, 55, 55 | 55, 90, 55 | 40 |
+| `agy.shallow` | 81, 81, 81 | 0, 0, 45 | 62, 64, 81 | 69, 69, 69 | 76, 93, 76 | 0, 0, 0 | 0, 0, 55 | 55 |
+| `codex.adversarial` | 69, 81, 69 | 0, 0, 0 | 79, 79, 79 | 53, 53, 53 | 95, 76, 93 | 65, 0, 65 | 65, 65, 65 | **65** |
+| `agy.adversarial` | 64, 81, 79 | 42, 88, 42 | 81, 84, 84 | 53, 53, 53 | 98, 98, 95 | — | — | 46 |
 
-The last row is struck through because it is AGY under a gemini label (above). Its
-cassettes are gone; the numbers are kept here because they are still a measurement — a
-second, independent AGY harness run — and because they are what this section's
-conclusions were read off before anyone knew whose they were.
+An earlier version of this table carried a struck-through row for `gemini.deep` as it
+was before the engine mix-up was found — AGY under a gemini label. That row is gone
+rather than corrected: its cassettes were deleted, so its numbers cannot be re-scored
+under the current matcher, and leaving pre-fix numbers in a table of post-fix ones is
+the same error this section is about. The mix-up itself is documented above and still
+matters; only its scoreboard row has been retired.
 
 Four readings, in the order they cost something to learn.
 
-1. **"The agentic cells are an order of magnitude steadier" does not survive, and the
-   real gemini cell is the least steady thing on the harness axis.** This section used
-   to claim it on the strength of `gemini.deep` moving by 1 and by 0 — which was AGY,
-   and so was the `agy.deep` row it was being praised against. Re-recorded as actual
-   gemini, that cell moves by 41. Set `repo-context` aside and the ordering inverts:
-   the deep cells' worst moves are 41 and 24, the model cells' 26, 24 and 19.
+1. **Steadiness does not separate by harness, and a steady cell is not a reliable
+   one.** This section used to claim the agentic cells were "an order of magnitude
+   steadier", on the strength of a `gemini.deep` that turned out to be AGY. What the
+   board shows now is that the two widest moves on it belong to a *model* cell
+   (`agy.model`, 65 on `stale-duplicate`) and an *adversarial* one
+   (`codex.adversarial`, 65 on `caller-contract`), while the two deep cells top out at
+   43 and 40.
 
-   One piece of the original reading does survive, and it is the piece worth keeping.
-   On `repo-context` — the case that is invisible single-shot — both deep cells move
-   by 5 while all three model cells move by 55, 65 and 45. A harness is steady *on the
-   case built to need a harness*, because the model cells are guessing there and
-   guessing has variance. That is the claim the data carries. "Agentic reviewers are
-   steadier" is not.
-2. **Granularity was the dominant term in the model cells' noise, as predicted, and it
-   was not enough.** Two-defect `repo-context` is where every model cell posts its
-   widest move (55, 65, 45); across the four- and five-defect cases the same cells move
-   at most 26. One miss worth 35 composite points really was most of the old spread.
-   It bought no verdict: the board's leads are 6.4 on the model axis and 3.2 on the
-   harness axis, against bands of ±65 and ±40.
-3. **Gemini's harness does not beat gemini's own model cell.** Harness lift — gemini is
-   **-0.2** (75.4 single-shot, 75.2 agentic). It is well inside the band and so is not
-   a finding that repo exploration fails to help; it is the absence of the finding that
-   it helps, on this corpus, for this tool. AGY's lift is +10.2, also inside its band.
-   The one lift that looks decisive, codex's +41, has a seeded end and is not a
-   measurement at all.
+   The surviving piece of the old reading has inverted too, and the inversion is the
+   more useful fact. It used to say the deep cells were steady on `repo-context` — the
+   case built to need a harness — while the model cells thrashed. They now move 43 and
+   36 there, and `agy.model` posts 55, 55, 55 while `codex.model` posts 0, 0, 0. Those
+   are perfect steadiness and they mean nothing: a cell that fails the same way every
+   time has no spread. On this board low spread reads as *consistent*, not as
+   *trustworthy*, and the repository-scoped cases are where the two come apart —
+   exploration sometimes lands and sometimes does not, which is what movement in a
+   deep cell looks like when the cell is actually doing something.
+
+2. **Granularity is still the dominant term in the noise, and still buys no verdict.**
+   Every widest move on the board sits on a two-defect case: 55 and 65 on
+   `stale-duplicate`, 65 on `caller-contract`, 55 and 43 on `repo-context`. Across the
+   four- and five-defect cases no cell moves more than 24. One miss worth 35 composite
+   points really is most of the spread. It buys nothing: the board's leads are 8.2 on
+   the model axis and 2.2 on the harness axis, against bands of ±65 and ±43.
+
+3. **No lift on this board clears its own noise, and they are not measured over the
+   same cases.** Harness lift is +4 for gemini, +14.4 for AGY, both inside their bands.
+   Codex's +41.4 has a seeded end and is not a measurement at all. Worth stating
+   plainly because the table above hides it: gemini's lift spans five cases and AGY's
+   spans seven, and the two extra cases are precisely the ones where exploration pays.
+   Comparing those two lifts to each other would be comparing corpora, not tools.
+
 4. **No axis is decidable — and under the present rule, no amount of extra sampling can
    make one decidable.** Spread is a *range* (`max - min` over repeats, then `max`
-   over cases, `lib/report.mjs:48`), and a range only ever grows as samples are added.
+   over cases, `lib/report.mjs:59`), and a range only ever grows as samples are added.
    It estimates the worst repeat, not the uncertainty in the average, so "run it more"
    moves every verdict further out of reach rather than closer. Naming a lead honestly
    would need a different statistic — a standard error over repeats shrinks with the

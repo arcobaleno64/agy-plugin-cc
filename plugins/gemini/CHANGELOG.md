@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+- **`bench/README.md` was describing a board that no longer existed.** Six places,
+  found by re-deriving every number in the file from the cassettes rather than reading
+  the prose:
+
+  - the header and cell table said "three axes, nine cells" and omitted both `*.shallow`
+    cells entirely — a table missing a row does not look broken, it looks complete;
+  - the adversarial measurement was quoted from the loose matcher: recall
+    0.81 -> 0.77 is really 0.79 -> 0.72, precision 0.91 -> 0.92 is 0.88 -> 0.87, and
+    false positives 1.67 -> 1.33 is 0.40 -> 0.40. The conclusion survives — the
+    adversarial prompt reports less — but the two numbers that made it look like a
+    precision-for-recall trade do not;
+  - the per-repeat spread table was stale twice over, from re-recording and from
+    re-scoring. `agy.model` on `repo-context` was printed as 0, 65, 65; it is
+    55, 55, 55, and the +-65 noise band now comes from `stale-duplicate`;
+  - three of the four readings under that table quoted lifts and leads that have all
+    moved (gemini's lift -0.2 -> +4, AGY's +10.2 -> +14.4, the axis leads 6.4 and 3.2
+    -> 8.2 and 2.2);
+  - two coverage bullets still said "all five cases";
+  - a `lib/report.mjs:48` citation pointed at provenance code; spread is at :59.
+
+  Reading 1 needed rewriting rather than renumbering, because its surviving claim
+  inverted. It used to say the deep cells were steady on `repo-context` while the model
+  cells thrashed. They now move 43 and 36 there, while `agy.model` posts 55, 55, 55 and
+  `codex.model` posts 0, 0, 0 — perfect steadiness that means nothing, because a cell
+  that fails the same way every time has no spread. Low spread on this board reads as
+  *consistent*, not *trustworthy*.
+
+  The struck-through row for the mislabelled `gemini.deep` was retired rather than
+  corrected: its cassettes are deleted, so it cannot be re-scored, and pre-fix numbers
+  sitting in a table of post-fix ones is the error this whole pass is about.
+
+  A test now asserts the README's cell table lists exactly the cells in `CELLS`.
+  Mutation-confirmed by deleting a row.
+
 - **codex now reads on the two repository-scoped cases too.** `codex.model` and
   `codex.adversarial` recorded on `caller-contract` and `stale-duplicate`, three
   samples each, codex-cli 0.149.0 — twelve live runs, no cassette overwritten.
