@@ -165,10 +165,13 @@ A cassette recorded from a real run carries `recordedAt`, the `engineVersion` it
 recorded against, every repeat in `samples`, and no `source`; a seeded one carries a
 `source` field. The scorecard prints all of it per cell. Current committed state:
 
-- **`codex.model` — live-recorded on all five cases** (codex-cli 0.149.0, three
-  samples each, 2026-08-24). The three cases that were missing while the account sat
-  at its usage limit were recorded once it reset, and the two older ones were
-  re-recorded on the same version so the cell reads as one tool at one version.
+- **`codex.model` — live-recorded on all seven cases** (codex-cli 0.149.0, three
+  samples each, 2026-08-24 and 2026-08-25). The three cases that were missing while
+  the account sat at its usage limit were recorded once it reset, and the two older
+  ones were re-recorded on the same version so the cell reads as one tool at one
+  version. The two repository-scoped cases came last: `caller-contract` **0**,
+  `stale-duplicate` **62**. The zero is the case doing its job — both planted defects
+  live outside the diff, and `agy.model` scores 0 on it too.
 - **`agy.model`, `agy.deep` — live-recorded on all five cases** (agy 1.1.19, three
   samples each, 2026-08-24). Both cells sat mid-refresh for part of that day: AGY
   refused four recordings with `Individual quota reached ... Resets in 94h2m50s`, and
@@ -189,8 +192,12 @@ recorded against, every repeat in `samples`, and no `source`; a seeded one carri
   identical cases complete under `review --deep` and every adversarial case completes
   under `--engine agy`. It tracks prompt weight on the gemini engine, not the case and
   not the subcommand.
-- **`codex.adversarial`, `agy.adversarial` — live-recorded on all five cases**
-  (codex-cli 0.149.0 and agy 1.1.19, three samples each, 2026-08-24).
+- **`codex.adversarial` — live-recorded on all seven cases**, `agy.adversarial` on
+  five (codex-cli 0.149.0 and agy 1.1.19, three samples each, 2026-08-24 and
+  2026-08-25). On the two repository-scoped cases codex's adversarial reviewer scores
+  **43** and **65** against its own single-shot **0** and **62** — it explores, so the
+  gain is a harness reading and not a prompt one. `agy.adversarial` has not been run
+  on those two cases yet.
 - **`codex.native` — still seeded, and now for a known reason.** Pointing
   `BENCH_CODEX_COMPANION` at the installed codex plugin 1.0.6 makes the cell run: the
   companion completes, exits 0, and returns a payload carrying `review`, `target`,

@@ -1,0 +1,76 @@
+{
+  "caseId": "caller-contract",
+  "cell": "codex.adversarial",
+  "recordedAt": "2026-08-24T23:26:54.527Z",
+  "verdict": "needs-attention",
+  "summary": "Do not ship: the return-type change breaks every existing caller.",
+  "findings": [
+    {
+      "severity": "high",
+      "title": "Result envelope is incompatible with both route callers",
+      "body": "`findUser` now always returns a truthy envelope and moves record fields under `user`, but callers still treat the result as a nullable user record. `profileRoute` therefore returns HTTP 200 with missing `id` and `name` for both found and absent IDs, while `requireAdmin` reads `role` from the envelope and rejects even valid administrators. This is directly evidenced by `src/routes/profile.js:4-8` and `src/routes/admin.js:4-8`.",
+      "file": "src/store.js",
+      "line_start": 7,
+      "line_end": 12,
+      "confidence": 1,
+      "recommendation": "Update all callers atomically to branch on `result.ok` and read `result.user`; add route tests covering an existing admin, existing member, and unknown ID."
+    }
+  ],
+  "latencyMs": 47356,
+  "engineVersion": "codex-cli 0.149.0",
+  "engineObserved": null,
+  "samples": [
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: the return-type change breaks every existing caller.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Result envelope is incompatible with all existing callers",
+          "body": "`findUser` now always returns a truthy envelope and moves user fields under `user`, but callers still expect a nullable user record. Consequently, `profileRoute` returns HTTP 200 with missing `id` and `name` even for unknown IDs, while `requireAdmin` reads an absent top-level `role` and rejects every administrator. This is directly evidenced by `profile.js:4-8` and `admin.js:4-8`.",
+          "file": "src/store.js",
+          "line_start": 9,
+          "line_end": 12,
+          "confidence": 1,
+          "recommendation": "Update every caller atomically to branch on `result.ok` and read `result.user`, with tests covering found, missing, admin, and non-admin users; otherwise retain the original nullable-record contract."
+        }
+      ],
+      "latencyMs": 38782
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: this silently breaks the exported function’s established return contract.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Return-type change breaks existing callers and absence checks",
+          "body": "`findUser` previously returned a user record or `null`; it now always returns a truthy envelope. Existing callers that read fields directly (for example, `findUser(id).name`) will receive `undefined`, while checks such as `if (findUser(id))` will incorrectly treat missing users as present. Because the function is exported and the diff contains no coordinated caller migration or compatibility layer, this is a plausible runtime regression.",
+          "file": "src/store.js",
+          "line_start": 6,
+          "line_end": 13,
+          "confidence": 0.98,
+          "recommendation": "Either preserve the record-or-null contract, introduce a separately named envelope-returning API, or update every caller atomically and add tests covering direct field access and truthiness-based not-found handling."
+        }
+      ],
+      "latencyMs": 21334
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: the return-type change breaks every existing caller.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Result envelope is incompatible with both route callers",
+          "body": "`findUser` now always returns a truthy envelope and moves record fields under `user`, but callers still treat the result as a nullable user record. `profileRoute` therefore returns HTTP 200 with missing `id` and `name` for both found and absent IDs, while `requireAdmin` reads `role` from the envelope and rejects even valid administrators. This is directly evidenced by `src/routes/profile.js:4-8` and `src/routes/admin.js:4-8`.",
+          "file": "src/store.js",
+          "line_start": 7,
+          "line_end": 12,
+          "confidence": 1,
+          "recommendation": "Update all callers atomically to branch on `result.ok` and read `result.user`; add route tests covering an existing admin, existing member, and unknown ID."
+        }
+      ],
+      "latencyMs": 47356
+    }
+  ],
+  "raw": "{\n  \"review\": \"Adversarial Review\",\n  \"target\": {\n    \"mode\": \"working-tree\",\n    \"label\": \"working tree diff\",\n    \"explicit\": true\n  },\n  \"threadId\": \"01a03618-7fb2-79b1-a279-f707007e5912\",\n  \"context\": {\n    \"repoRoot\": \"C:/Users/arcobaleno/AppData/Local/Temp/bench-caller-contract-2mEqNH\",\n    \"branch\": \"main\",\n    \"summary\": \"Reviewing 0 staged, 1 unstaged, and 0 untracked file(s).\"\n  },\n  \"codex\": {\n    \"status\": 0,\n    \"stderr\": \"\",\n    \"stdout\": \"{\\\"verdict\\\":\\\"needs-attention\\\",\\\"summary\\\":\\\"Do not ship: the return-type change breaks every existing caller.\\\",\\\"findings\\\":[{\\\"severity\\\":\\\"high\\\",\\\"title\\\":\\\"Result envelope is incompatible with both route callers\\\",\\\"body\\\":\\\"`findUser` now always returns a truthy envelope and moves record fields under `user`, but callers still treat the result as a nullable user record. `profileRoute` therefore returns HTTP 200 with missing `id` and `name` for both found and absent IDs, while `requireAdmin` reads `role` from the envelope and rejects even valid administrators. This is directly evidenced by `src/routes/profile.js:4-8` and `src/routes/admin.js:4-8`.\\\",\\\"file\\\":\\\"src/store.js\\\",\\\"line_start\\\":7,\\\"line_end\\\":12,\\\"confidence\\\":1,\\\"recommendation\\\":\\\"Update all callers atomically to branch on `result.ok` and read `result.user`; add route tests covering an existing admin, existing member, and unknown ID.\\\"}],\\\"next_steps\\\":[\\\"Fix both callers and run route-level regression tests before shipping.\\\"]}\",\n    \"reasoning\": []\n  },\n  \"result\": {\n    \"verdict\": \"needs-attention\",\n    \"summary\": \"Do not ship: the return-type change breaks every existing caller.\",\n    \"findings\": [\n      {\n        \"severity\": \"high\",\n        \"title\": \"Result envelope is incompatible with both route callers\",\n        \"body\": \"`findUser` now always returns a truthy envelope and moves record fields under `user`, but callers still treat the result as a nullable user record. `profileRoute` therefore returns HTTP 200 with missing `id` and `name` for both found and absent IDs, while `requireAdmin` reads `role` from the envelope and rejects even valid administrators. This is directly evidenced by `src/routes/profile.js:4-8` and `src/routes/admin.js:4-8`.\",\n        \"file\": \"src/store.js\",\n        \"line_start\": 7,\n        \"line_end\": 12,\n        \"confidence\": 1,\n        \"recommendation\": \"Update all callers atomically to branch on `result.ok` and read `result.user`; add route tests covering an existing admin, existing member, and unknown ID.\"\n      }\n    ],\n    \"next_steps\": [\n      \"Fix both callers and run route-level regression tests before shipping.\"\n    ]\n  },\n  \"rawOutput\": \"{\\\"verdict\\\":\\\"needs-attention\\\",\\\"summary\\\":\\\"Do not ship: the return-type change breaks every existing caller.\\\",\\\"findings\\\":[{\\\"severity\\\":\\\"high\\\",\\\"title\\\":\\\"Result envelope is incompatible with both route callers\\\",\\\"body\\\":\\\"`findUser` now always returns a truthy envelope and moves record fields under `user`, but callers still treat the result as a nullable user record. `profileRoute` therefore returns HTTP 200 with missing `id` and `name` for both found and absent IDs, while `requireAdmin` reads `role` from the envelope and rejects even valid administrators. This is directly evidenced by `src/routes/profile.js:4-8` and `src/routes/admin.js:4-8`.\\\",\\\"file\\\":\\\"src/store.js\\\",\\\"line_start\\\":7,\\\"line_end\\\":12,\\\"confidence\\\":1,\\\"recommendation\\\":\\\"Update all callers atomically to branch on `result.ok` and read `result.user`; add route tests covering an existing admin, existing member, and unknown ID.\\\"}],\\\"next_steps\\\":[\\\"Fix both callers and run route-level regression tests before shipping.\\\"]}\",\n  \"parseError\": null,\n  \"reasoningSummary\": []\n}\n"
+}

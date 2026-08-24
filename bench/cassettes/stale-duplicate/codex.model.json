@@ -1,0 +1,76 @@
+{
+  "caseId": "stale-duplicate",
+  "cell": "codex.model",
+  "recordedAt": "2026-08-24T23:24:47.507Z",
+  "verdict": "needs-attention",
+  "summary": "Chunking can hang indefinitely when maxBatch is not a positive finite integer.",
+  "findings": [
+    {
+      "severity": "medium",
+      "title": "Invalid maxBatch causes a non-terminating drain loop",
+      "body": "The loop assumes config.maxBatch is a positive finite number. If it is 0, negative, NaN, or otherwise invalid, i may never advance toward ids.length, causing drain() to loop indefinitely and consume memory or CPU.",
+      "file": "src/worker.js",
+      "line_start": 7,
+      "line_end": 9,
+      "confidence": 0.98,
+      "recommendation": "Validate config.maxBatch before the loop as a positive finite integer and fail fast with a clear configuration error."
+    }
+  ],
+  "latencyMs": 23869,
+  "engineVersion": "codex-cli 0.149.0",
+  "engineObserved": null,
+  "samples": [
+    {
+      "verdict": "needs-attention",
+      "summary": "The worker can hang indefinitely when maxBatch is zero or negative.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Unvalidated chunk size can cause an infinite loop",
+          "body": "The loop increments i by config.maxBatch without verifying that it is a positive integer. A zero value prevents i from advancing, while a negative value moves it away from the termination condition, causing drain() to loop indefinitely and consume memory whenever ids is nonempty.",
+          "file": "src/worker.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 0.99,
+          "recommendation": "Validate config.maxBatch before the loop and throw a configuration error unless it is a positive integer."
+        }
+      ],
+      "latencyMs": 20635
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Chunking trusts an unvalidated configuration value that can hang the worker or silently lose the batch.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Invalid maxBatch can hang or discard work",
+          "body": "The loop uses config.maxBatch as both its increment and slice width without verifying that it is a positive integer. A value of 0 or a negative value makes the loop non-terminating for any non-empty batch; a missing, non-numeric, or fractional value can produce empty or inconsistent chunks and silently omit IDs.",
+          "file": "src/worker.js",
+          "line_start": 6,
+          "line_end": 8,
+          "confidence": 0.99,
+          "recommendation": "Validate maxBatch before the loop with Number.isInteger(config.maxBatch) && config.maxBatch > 0, and throw a clear configuration error when invalid."
+        }
+      ],
+      "latencyMs": 18304
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Chunking can hang indefinitely when maxBatch is not a positive finite integer.",
+      "findings": [
+        {
+          "severity": "medium",
+          "title": "Invalid maxBatch causes a non-terminating drain loop",
+          "body": "The loop assumes config.maxBatch is a positive finite number. If it is 0, negative, NaN, or otherwise invalid, i may never advance toward ids.length, causing drain() to loop indefinitely and consume memory or CPU.",
+          "file": "src/worker.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 0.98,
+          "recommendation": "Validate config.maxBatch before the loop as a positive finite integer and fail fast with a clear configuration error."
+        }
+      ],
+      "latencyMs": 23869
+    }
+  ],
+  "raw": "{\"verdict\":\"needs-attention\",\"summary\":\"Chunking can hang indefinitely when maxBatch is not a positive finite integer.\",\"findings\":[{\"severity\":\"medium\",\"title\":\"Invalid maxBatch causes a non-terminating drain loop\",\"body\":\"The loop assumes config.maxBatch is a positive finite number. If it is 0, negative, NaN, or otherwise invalid, i may never advance toward ids.length, causing drain() to loop indefinitely and consume memory or CPU.\",\"file\":\"src/worker.js\",\"line_start\":7,\"line_end\":9,\"confidence\":0.98,\"recommendation\":\"Validate config.maxBatch before the loop as a positive finite integer and fail fast with a clear configuration error.\"}],\"next_steps\":[\"Add maxBatch validation and tests covering zero, negative, non-numeric, and valid values.\"]}\n"
+}

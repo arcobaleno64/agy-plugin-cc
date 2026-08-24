@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **codex now reads on the two repository-scoped cases too.** `codex.model` and
+  `codex.adversarial` recorded on `caller-contract` and `stale-duplicate`, three
+  samples each, codex-cli 0.149.0 — twelve live runs, no cassette overwritten.
+
+  | case | codex.model | codex.adversarial | agy.model | agy.deep |
+  |---|:-:|:-:|:-:|:-:|
+  | caller-contract | 0 | 43 | 0 | 68 |
+  | stale-duplicate | 62 | 65 | 43 | 67 |
+
+  `caller-contract` is 0 for both single-shot cells, which is the case working: its
+  two defects sit in callers the diff never touches, so there is nothing in the diff
+  to find. Codex's adversarial reviewer explores, and it clears its own single-shot
+  reading on both — a harness reading, not a prompt one, and the same direction agy's
+  `--deep` shows.
+
+  `codex.adversarial` needs `BENCH_CODEX_COMPANION`; without it the cell reports
+  `skipped (companion path not configured)` and costs nothing, which is how the first
+  half of this recording ran before the variable was set.
+
 - **The scorer credited a finding for naming a defect's subject without making its
   claim.** `repo-context` plants an undeclared dependency with `file: "*"`, so it is
   matched on words alone — and one of those words was the bare module name. Every
