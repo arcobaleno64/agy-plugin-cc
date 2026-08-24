@@ -29,6 +29,28 @@ one scorer grades all of them.
 - **Adversarial axis** = each tool's adversarial reviewer.
 - **Harness lift** = within a tool, `model → agentic` composite delta.
 
+> **The lift is not a measurement of the harness alone.** `model → agentic` changes
+> three things at once, and the number attributes all of it to exploration:
+>
+> 1. **the prompt** — model cells get `neutral-review-prompt.md` (33 lines: review
+>    only the diff, prefer one strong finding, no false positives); agentic cells get
+>    the plugin's `prompts/review.md` (84 lines, a category list and a finding bar);
+> 2. **the input** — the diff embedded in the prompt, versus a repository to find it
+>    in;
+> 3. **the tools** — forbidden, versus allowed.
+>
+> Isolating exploration needs a cell that holds the other two fixed: the plugin's
+> review prompt, single-shot, tools off. There is not one yet.
+>
+> Two further limits on reading any lift here. Its sign is set by corpus composition:
+> the per-case deltas on the current five cases run from −20 to +17 for both engines,
+> so the mean says as much about which cases exist as about the harness. And exactly
+> one case — `repo-context` — plants defects that are repository-scoped rather than
+> file-scoped (`file: "*"` in its `ground-truth.json`), which means the capability the
+> harness axis exists to measure is exercised by a single case. Adding cases of that
+> kind is what would make the axis a measurement; adding repeats is not — see finding
+> 4 below on why the spread statistic cannot shrink.
+
 The adversarial cells are a third axis rather than more entries on the harness one,
 because the two prompts are not interchangeable: `prompts/review.md` asks for a
 pragmatic review, `prompts/adversarial-review.md` asks the model to break confidence

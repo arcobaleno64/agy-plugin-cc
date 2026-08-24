@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- **The harness lift now says what it actually spans.** The number is a
+  `model → agentic` composite delta presented as the harness's contribution, and it
+  changes three things at once: the prompt (the neutral 33-line bench prompt versus the
+  plugin's 84-line `review.md`), the input (a diff embedded in the prompt versus a
+  repository to find it in), and whether tools are allowed. Isolating exploration needs
+  a cell holding the first two fixed, and there is not one.
+
+  Two further limits are written down beside it. The sign is a fact about corpus
+  composition — per-case deltas on the current five cases run from −20 to +17 on both
+  engines, so the reported −4.4 and −4.6 say as much about which cases exist as about
+  any harness. And exactly one case plants repository-scoped defects (`file: "*"` in
+  `repo-context`'s ground truth), so the capability the axis exists to measure rests on
+  a single case. What would help is cases of that kind, not repeats: the README's own
+  finding 4 already explains that the spread statistic is a range and cannot shrink
+  with sampling.
+
+  Documentation only — no cassette, cell or scoring rule changed.
+
 - **The bench grew a third axis: each tool's adversarial reviewer, measured
   separately from its default one.** `gemini.adversarial`, `codex.adversarial` and
   `agy.adversarial` join on a new `plugin-adversarial` track, and the scorecard ranks
