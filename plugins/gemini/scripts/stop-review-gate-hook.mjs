@@ -22,6 +22,9 @@ function readHookInput() {
   return JSON.parse(raw);
 }
 
+// Letting the stop through means OMITTING `decision`: the Stop hook schema
+// accepts only "approve" | "block", and Claude Code rejects the whole payload
+// (running no hook output at all) if anything else appears there.
 function emitDecision(payload) {
   process.stdout.write(`${JSON.stringify(payload)}\n`);
 }
@@ -101,7 +104,7 @@ async function main() {
 
   const jobs = listJobs(workspaceRoot);
   if (!hasCompletedWriteTask(jobs)) {
-    emitDecision({ decision: "proceed" });
+    emitDecision({});
     return;
   }
 
@@ -114,7 +117,7 @@ async function main() {
     const warning =
       "Gemini review gate skipped: the adversarial review could not run (Gemini/AGY unavailable or errored). Run /gemini:adversarial-review --wait before stopping if you changed code.";
     process.stderr.write(`${warning}\n`);
-    emitDecision({ decision: "proceed", systemMessage: warning });
+    emitDecision({ systemMessage: warning });
     return;
   }
 
@@ -124,7 +127,7 @@ async function main() {
     return;
   }
 
-  emitDecision({ decision: "proceed" });
+  emitDecision({});
 }
 
 // Same guard as gemini-mcp.mjs and transfer.mjs: importing this module to test
