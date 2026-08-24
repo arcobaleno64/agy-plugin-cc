@@ -2064,7 +2064,10 @@ test("stop-gate proceeds without a warning when enabled but no write task comple
   const result = runStopGate(workspace, envWithoutSession());
   assert.equal(result.status, 0, result.stderr);
   const decision = JSON.parse(result.stdout);
-  assert.equal(decision.decision, "proceed");
+  assert.ok(
+    !("decision" in decision),
+    'letting the stop through omits `decision`; the Stop schema rejects anything but "approve"/"block"'
+  );
   assert.ok(!decision.systemMessage, "no skip warning when there is nothing to review");
 });
 
@@ -2084,7 +2087,10 @@ test("stop-gate fails OPEN with a visible warning when the review cannot run", (
   const result = runStopGate(workspace, buildEnvUnavailable(binDir));
   assert.equal(result.status, 0, result.stderr);
   const decision = JSON.parse(result.stdout);
-  assert.equal(decision.decision, "proceed", "fail-open: never block on review failure");
+  assert.ok(
+    !("decision" in decision),
+    "fail-open: never block on review failure, and never emit a decision the schema rejects"
+  );
   assert.match(decision.systemMessage ?? "", /skipped/i);
   // The same warning is written to stderr as a belt-and-suspenders fallback.
   assert.match(result.stderr, /review gate skipped/i);
