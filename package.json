@@ -41,10 +41,13 @@
   },
   "scripts": {
     "test": "node --import ./tests/isolate-state.mjs --test tests/*.test.mjs bench/*.test.mjs",
+    "test:seo": "node --test tests/seo-aeo-validation.test.mjs",
     "bump-version": "node scripts/bump-version.mjs",
     "check-version": "node scripts/bump-version.mjs --check",
     "verify-contracts": "node scripts/verify-contracts.mjs",
     "bench": "node bench/run-bench.mjs",
-    "bench:live": "node bench/run-bench.mjs --live"
+    "bench:live": "node bench/run-bench.mjs --live",
+    "bench:aeo": "node scripts/aeo-benchmark.mjs",
+    "build:llms-full": "node -e \"const fs=require('fs'); const candidates=['README.md','SECURITY.md','docs/SECURITY.md','PRIVACY.md','docs/THREAT-MODEL.md','docs/COMPARISON.md']; const files=candidates.filter(f=>fs.existsSync(f)); if(!files.length) throw new Error('No files found'); fs.mkdirSync('docs',{recursive:true}); const content=files.map(f=>'# File: '+f+'\\n\\n'+fs.readFileSync(f,'utf8').replace(/\\r\\n/g,'\\n').trim()).join('\\n\\n---\\n\\n')+'\\n'; fs.writeFileSync('docs/llms-full.txt',content,'utf8'); console.log('✔ Generated docs/llms-full.txt ('+files.length+' files, '+Buffer.byteLength(content)+' bytes)');\""
   }
 }

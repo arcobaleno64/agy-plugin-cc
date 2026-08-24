@@ -19,6 +19,7 @@ English: [`README.md`](README.md)
 | [`version-sources.md`](version-sources.md) | 每個版本字串以哪個檔案為準，以及靠什麼維持一致。 |
 | [`verifying-without-credentials.md`](verifying-without-credentials.md) | 沒有 Gemini 或 AGY 帳號時，如何演練引擎路徑。 |
 | [`evidence.md`](evidence.md) | 本 repo 的調查規則：沒看過它紅過的東西，不算證據。附已經付過學費的陷阱清單。 |
+| [`HANDOVER_MARKETING_AND_RELEASE_PLAYBOOK.md`](HANDOVER_MARKETING_AND_RELEASE_PLAYBOOK.md) | 企業級交接手冊：增長推廣、MCP 上架、AI 時代 SEO/AEO/GEO 架構規格、自動化驗證與 v1.0.0 路線圖。 |
 
 ## 有日期的記錄——永不重寫
 
