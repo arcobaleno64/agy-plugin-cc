@@ -4,6 +4,14 @@
 //   adversarial axis = the "plugin-adversarial" cells (each tool's adversarial reviewer)
 // and the within-tool "single-shot -> agentic" delta is the harness lift.
 //
+// The "plugin-shallow" cells are a control, not an axis. They run the plugin's own
+// review without --deep: the same `prompts/review.md`, the same diff embedded in
+// REVIEW_INPUT, no tools and no workspace. That splits the harness lift, which
+// otherwise spans a prompt change and an exploration change at once, into the two
+// halves it is made of — `*.model -> *.shallow` is the prompt, `*.shallow -> *.deep`
+// is the exploration. They are deliberately outside every axis ranking: their only
+// job is to be a fixed end for those two deltas.
+//
 // The adversarial axis is separate rather than folded into the harness axis, because
 // the prompts are not interchangeable: this plugin's `review.md` asks for a pragmatic
 // review and `adversarial-review.md` asks the model to break confidence in the change.
@@ -24,6 +32,8 @@ export const CELLS = {
   "gemini.deep": { tool: "gemini", track: "plugin-native", harness: "agentic", label: "Gemini (--deep, agentic)" },
   "codex.native": { tool: "codex", track: "plugin-native", harness: "agentic", label: "Codex (native review, agentic)" },
   "agy.deep": { tool: "agy", track: "plugin-native", harness: "agentic", label: "AGY (--deep, agentic)" },
+  "gemini.shallow": { tool: "gemini", track: "plugin-shallow", harness: "single-shot", label: "Gemini (plugin review, no --deep)" },
+  "agy.shallow": { tool: "agy", track: "plugin-shallow", harness: "single-shot", label: "AGY (plugin review, no --deep)" },
   "gemini.adversarial": { tool: "gemini", track: "plugin-adversarial", harness: "agentic", label: "Gemini (adversarial, agentic)" },
   "codex.adversarial": { tool: "codex", track: "plugin-adversarial", harness: "agentic", label: "Codex (adversarial, agentic)" },
   "agy.adversarial": { tool: "agy", track: "plugin-adversarial", harness: "agentic", label: "AGY (adversarial, agentic)" }

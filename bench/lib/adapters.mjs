@@ -284,6 +284,12 @@ function dispatchCell(cell, ctx) {
       return runCompanionReview(CODEX_COMPANION, ctx.repoDir, []);
     case "agy.deep":
       return runCompanionReview(GEMINI_COMPANION, ctx.repoDir, ["--deep", "--engine", "agy"], "agy");
+    // No --deep: same prompt template, same embedded diff, no tools, no workspace.
+    // The control end for splitting the harness lift.
+    case "gemini.shallow":
+      return runCompanionReview(GEMINI_COMPANION, ctx.repoDir, ["--engine", "gemini"], "gemini");
+    case "agy.shallow":
+      return runCompanionReview(GEMINI_COMPANION, ctx.repoDir, ["--engine", "agy"], "agy");
     case "gemini.adversarial":
       return runCompanionReview(GEMINI_COMPANION, ctx.repoDir, ["--deep", "--engine", "gemini"], "gemini", { subcommand: "adversarial-review" });
     case "agy.adversarial":

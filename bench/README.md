@@ -34,13 +34,17 @@ one scorer grades all of them.
 >
 > 1. **the prompt** — model cells get `neutral-review-prompt.md` (33 lines: review
 >    only the diff, prefer one strong finding, no false positives); agentic cells get
->    the plugin's `prompts/review.md` (84 lines, a category list and a finding bar);
-> 2. **the input** — the diff embedded in the prompt, versus a repository to find it
->    in;
-> 3. **the tools** — forbidden, versus allowed.
+>    the plugin's `prompts/review.md` (84 lines, a category list and a finding bar),
+>    plus the `DEEP REVIEW MODE` block the companion appends, which names the things
+>    to go and look at (dependency manifests, callers, untracked files);
+> 2. **the tools** — forbidden, versus allowed;
+> 3. **the workspace** — no orientation, versus `--add-dir` pointing at the repository.
 >
-> Isolating exploration needs a cell that holds the other two fixed: the plugin's
-> review prompt, single-shot, tools off. There is not one yet.
+> The diff is *not* one of the differences: `collectReviewContext` embeds it in
+> `REVIEW_INPUT` for both, so a `--deep` run starts from the same text and may then go
+> further. Isolating that "may then go further" needs a cell running the plugin's
+> review prompt with the diff embedded and no tools — which is exactly the plugin's own
+> non-deep review. See the `*.shallow` cells.
 >
 > Two further limits on reading any lift here. Its sign is set by corpus composition:
 > the per-case deltas on the current five cases run from −20 to +17 for both engines,
