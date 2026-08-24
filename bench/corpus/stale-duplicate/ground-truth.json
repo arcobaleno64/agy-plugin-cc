@@ -9,9 +9,7 @@
       "line_start": 1,
       "line_end": 1,
       "severity": "high",
-      "match": {
-        "keywords": ["v1", "api/v1", "duplicate", "copy", "same bug", "not applied", "legacy", "both versions"]
-      }
+      "match": { "all": ["v1"], "keywords": ["duplicate", "copy", "same bug", "not applied", "legacy", "both versions"] }
     },
     {
       "id": "undefined-config-key",
@@ -20,9 +18,7 @@
       "line_start": 1,
       "line_end": 1,
       "severity": "high",
-      "match": {
-        "keywords": ["maxbatch", "config", "default.json", "undefined", "not defined", "missing key", "nan"]
-      }
+      "match": { "all": ["maxbatch"], "keywords": ["config", "default.json", "undefined", "not defined", "missing key", "nan"] }
     }
   ],
   "allowed_extras": [

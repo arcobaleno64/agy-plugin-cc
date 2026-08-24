@@ -9,7 +9,7 @@
       "line_start": 1,
       "line_end": 1,
       "severity": "high",
-      "match": { "keywords": ["jsonwebtoken", "undeclared", "not declared", "missing dependency", "not listed", "not in package.json"] }
+      "match": { "all": ["jsonwebtoken"], "keywords": ["undeclared", "not declared", "missing dependency", "not listed", "not in package.json"] }
     },
     {
       "id": "committed-state",
@@ -18,7 +18,7 @@
       "line_start": 1,
       "line_end": 1,
       "severity": "medium",
-      "match": { "keywords": [".omc/state", "runtime state", "should not be committed", "gitignore", "should be ignored", "untracked state"] }
+      "match": { "all": [".omc"], "keywords": ["runtime state", "should not be committed", "gitignore", "should be ignored", "untracked state"] }
     }
   ],
   "allowed_extras": []

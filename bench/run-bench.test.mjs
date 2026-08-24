@@ -69,6 +69,97 @@ test("findingMatchesPlanted rejects a different file", () => {
   assert.equal(findingMatchesPlanted(f, TRUTH.planted[0]), false);
 });
 
+// The real miss this pins: `repo-context` plants an undeclared-dependency defect
+// with `file: "*"`, so matching is keyword-only, and one of its keywords was the
+// bare module name. Every reviewer that discussed `src/token.js` at all wrote
+// "jsonwebtoken" somewhere in the body, so a finding about an unvalidated secret
+// was credited with catching a missing manifest entry it never mentioned. That
+// single false credit was worth 42 composite points to one cell (96.7 -> 55.0) and
+// not to others, which is worse than being wrong uniformly: it moved the cells
+// relative to each other, and the whole benchmark is a comparison between cells.
+//
+// `match.all` is the subject the finding has to actually be about; `match.keywords`
+// stays any-of, so a reviewer's choice of words for the claim is still free.
+test("a wildcard defect is not credited to a finding about a different subject", () => {
+  const truth = {
+    planted: [
+      {
+        id: "missing-dependency",
+        file: "*",
+        line_start: 1,
+        line_end: 1,
+        severity: "high",
+        match: {
+          all: ["jsonwebtoken"],
+          keywords: ["undeclared", "not declared", "missing dependency", "not in package.json"]
+        }
+      }
+    ],
+    allowed_extras: []
+  };
+
+  // Says the claim, about the wrong module. Keyword-only matching credits it.
+  const wrongSubject = finding({
+    severity: "high",
+    title: "Missing dependency on the validation middleware",
+    body: "src/routes/profile.js calls validateBody(), which is not declared anywhere in this package.",
+    file: "src/routes/profile.js"
+  });
+  // Names the subject, makes a different claim. `all` alone would credit it.
+  const wrongClaim = finding({
+    severity: "critical",
+    title: "JWT_SECRET used without validation",
+    body: "process.env.JWT_SECRET goes straight to jwt.sign(). Empty string, and jsonwebtoken signs with a zero-length secret.",
+    file: "src/token.js"
+  });
+  // Both: this is the finding the defect was planted for.
+  const theCatch = finding({
+    severity: "high",
+    title: "Undeclared 'jsonwebtoken' dependency",
+    body: "src/token.js requires jsonwebtoken, which is not declared in package.json.",
+    file: "src/token.js"
+  });
+
+  assert.equal(findingMatchesPlanted(wrongSubject, truth.planted[0]), false);
+  assert.equal(findingMatchesPlanted(wrongClaim, truth.planted[0]), false);
+  assert.equal(findingMatchesPlanted(theCatch, truth.planted[0]), true);
+
+  const missed = scoreReview([wrongSubject, wrongClaim], truth);
+  assert.equal(missed.found, 0);
+  assert.equal(missed.falsePositives, 2);
+  assert.deepEqual(missed.missed, ["missing-dependency"]);
+
+  const caught = scoreReview([theCatch], truth);
+  assert.equal(caught.found, 1);
+  assert.equal(caught.falsePositives, 0);
+});
+
+test("every term in `all` has to be there, not just one of them", () => {
+  const planted = {
+    id: "unread-config-key",
+    file: "*",
+    line_start: 1,
+    line_end: 1,
+    severity: "high",
+    match: { all: ["maxbatch", "default.json"], keywords: ["missing", "absent", "not defined"] }
+  };
+
+  // Names the key, blames the wrong file. One of two required terms.
+  const halfRight = finding({
+    title: "config.maxBatch is missing",
+    body: "worker.js reads config.maxBatch, which nothing in src/ ever defines.",
+    file: "src/worker.js"
+  });
+  const bothTerms = finding({
+    title: "config.maxBatch is missing from the shipped config",
+    body: "src/worker.js reads config.maxBatch; config/default.json does not define it.",
+    file: "src/worker.js"
+  });
+
+  assert.equal(findingMatchesPlanted(halfRight, planted), false);
+  assert.equal(findingMatchesPlanted(bothTerms, planted), true);
+});
+
 test("scoreReview gives full recall and clean precision when both planted defects are found", () => {
   const findings = [
     finding({ severity: "critical", title: "SQL injection", body: "not parameterized", line_start: 10, line_end: 12 }),

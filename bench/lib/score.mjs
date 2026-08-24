@@ -3,7 +3,7 @@
 // (see bench/review-output.schema.json), so one scorer grades both.
 //
 // finding:  { severity, title, body, file, line_start, line_end, confidence, recommendation }
-// planted:  { id, category, file, line_start, line_end, severity, match: { keywords: [...] } }
+// planted:  { id, category, file, line_start, line_end, severity, match: { keywords: [...], all?: [...] } }
 // extra:    { id, file?, match: { keywords: [...] } }   // a legitimate "unique catch", not a false positive
 // truth:    { planted: [planted...], allowed_extras: [extra...] }
 
@@ -22,9 +22,28 @@ function rangesOverlap(aStart, aEnd, bStart, bEnd, tol = 0) {
   return aStart - tol <= bEnd && bStart <= aEnd + tol;
 }
 
-function keywordsHit(finding, keywords) {
-  if (!Array.isArray(keywords) || keywords.length === 0) return false;
-  const hay = `${finding.title ?? ""} ${finding.body ?? ""}`.toLowerCase();
+function haystack(finding) {
+  return `${finding.title ?? ""} ${finding.body ?? ""}`.toLowerCase();
+}
+
+// `match.keywords` is any-of: the reviewer's wording for the claim is free.
+// `match.all` is every-of: the subject the finding has to actually be about.
+//
+// The split exists because a wildcard defect (`file: "*"`) is matched on words
+// alone, and a subject word is a word every finding about that area writes down.
+// `repo-context` listed the bare module name among its any-of keywords, so a
+// finding about an unvalidated secret — which mentioned the module only in
+// passing — was credited with catching a missing manifest entry. Put the subject
+// in `all` and the claim in `keywords`, and a finding has to carry both.
+function keywordsHit(finding, keywords, required) {
+  const hay = haystack(finding);
+  if (Array.isArray(required) && required.length > 0) {
+    if (!required.every((k) => hay.includes(String(k).toLowerCase()))) return false;
+    // `all` on its own is a complete rule; `keywords` narrows it when present.
+    if (!Array.isArray(keywords) || keywords.length === 0) return true;
+  } else if (!Array.isArray(keywords) || keywords.length === 0) {
+    return false;
+  }
   return keywords.some((k) => hay.includes(String(k).toLowerCase()));
 }
 
@@ -46,7 +65,7 @@ function fileMatches(findingFile, declaredFile) {
 
 function matchQuality(finding, planted, lineTolerance) {
   if (!fileMatches(finding.file, planted.file)) return 0;
-  if (keywordsHit(finding, planted.match?.keywords)) return 2;
+  if (keywordsHit(finding, planted.match?.keywords, planted.match?.all)) return 2;
   if (planted.file === "*" || !planted.file) return 0; // wildcard defects are keyword-only
   const lineOk = rangesOverlap(
     finding.line_start,
@@ -64,7 +83,7 @@ export function findingMatchesPlanted(finding, planted, { lineTolerance = 0 } = 
 
 function findingMatchesExtra(finding, extra) {
   if (extra.file && normalizeFile(finding.file) !== normalizeFile(extra.file)) return false;
-  return keywordsHit(finding, extra.match?.keywords);
+  return keywordsHit(finding, extra.match?.keywords, extra.match?.all);
 }
 
 function severityCalibration(plantedSeverity, findingSeverity) {

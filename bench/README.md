@@ -62,18 +62,35 @@ one scorer grades all of them.
 > | path-and-input | 72 | 69 | 69 | −3 | 0 |
 > | vacuous-tests | 71 | 82 | 88 | +11 | +6 |
 > | **caller-contract** | 0 | 0 | **68** | 0 | **+68** |
-> | **repo-context** | 97 | 37 | **90** | −60 | **+53** |
+> | **repo-context** | 55 | 15 | **76** | −40 | **+61** |
 > | **stale-duplicate** | 43 | 18 | **67** | −25 | **+49** |
-> | **mean** | | | | **−16.0** | **+26.0** |
+> | **mean** | | | | **−13.1** | **+27.2** |
 >
 > The −4.4 harness lift reported over the original five cases was two opposing effects
-> cancelling. Exploration is worth **+26** on average and its gains land exactly where
-> the design says they should — +68, +53, +49 on the three repository-scoped cases,
+> cancelling. Exploration is worth **+27** on average and its gains land exactly where
+> the design says they should — +68, +61, +49 on the three repository-scoped cases,
 > against +4, +2, 0, +6 on the four file-scoped ones. The plugin's own review prompt,
-> run without tools, is worth **−16** against the bench's neutral prompt, and that
-> penalty is concentrated on the same repository-scoped cases (−60, −25). A prompt that
-> tells the model to fold in dependency manifests and callers appears to cost accuracy
-> when it cannot go and read them.
+> run without tools, is worth **−13** against the bench's neutral prompt, and that
+> penalty is concentrated on the same repository-scoped cases (−40, −25).
+>
+> What that penalty is *not*: it is not the `DEEP REVIEW MODE` block, which the
+> `*.shallow` cells never see, and it is not a thinner input — the probe over all
+> seven cases puts `REVIEW_INPUT` between 645 and 1414 characters against a 400,000
+> cap, with the full diff present in both. It is `prompts/review.md` itself, and
+> what in it costs the points is not yet established. Until it is, this is a fact
+> about the two prompts, not a diagnosis of either.
+>
+> **How much of this survives the scorer is a separate question.** Two of these
+> numbers moved once the matcher stopped crediting a finding for naming a defect's
+> subject without making its claim (see "Matching" below): `repo-context`'s
+> `agy.model` fell 97 → 55, and with it the prompt penalty on that case, −60 → −40.
+> A second looseness is still in place: 16% of all recorded findings keyword-match
+> more than one planted defect in their case, concentrated in the four file-scoped
+> cases where five defects share one file and one vocabulary. Refusing every
+> ambiguous credit — a hard lower bound, not a proposal — leaves the prompt penalty
+> at −12.6 and takes exploration down to +12.4. So **−13 is robust and +27 is not**:
+> the exploration lift is somewhere in +12 to +27 until those four cases get the
+> same subject/claim split the wildcard ones now have.
 >
 > `caller-contract` and `stale-duplicate` were added for exactly that, joining
 > `repo-context` as the cases whose planted defects are repository-scoped (`file: "*"`).
@@ -347,6 +364,18 @@ Per cell, findings are matched against the case's `ground-truth.json`:
   keyword is present (keyword is the robust signal; an exact line overlap is the
   fallback for keyword-less defects). `file: "*"` means keyword-only (for defects
   that span files, e.g. an undeclared dependency).
+- `match.keywords` is **any-of** — the reviewer's wording for the claim is free.
+  `match.all` is **every-of** — the subject the finding has to actually be about.
+  A wildcard defect is matched on words alone, and a subject word is a word every
+  finding about that area writes down: `repo-context` listed the bare module name
+  among its any-of keywords, so a finding about an unvalidated secret, which named
+  the module only in passing, was credited with catching a missing manifest entry.
+  That single false credit was worth 42 composite points to one cell and nothing to
+  others — worse than being wrong uniformly, because the board is a comparison
+  between cells. Put the subject in `all` and the claim in `keywords`, and a
+  finding has to carry both. The three wildcard cases now do; the four file-scoped
+  ones still lean on the filename to disambiguate, and 16% of recorded findings
+  keyword-match more than one of their planted defects.
 - Each finding is assigned to its **single best** unmatched planted defect, so two
   line-adjacent defects are never double-counted.
 - `recall` = planted found / planted total. `precision` = relevant / findings.
@@ -384,7 +413,11 @@ corpus/<case-id>/
   "planted": [
     { "id": "sqli", "category": "injection", "file": "src/auth.js",
       "line_start": 7, "line_end": 9, "severity": "critical",
-      "match": { "keywords": ["sql injection", "concatenat"] } }
+      "match": { "keywords": ["sql injection", "concatenat"] } },
+    { "id": "missing-dependency", "file": "*",
+      "line_start": 1, "line_end": 1, "severity": "high",
+      "match": { "all": ["jsonwebtoken"],
+                 "keywords": ["undeclared", "not in package.json"] } }
   ],
   "allowed_extras": [
     { "id": "jwt-expiry", "file": "src/auth.js", "match": { "keywords": ["expiresin"] } }

@@ -9,9 +9,7 @@
       "line_start": 1,
       "line_end": 1,
       "severity": "high",
-      "match": {
-        "keywords": ["profile", "profileroute", "caller", "callers", "call site", "call sites", "not updated", "still expects", "return shape", "envelope"]
-      }
+      "match": { "all": ["profile"], "keywords": ["caller", "callers", "call site", "call sites", "not updated", "still expects", "return shape", "envelope"] }
     },
     {
       "id": "admin-check-always-passes",
@@ -20,9 +18,7 @@
       "line_start": 1,
       "line_end": 1,
       "severity": "critical",
-      "match": {
-        "keywords": ["requireadmin", "admin", "role", "always truthy", "always true", "authorization", "auth bypass", "forbidden"]
-      }
+      "match": { "all": ["admin"], "keywords": ["role", "always truthy", "always true", "authorization", "auth bypass", "forbidden"] }
     }
   ],
   "allowed_extras": [
