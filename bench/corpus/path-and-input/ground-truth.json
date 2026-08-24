@@ -9,18 +9,7 @@
       "line_start": 8,
       "line_end": 9,
       "severity": "critical",
-      "match": {
-        "keywords": [
-          "path traversal",
-          "traversal",
-          "..",
-          "escape",
-          "outside",
-          "resolve",
-          "containment",
-          "directory traversal"
-        ]
-      }
+      "match": { "keywords": ["path traversal", "traversal", "directory traversal", "outside the root", "containment", "escape the root"] }
     },
     {
       "id": "command-injection",
@@ -29,16 +18,7 @@
       "line_start": 13,
       "line_end": 13,
       "severity": "critical",
-      "match": {
-        "keywords": [
-          "command injection",
-          "execsync",
-          "shell",
-          "interpolat",
-          "untrusted",
-          "execfile"
-        ]
-      }
+      "match": { "all": ["execsync"], "keywords": ["command injection", "shell", "interpolat", "untrusted", "execfile"] }
     },
     {
       "id": "parseint-radix",
@@ -47,17 +27,7 @@
       "line_start": 17,
       "line_end": 18,
       "severity": "medium",
-      "match": {
-        "keywords": [
-          "radix",
-          "parseint",
-          "nan",
-          "not validated",
-          "negative",
-          "out of range",
-          "undefined"
-        ]
-      }
+      "match": { "all": ["parseint"], "keywords": ["radix", "nan", "not validated", "negative", "out of range"] }
     },
     {
       "id": "unbounded-read",
@@ -66,16 +36,7 @@
       "line_start": 9,
       "line_end": 9,
       "severity": "medium",
-      "match": {
-        "keywords": [
-          "size limit",
-          "entire file",
-          "memory",
-          "large file",
-          "no limit",
-          "streaming"
-        ]
-      }
+      "match": { "all": ["readfilesync"], "keywords": ["size limit", "entire file", "large file", "no limit", "streaming"] }
     },
     {
       "id": "unhandled-enoent",
@@ -84,16 +45,7 @@
       "line_start": 7,
       "line_end": 9,
       "severity": "medium",
-      "match": {
-        "keywords": [
-          "enoent",
-          "missing file",
-          "throws",
-          "try/catch",
-          "does not exist",
-          "unhandled"
-        ]
-      }
+      "match": { "keywords": ["enoent", "no such file", "file does not exist", "missing file"] }
     }
   ],
   "allowed_extras": [

@@ -160,6 +160,34 @@ test("every term in `all` has to be there, not just one of them", () => {
   assert.equal(findingMatchesPlanted(bothTerms, planted), true);
 });
 
+// A guard on the corpus rather than on the scorer. A `file: "*"` defect has no
+// filename to disambiguate it, so words are the whole rule, and the failure this
+// pins is silent: the defect keeps matching, just too much. Requiring `all` does
+// not make the subject right — it makes leaving the subject out a test failure
+// instead of a number nobody questions.
+test("every repository-scoped defect declares the subject it is about", () => {
+  const corpusDir = path.join(import.meta.dirname, "corpus");
+  const cases = fs
+    .readdirSync(corpusDir, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name);
+  assert.ok(cases.length > 0, "corpus is empty");
+
+  const offenders = [];
+  for (const caseId of cases) {
+    const file = path.join(corpusDir, caseId, "ground-truth.json");
+    if (!fs.existsSync(file)) continue;
+    const truth = JSON.parse(fs.readFileSync(file, "utf8"));
+    for (const p of truth.planted ?? []) {
+      if (p.file && p.file !== "*") continue;
+      if (!Array.isArray(p.match?.all) || p.match.all.length === 0) {
+        offenders.push(`${caseId}/${p.id}`);
+      }
+    }
+  }
+  assert.deepEqual(offenders, []);
+});
+
 test("scoreReview gives full recall and clean precision when both planted defects are found", () => {
   const findings = [
     finding({ severity: "critical", title: "SQL injection", body: "not parameterized", line_start: 10, line_end: 12 }),
