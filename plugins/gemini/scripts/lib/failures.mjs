@@ -54,12 +54,14 @@ const DEFAULTS = {
   "prompt-too-long": {
     retryable: false,
     summary: "The prompt cannot be sent safely to the selected engine.",
-    // "gemini sends prompts over stdin" stopped being a distinguishing reason at
-    // AGY 1.1.2, which does the same (gemini.mjs, `useStdin`). Only the older
-    // positional path -- which is what the `positional prompt` and NUL-byte checks
-    // above actually catch -- has the limit this advice was written for, so the
-    // advice now says which case it applies to instead of implying it always does.
-    nextStep: "Shorten the prompt. If the engine is AGY older than 1.1.2, which passes the prompt as a command-line argument, `--engine gemini` sends it over stdin instead; AGY 1.1.2 and newer already does."
+    // Engine-neutral on purpose. The argv-limit and NUL-byte cases -- the ones an
+    // engine can be at fault for -- never reach this default: assertAgyPromptSafe
+    // throws with its own nextStep, and normalizeFailure prefers an explicit one.
+    // What is left arriving here is the text-matched arm (`context length`, `token
+    // limit`), which is a model's context window rather than an engine's argv, and
+    // is most often gemini. An earlier draft of this line described AGY argv
+    // handling and shipped that to exactly those users.
+    nextStep: "Shorten the prompt, narrow the review scope, or split the diff into smaller runs."
   },
   "no-output": {
     retryable: true,

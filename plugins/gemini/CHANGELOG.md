@@ -8,12 +8,15 @@
   advice at all. Field note gi-2026-08-24-b7c1 is the first recorded case of the
   reverse -- gemini stalling for minutes on a diff AGY answered in about 25
   seconds. The two conditions either engine can produce now name both. The
-  `prompt-too-long` rationale was also stale: AGY has taken the prompt on stdin
-  since 1.1.2, so "use gemini, which sends prompts over stdin" describes a
-  difference between AGY versions, not between engines, and now says so. The
-  AGY-only conditions -- transcript recovery and its brain directory -- stay
-  one-directional, and a test pins that so a later pass at symmetry cannot
-  flatten a real asymmetry into a false one.
+  `prompt-too-long` default is engine-neutral now for a different reason than the
+  other two: the cases an engine can be blamed for -- AGY's argv limit and NUL
+  bytes -- never reach it, because they throw with their own next step. What
+  reaches it is a model's context window overflowing, most often gemini's, so it
+  now says to send less rather than to switch engines. That advice is pinned
+  where it is produced instead of where it is defaulted. The AGY-only conditions
+  -- transcript recovery and its brain directory -- stay one-directional, and a
+  test pins both halves of that: the advice must not offer AGY to an AGY failure,
+  and must keep offering gemini as the way out.
 
 - **The MCP surface now says which copy of the plugin is answering.** The host
   resolves a plugin to a versioned directory and keeps that server process for

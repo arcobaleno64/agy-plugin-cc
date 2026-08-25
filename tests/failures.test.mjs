@@ -175,16 +175,21 @@ test("advice for an AGY-only condition stays AGY-only", () => {
     const failure = classifyCliFailure({ transcriptReason: reason });
     assert.match(failure.category, /^transcript-/, `${reason} classifies as a transcript failure`);
     assert.doesNotMatch(failure.nextStep, /--engine agy/, "AGY is already the engine that failed");
+    // Asserting only the absence let the asymmetry be deleted rather than kept: drop
+    // the gemini alternative and nothing here noticed. The escape hatch is the point.
+    assert.match(failure.nextStep, /--engine gemini/, "the way out is still offered");
   }
 });
 
-// The stdin rationale outlived its truth. `useStdin` in lib/gemini.mjs is true for
-// AGY from 1.1.2 on, so "use gemini, which sends prompts over stdin" stopped being a
-// difference between the engines and became a difference between AGY versions --
-// which is exactly what the `positional prompt` branch of the classifier catches.
-test("the prompt-too-long advice says which AGY versions it applies to", () => {
-  const failure = classifyCliFailure({ promptTooLong: true });
+// An earlier attempt at this rewrote the default to describe AGY argv handling, on
+// the assumption that the argv cases reach it. They do not: assertAgyPromptSafe
+// throws with its own nextStep and normalizeFailure prefers an explicit one, so the
+// only traffic here is the text-matched arm -- `context length`, `token limit` -- a
+// model's context window, most often gemini's. Those users were handed a paragraph
+// about AGY versions. What is pinned is that this default names no engine at all.
+test("the default prompt-too-long advice belongs to no engine", () => {
+  const failure = classifyCliFailure({ stderr: "Error: context length exceeded for the model" });
   assert.equal(failure.category, "prompt-too-long");
-  assert.match(failure.nextStep, /1\.1\.2/, "the advice is version-scoped, not engine-scoped");
-  assert.match(failure.nextStep, /shorten/i, "and shortening is still the first thing to try");
+  assert.doesNotMatch(failure.nextStep, /--engine/, "a context window is not an engine's fault");
+  assert.match(failure.nextStep, /scope|split/i, "and the remedy is to send less");
 });
