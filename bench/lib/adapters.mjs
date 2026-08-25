@@ -93,6 +93,41 @@ function fail(reason) {
   return { ok: false, error: reason, findings: [] };
 }
 
+// A spawn that never returns names the symptom and drops the cause. `res.error.message`
+// is `spawnSync ... ETIMEDOUT`; the CLI's own stderr sits on the same `res` and used
+// to be discarded here, on all four adapters. Field note gi-2026-08-24-b7c1 is what
+// that costs: gemini was retrying an HTTP 429 "Your project has exceeded its monthly
+// spending cap" past the cap, the bench reported a timeout, and a spent account was
+// investigated for a day as engine slowness. The parse branches below already carry
+// this lesson twice over -- from codex's usage limit and agy's individual quota. The
+// error branch never got it.
+//
+// Nothing here tries to pick out the line that matters, because three attempts at it
+// each failed on a shape the others survived: a tail slice cuts the cause off when
+// deduplication has moved it to the front, a head slice loses it behind terminal
+// warnings, and the longest line is a documentation URL as often as it is the error.
+// So the budget is set wide enough to keep every distinct line instead. The real 9.5KB
+// capture reduces to 9 lines and 2510 characters once stack frames are dropped, and
+// this is one log line in a developer tool -- there is nothing to buy by trimming it
+// further, and a truncated cause is the whole defect being fixed.
+const SPAWN_DETAIL_LIMIT = 3000;
+
+function spawnFailure(label, res) {
+  // Both streams, concatenated rather than chosen between: `stderr || stdout` picks by
+  // truthiness, so a lone newline on stderr suppressed a diagnosis printed to stdout
+  // and silently restored the pre-change behaviour.
+  const lines = [String(res?.stderr ?? ""), String(res?.stdout ?? "")]
+    .join("\n")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    // Stack frames say where in the CLI's bundle the throw happened, which no bench
+    // reader can act on, and on the real capture they were 8 of 17 lines.
+    .filter((line) => line && !/^at /.test(line));
+  const detail = [...new Set(lines)].join(" ").slice(0, SPAWN_DETAIL_LIMIT);
+  const message = res?.error?.message ?? "spawn failed";
+  return fail(detail ? `${label} spawn: ${message} (${detail})` : `${label} spawn: ${message}`);
+}
+
 function geminiInnerText(envelope, fallback) {
   // gemini --output-format json wraps the text differently across CLI versions
   // (mirrors lib/gemini.mjs): { response: "..." } | { response: { text } } |
@@ -107,17 +142,17 @@ function geminiInnerText(envelope, fallback) {
   );
 }
 
-function runGeminiModel(promptText) {
+function runGeminiModel(promptText, { spawnImpl = spawnSync } = {}) {
   return timed(() => {
     // gemini 0.45 reads the prompt from stdin when -p has no value; omit -p (as the
     // plugin's buildCliArgs does for useStdin) and deliver the prompt via input.
-    const res = spawnSync("gemini", ["--output-format", "json"], {
+    const res = spawnImpl("gemini", ["--output-format", "json"], {
       input: promptText,
       encoding: "utf8",
       timeout: TIMEOUT_MS,
       shell: process.platform === "win32"
     });
-    if (res.error) return fail(`gemini spawn: ${res.error.message}`);
+    if (res.error) return spawnFailure("gemini", res);
     const envelope = extractJsonObject(res.stdout);
     const review = normalizeReview(extractJsonObject(geminiInnerText(envelope, res.stdout)));
     if (!review) return fail(`gemini: could not parse review JSON (${(res.stderr || "").slice(0, 160)})`);
@@ -163,7 +198,7 @@ function runAgyModel(promptText, { spawnImpl = spawnSync, resolveBinaryImpl = re
       ["--disable-slash-commands", "--output-format", "json", "--print-timeout", printTimeout],
       { input: promptText, encoding: "utf8", timeout: TIMEOUT_MS }
     );
-    if (res.error) return fail(`agy spawn: ${res.error.message}`);
+    if (res.error) return spawnFailure("agy", res);
     // AGY 1.1.8+ answers with one envelope: { conversation_id, status, response, ... }.
     const envelope = extractJsonObject(res.stdout);
     const text = envelope?.response ?? envelope?.result?.response ?? res.stdout;
@@ -182,15 +217,15 @@ function runAgyModel(promptText, { spawnImpl = spawnSync, resolveBinaryImpl = re
   });
 }
 
-function runCodexModel(promptText) {
+function runCodexModel(promptText, { spawnImpl = spawnSync } = {}) {
   return timed(() => {
     const outFile = path.join(os.tmpdir(), `bench-codex-${Date.now()}.json`);
-    const res = spawnSync(
+    const res = spawnImpl(
       "codex",
       ["exec", "--skip-git-repo-check", "--sandbox", "read-only", "--output-schema", SCHEMA, "--output-last-message", outFile, "-"],
       { input: promptText, encoding: "utf8", timeout: TIMEOUT_MS, shell: process.platform === "win32" }
     );
-    if (res.error) return fail(`codex spawn: ${res.error.message}`);
+    if (res.error) return spawnFailure("codex", res);
     let review = null;
     if (fs.existsSync(outFile)) {
       review = normalizeReview(extractJsonObject(fs.readFileSync(outFile, "utf8")));
@@ -254,7 +289,7 @@ export function runCompanionReview(companionPath, repoDir, extraArgs, expectEngi
       [companionPath, subcommand, "--scope", "working-tree", "--json", ...extraArgs, "--cwd", repoDir],
       { cwd: repoDir, encoding: "utf8", timeout: TIMEOUT_MS, env: companionSpawnEnv() }
     );
-    if (res.error) return fail(`companion spawn: ${res.error.message}`);
+    if (res.error) return spawnFailure("companion", res);
     const payload = extractJsonObject(res.stdout);
     const review = normalizeReview(payload?.result);
     if (!review) return fail(`companion: no result in payload (${(res.stderr || "").slice(0, 200)})`);
@@ -305,4 +340,4 @@ function dispatchCell(cell, ctx) {
   }
 }
 
-export const _internal = { extractJsonObject, normalizeReview, geminiInnerText, companionSpawnEnv, assertExpectedEngine, runCompanionReview, runAgyModel };
+export const _internal = { spawnFailure, runGeminiModel, runCodexModel, extractJsonObject, normalizeReview, geminiInnerText, companionSpawnEnv, assertExpectedEngine, runCompanionReview, runAgyModel };

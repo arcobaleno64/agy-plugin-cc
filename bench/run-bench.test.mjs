@@ -673,6 +673,107 @@ test("a refused AGY run reports the reason AGY gave, not an empty parenthesis", 
   assert.match(String(refused.error), /Individual quota reached/);
 });
 
+test("a spawn that never returned still says why", () => {
+  // The sibling test above covers a run that came back; this covers one that did not.
+  // `res.error.message` is `spawnSync ... ETIMEDOUT`, which names the symptom, and the
+  // reason the CLI printed sits on the same `res`. It used to be dropped. Field note
+  // gi-2026-08-24-b7c1 is the bill: gemini was retrying an HTTP 429 spending-cap
+  // rejection past the cap, the bench reported a timeout, and a spent account was
+  // investigated for a day as engine slowness. Shape below is the real capture's:
+  // the attempts are numbered, so no two of them are equal.
+  const stderr = [
+    "Warning: True color (24-bit) support not detected.",
+    'Attempt 1 failed with status 429. _ApiError: {"error":{"message":"Your project has exceeded its monthly spending cap.","status":"RESOURCE_EXHAUSTED"}}',
+    "    at throwErrorIfNotOK (file:///C:/x/chunk.js:267240:24)",
+    "    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)",
+    'Attempt 2 failed with status 429. _ApiError: {"error":{"message":"Your project has exceeded its monthly spending cap.","status":"RESOURCE_EXHAUSTED"}}'
+  ].join("\n");
+
+  const reported = adapters.spawnFailure("gemini", {
+    error: { message: "spawnSync cmd.exe ETIMEDOUT" },
+    stderr
+  });
+
+  assert.equal(reported.ok, false);
+  assert.match(String(reported.error), /spawnSync cmd\.exe ETIMEDOUT/, "the symptom is still named");
+  assert.match(String(reported.error), /exceeded its monthly spending cap/, "and so is the cause");
+  // Frames say where in the CLI's bundle the throw happened, which no reader can act on.
+  assert.doesNotMatch(String(reported.error), /throwErrorIfNotOK|processTicksAndRejections/);
+});
+
+test("the cause survives whatever the CLI prints after it", () => {
+  // The first fix here kept the tail of the message, which reads as the safe end to
+  // keep until deduplication moves the cause to the front -- then the tail slice cuts
+  // it off mid-word and the failure reports a shutdown epilogue instead. Reviewed and
+  // reproduced: `(ding cap. RESOURCE_EXHAUSTED Terminated after 180s. For
+  // troubleshooting, see ... Auth: oauth-personal.)`. That is the original defect
+  // rebuilt inside its own fix, so the shape is pinned here.
+  const cause = "_ApiError: Your project has exceeded its monthly spending cap. RESOURCE_EXHAUSTED";
+  const stderr = [
+    ...Array.from({ length: 30 }, () => cause),
+    "Terminated after 180s.",
+    "For troubleshooting, see https://goo.gle/gemini-cli-docs and https://ai.google.dev/gemini-api/docs/troubleshooting for the full list of error codes.",
+    "Session ID: 4f3c9a12-7b8e-4d21-9c05-1a2b3c4d5e6f",
+    "Data collection is disabled. Auth: oauth-personal."
+  ].join("\n");
+
+  const reported = adapters.spawnFailure("gemini", { error: { message: "ETIMEDOUT" }, stderr });
+  assert.match(String(reported.error), /exceeded its monthly spending cap/);
+});
+
+test("a flood of one repeated line does not crowd out what came after it", () => {
+  // What deduplication is actually for, now that the budget is wide. Not what the
+  // first version of this test claimed: the real capture numbers its attempts
+  // (`Attempt 1 failed`, `Attempt 2 failed`), so those lines are never equal and
+  // deduplication does nothing to them. It earns its place on a CLI that repeats one
+  // line often enough to spend the whole budget, which is what is built here.
+  // Long enough, and repeated often enough, that the copies alone overrun the budget:
+  // a fixture that fits under it passes whether or not anything is deduplicated.
+  const repeated = 'Attempt failed with status 429. _ApiError: {"error":{"message":"rate limited, retrying"}}';
+  const stderr = [...Array.from({ length: 60 }, () => repeated), "Terminated after 180s."].join("\n");
+
+  const reported = adapters.spawnFailure("gemini", { error: { message: "ETIMEDOUT" }, stderr });
+  assert.match(String(reported.error), /rate limited/, "the repeated line is still reported");
+  assert.match(String(reported.error), /Terminated after 180s/, "and so is what followed it");
+});
+
+test("a diagnosis on stdout is not lost to a blank stderr", () => {
+  // `res.stderr || res.stdout` picks a stream by truthiness rather than by content, so
+  // a single newline on stderr won and stdout was discarded -- restoring the very
+  // silence this helper exists to end, without changing the code that ends it.
+  const reported = adapters.spawnFailure("codex", {
+    error: { message: "ETIMEDOUT" },
+    stderr: "\n",
+    stdout: "You've hit your usage limit."
+  });
+  assert.match(String(reported.error), /hit your usage limit/);
+});
+
+test("a spawn failure with nothing to add does not report an empty parenthesis", () => {
+  // The failure this whole path exists to avoid, in its other direction: `(...)` with
+  // nothing in it reads as a defect in the bench rather than silence from the CLI.
+  const bare = adapters.spawnFailure("agy", { error: { message: "spawnSync ENOENT" }, stderr: "", stdout: "" });
+  assert.equal(bare.error, "agy spawn: spawnSync ENOENT");
+});
+
+test("every adapter routes a failed spawn through the same reporting", () => {
+  // Pins the wiring, not just the helper: a correct helper that no adapter calls is
+  // exactly the state this change found the file in. All four are named because all
+  // four had the defect -- and the one the field note was recorded against is gemini,
+  // which is the cell a helper-only test would have left unprotected.
+  const stub = () => ({ error: { message: "spawnSync ETIMEDOUT" }, stdout: "", stderr: "Individual quota reached." });
+  const runs = [
+    ["gemini", adapters.runGeminiModel("review this", { spawnImpl: stub })],
+    ["agy", adapters.runAgyModel("review this", { spawnImpl: stub, resolveBinaryImpl: () => "/usr/bin/agy" })],
+    ["codex", adapters.runCodexModel("review this", { spawnImpl: stub })],
+    ["companion", adapters.runCompanionReview("/companion.mjs", "/repo", [], null, { spawnImpl: stub })]
+  ];
+  for (const [name, result] of runs) {
+    assert.equal(result.ok, false, `${name} reports a failure`);
+    assert.match(String(result.error), /Individual quota reached/, `${name} carries the reason the CLI gave`);
+  }
+});
+
 test("a cell whose cases were recorded on different versions says so", () => {
   // Taking the first cassette's version to stand for the cell is how a table states
   // what a column is supposed to hold rather than what it holds. `agy.model` really
