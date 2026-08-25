@@ -66,22 +66,30 @@
 
 - **`agy.adversarial` now covers all seven cases, and the two new ones changed the
   axis's claim rather than confirming it.** Recorded on `caller-contract` and
-  `stale-duplicate` (agy 1.1.19, three samples each). The adversarial and harness axes
-  now span the same corpus, so comparing them is comparing prompts and not case lists.
+  `stale-duplicate` (agy 1.1.19, three samples each). `agy.deep` and `agy.adversarial`
+  now span the same seven cases, so comparing those two is comparing prompts and not
+  case lists -- not yet true of the axes as a whole, where `gemini.deep` holds five
+  and `gemini.adversarial` none.
 
-  Over five file-scoped cases `agy.deep -> agy.adversarial` read recall 0.79 -> 0.72
+  Over the original five cases `agy.deep -> agy.adversarial` read recall 0.79 -> 0.72
   with precision and false positives flat, which supported "it reports less, and that
   is the whole of the difference". At seven cases it reads recall 0.76 -> 0.70,
-  precision 0.92 -> 0.88, false positives 0.29 -> 0.38: the adversarial prompt still
+  precision 0.92 -> 0.89, false positives 0.29 -> 0.33: the adversarial prompt still
   does not buy recall, and now it spends a little precision failing to. The trade runs
   the wrong way on both ends.
 
-  Per-case it is not one behaviour either: **82.3** on `caller-contract` against
-  `agy.deep`'s 68.3, **55.0** on `stale-duplicate` against 66.7 -- ahead by 14 on one,
-  behind by 12 on the other, both inside spreads of 48 and 40. And `stale-duplicate`
+  Per-case it is not one behaviour either: **84.3** on `caller-contract` against
+  `agy.deep`'s 68.3, **55.0** on `stale-duplicate` against 66.7 -- ahead by 16 on one,
+  behind by 12 on the other, both inside spreads of 46 and 40. And `stale-duplicate`
   posts 55, 55, 55, which is not stability but the same half-answer three times: the
   v1 copy is missed in every repeat. Zero spread on a cell that fails identically is
   the reading this board already warns about.
+
+- **The scorecard's Source column now names every day a cell holds.** It took the date
+  from the first cassette, which is fine only while a cell was recorded in one sitting.
+  `agy.adversarial` is the first that was not -- five cases on 2026-08-24 and two on
+  2026-08-25 -- and printed a single day for both. That is the failure the version
+  column was already fixed for, on a second axis.
 
 - **Half of the -13 prompt penalty is now diagnosed, and the other half is now known
   not to be what it looked like.** The board reported that `prompts/review.md`, run

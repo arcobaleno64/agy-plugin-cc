@@ -34,6 +34,11 @@ function aggregateByCell(rows) {
 // is the same failure the `gemini.deep` mix-up was — a column stating what it was
 // supposed to be rather than what it holds — so a cell whose cassettes disagree now
 // carries every version it actually has.
+//
+// The recording date needed the same treatment for the same reason. It was taken from
+// the first cassette alone, so `agy.adversarial` — five cases recorded one day and two
+// the next — printed a single day for a cell holding two. A date that says when the
+// cell was supposed to have been recorded is the failure above, on a second axis.
 function provenanceByCell(rows) {
   const out = {};
   for (const cell of CELL_IDS) {
@@ -47,9 +52,12 @@ function provenanceByCell(rows) {
       const v = r.provenance.engineVersion ?? null;
       counts.set(v, (counts.get(v) ?? 0) + 1);
     }
-    out[cell] = counts.size > 1
+    const days = [...new Set(own.map((r) => r.provenance.recordedAt).filter(Boolean).map((d) => d.slice(0, 10)))].sort();
+    const merged = counts.size > 1
       ? { ...own[0].provenance, otherVersions: [...counts].slice(1).map(([version, cases]) => ({ version, cases })) }
-      : own[0].provenance;
+      : { ...own[0].provenance };
+    if (days.length > 1) merged.days = days;
+    out[cell] = merged;
   }
   return out;
 }
@@ -83,7 +91,10 @@ function cellsOn(axis) {
 function describeSource(p) {
   if (!p) return "—";
   if (p.seeded) return "**seeded**";
-  const day = p.recordedAt ? p.recordedAt.slice(0, 10) : "?";
+  // Every day the cell actually holds, not the first cassette's.
+  const day = Array.isArray(p.days) && p.days.length > 1
+    ? `${p.days[0]}–${p.days[p.days.length - 1]}`
+    : p.recordedAt ? p.recordedAt.slice(0, 10) : "?";
   // The sample count travels with the number. A composite from one run and a
   // composite averaged over five read identically without it, and on this corpus
   // they are not comparable.

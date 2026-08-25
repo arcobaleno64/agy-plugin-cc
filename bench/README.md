@@ -124,7 +124,9 @@ one scorer grades all of them.
 >
 > One thing held across all 33 runs: **precision never moved.** It is ~1.00 in every
 > arm, verbatim prompt included. Whatever this prompt spends recall on, it is not
-> buying precision with it — the same signature the adversarial axis showed.
+> buying precision with it. This used to cite the adversarial axis as the same
+> signature; at seven cases that axis no longer shows flat precision (0.92 -> 0.89),
+> so the corroboration is withdrawn. The ablation's own 33 runs are unchanged.
 >
 > **These numbers were read off a matcher that had to be fixed first.** It credited a
 > finding for naming a defect's subject without making its claim, and the credit was
@@ -160,20 +162,21 @@ The prediction behind that separation was wrong, and the measurement is worth ke
 next to it. Composite is `recall*70 + precision*20 + severityExact*10`, so the guess
 was that the adversarial prompt would buy recall at the cost of false positives.
 Measured on agy 1.1.19 across all seven cases x3, `agy.deep` -> `agy.adversarial`
-moved recall 0.76 -> 0.70, precision 0.92 -> 0.88 and false positives 0.29 -> 0.38.
+moved recall 0.76 -> 0.70, precision 0.92 -> 0.89 and false positives 0.29 -> 0.33.
 The prediction fails: the adversarial prompt did not buy recall. What it did do is
 cost a little precision and a few more false positives while not buying it, so the
 trade runs the wrong way on both ends. The axis stays separate anyway — the prompts
 are not interchangeable whichever way the scores happen to fall.
 
-The two repository-scoped cases were the last to be recorded, and adding them changed
-the claim rather than confirming it. Over the five file-scoped cases the reading was
+The two new cases were the last to be recorded, and adding them changed the claim
+rather than confirming it. Over the original five — four file-scoped plus
+`repo-context`, which is repository-scoped like the two being added — the reading was
 recall 0.79 -> 0.72 with precision and false positives flat at 0.88 -> 0.87 and
 0.40 -> 0.40, which read as "it reports less, and that is the whole of the
 difference". At seven cases that sentence is no longer true. Its per-case behaviour
-is also not one behaviour: on `caller-contract` the adversarial cell posts **82.3**
+is also not one behaviour: on `caller-contract` the adversarial cell posts **84.3**
 against `agy.deep`'s 68.3, and on `stale-duplicate` **55.0** against 66.7 — ahead by
-14 on one and behind by 12 on the other, both inside spreads of 48 and 40.
+16 on one and behind by 12 on the other, both inside spreads of 46 and 40.
 
 `stale-duplicate` is worth reading as a shape rather than a number: `agy.adversarial`
 posts 55, 55, 55 there. That is not stability, it is the same half-answer three times
@@ -262,13 +265,18 @@ recorded against, every repeat in `samples`, and no `source`; a seeded one carri
   under `--engine agy`. It tracks prompt weight on the gemini engine, not the case and
   not the subcommand.
 - **`codex.adversarial` and `agy.adversarial` — both live-recorded on all seven
-  cases** (codex-cli 0.149.0 and agy 1.1.19, three samples each, 2026-08-24 and
-  2026-08-25). The adversarial axis and the harness axis now span the same corpus, so
-  a comparison between them is a comparison of prompts rather than of case lists.
+  cases** (codex-cli 0.149.0, three samples each, all 2026-08-24; agy 1.1.19, three
+  samples each, five on 2026-08-24 and `caller-contract` and `stale-duplicate` on
+  2026-08-25). `agy.deep` and `agy.adversarial` now span the same seven cases, so
+  comparing *those two* is comparing prompts rather than case lists. That is not yet
+  true of the axes as a whole: `gemini.deep` holds five of seven, `codex.native` is
+  seeded on two, and `gemini.adversarial` is unrecorded entirely.
   On the two repository-scoped cases codex's adversarial reviewer scores **43** and
-  **65** against its own single-shot **0** and **62**, and agy's scores **82** and
-  **55** against its own **0** and **43** — both explore, so the gain is a harness
-  reading and not a prompt one.
+  **65** against its own single-shot **0** and **62**, and agy's scores **84** and
+  **55** against its own **0** and **43**. The `caller-contract` legs are the measured
+  half: agy's +84 and codex's +43 clear anything either cell moves between runs. The
+  `stale-duplicate` legs — +12 for agy against its own ±65 on that case, +3 for codex —
+  do not, so exploration is a reading there only on `caller-contract`.
 - **`codex.native` — still seeded, and now for a known reason.** Pointing
   `BENCH_CODEX_COMPANION` at the installed codex plugin 1.0.6 makes the cell run: the
   companion completes, exits 0, and returns a payload carrying `review`, `target`,
