@@ -193,10 +193,17 @@ test("every repository-scoped defect declares the subject it is about", () => {
 // and it drifted silently: two cells were added and the table kept describing nine.
 // A table that omits a cell does not look broken, it looks complete.
 test("the README's cell table lists exactly the cells that exist", () => {
-  const readme = fs.readFileSync(path.join(import.meta.dirname, "README.md"), "utf8");
+  // Normalize line endings first. A Windows checkout stores this file with CRLF, so
+  // searching for "\n\n" finds nothing, and `slice(from, -1)` then hands the rest of
+  // the README to a regex that happily matches every later table too.
+  const readme = fs
+    .readFileSync(path.join(import.meta.dirname, "README.md"), "utf8")
+    .replace(/\r\n/g, "\n");
   const from = readme.indexOf("| Cell | What it is | Isolates |");
   assert.notEqual(from, -1, "cell table header not found in bench/README.md");
-  const table = readme.slice(from, readme.indexOf("\n\n", from));
+  const until = readme.indexOf("\n\n", from);
+  assert.notEqual(until, -1, "cell table is not followed by a blank line");
+  const table = readme.slice(from, until);
   const documented = [...table.matchAll(/^\| `([a-z]+\.[a-z]+)` \|/gm)].map((m) => m[1]);
   assert.deepEqual([...documented].sort(), [...CELL_IDS].sort());
 });
