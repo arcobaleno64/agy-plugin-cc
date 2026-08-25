@@ -4,7 +4,7 @@
       "command": "node",
       "args": [
         "-e",
-        "process.env.GEMINI_MCP_STDIO='1';const r=process.env.GEMINI_PLUGIN_ROOT||'';const root=(!r||/[{}]/.test(r))?process.cwd():r;const{pathToFileURL}=require('node:url');const{join}=require('node:path');import(pathToFileURL(join(root,'scripts','gemini-mcp.mjs')).href).catch((e)=>{console.error(e);process.exit(1)})"
+        "process.env.GEMINI_MCP_STDIO='1';const p=require('node:path');const r=String(process.env.GEMINI_PLUGIN_ROOT);const root=p.isAbsolute(r)?r:process.cwd();import(require('node:url').pathToFileURL(p.join(root,'scripts','gemini-mcp.mjs')).href).catch(function(e){console.error(e);process.exit(1)})"
       ],
       "cwd": ".",
       "env": {

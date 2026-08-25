@@ -28,13 +28,21 @@ const SERVER = JSON.parse(fs.readFileSync(path.join(PLUGIN_ROOT, ".mcp.json"), "
 // one host's reading; all three must answer initialize.
 async function initialize(t, { cwd, expand, dropEnv }) {
   const ex = (s) => (expand ? s.replaceAll("${CLAUDE_PLUGIN_ROOT}", PLUGIN_ROOT) : s);
-  const env = dropEnv
-    ? {}
-    : Object.fromEntries(Object.entries(SERVER.env ?? {}).map(([k, v]) => [k, ex(v)]));
+
+  // Each case must pin exactly one host's reading, so the manifest's own entry is
+  // the only source of GEMINI_PLUGIN_ROOT. Inheriting it would let "Codex
+  // forwards no env at all" quietly take the env path and pass for the wrong
+  // reason -- and it is genuinely set in the environment whenever this suite is
+  // run from a turn delegated through this plugin.
+  const env = { ...process.env };
+  delete env.GEMINI_PLUGIN_ROOT;
+  if (!dropEnv) {
+    for (const [key, value] of Object.entries(SERVER.env ?? {})) env[key] = ex(value);
+  }
 
   const child = spawn(ex(SERVER.command), SERVER.args.map(ex), {
     cwd,
-    env: { ...process.env, ...env },
+    env,
     stdio: ["pipe", "pipe", "pipe"]
   });
 
@@ -105,4 +113,48 @@ test("Codex's reading still launches the server when it forwards no env at all",
 test("importing the server module starts no stdio loop", async () => {
   const module = await import(new URL("../plugins/gemini/scripts/gemini-mcp.mjs", import.meta.url));
   assert.ok(module, "module must import without taking over stdin");
+});
+
+test("the bootstrap arg carries no character cmd.exe would read as an operator", () => {
+  // Hosts spawn `node` directly today, so this string reaches argv verbatim. It
+  // is one `shell: true` away from being parsed instead -- a common Windows
+  // workaround for resolving .cmd shims -- and there `>` is a redirect that
+  // creates a file and `|` splits the command. The bootstrap is expressible
+  // without any of them at no behavioral cost, so it is.
+  const bootstrap = SERVER.args.find((a) => a.includes("gemini-mcp.mjs"));
+  for (const ch of [">", "<", "|", "&", "^"]) {
+    assert.ok(!bootstrap.includes(ch), `bootstrap must not contain ${ch}, which cmd.exe would treat as an operator`);
+  }
+});
+
+test("starting the server consumes GEMINI_MCP_STDIO instead of passing it to children", async () => {
+  // The server spawns its detached worker with `env: process.env`, and the
+  // worker spawns the CLI the same way. An inherited flag turns every descendant
+  // that imports this module into a server that grabs stdin and never exits --
+  // including a delegated turn running this repo's own suite.
+  const probe = [
+    "await import(process.argv[1]);",
+    "console.log(JSON.stringify({ flag: process.env.GEMINI_MCP_STDIO ?? null }));",
+    "process.exit(0);"
+  ].join("");
+
+  const child = spawn(
+    process.execPath,
+    // A file:// href, not a path: on Windows the ESM loader rejects `c:\...`.
+    ["--input-type=module", "-e", probe, new URL("../plugins/gemini/scripts/gemini-mcp.mjs", import.meta.url).href],
+    { env: { ...process.env, GEMINI_MCP_STDIO: "1" }, stdio: ["pipe", "pipe", "pipe"] }
+  );
+
+  let out = "";
+  let err = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => { out += chunk; });
+  child.stderr.on("data", (chunk) => { err += chunk; });
+
+  const [code] = await once(child, "exit");
+  assert.equal(code, 0, `probe exited ${code}: ${err.trim()}`);
+  const line = out.trim().split(/\r?\n/).find((l) => l.includes("flag"));
+  assert.ok(line, `probe printed no result: ${out.trim() || err.trim()}`);
+  assert.equal(JSON.parse(line).flag, null, "the flag must not survive into anything the server spawns");
 });

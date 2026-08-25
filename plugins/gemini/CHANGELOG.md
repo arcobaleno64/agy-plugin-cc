@@ -13,6 +13,15 @@
   host that substitutes, through `cwd: "."` for the host that does not -- and a
   short `node -e` bootstrap uses whichever arrived intact. The launch test runs
   each host's reading, including Codex forwarding no env at all.
+- **The bootstrap's start signal no longer escapes into everything the server
+  spawns.** `GEMINI_MCP_STDIO` was set in the bootstrap's own environment, and
+  the server hands `process.env` to its detached worker, which hands it to the
+  CLI -- so any descendant that merely imported the server module took over
+  stdin and never exited, hanging a delegated turn that ran this repo's suite.
+  The guard now deletes the flag before starting, so it is consumed rather than
+  inherited. The bootstrap also drops `||` and `=>`: hosts spawn `node`
+  directly today, but one `shell: true` away those are cmd.exe operators, and
+  `>` there creates a file.
 
 ## 0.22.4 — 2026-08-25 — Start the MCP before it can do anything else
 
