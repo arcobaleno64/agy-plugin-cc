@@ -91,9 +91,11 @@ function cellsOn(axis) {
 function describeSource(p) {
   if (!p) return "—";
   if (p.seeded) return "**seeded**";
-  // Every day the cell actually holds, not the first cassette's.
+  // Every day the cell actually holds, not the first cassette's -- and listed rather
+  // than dashed. `gemini.deep` carries 2026-08-19 and 2026-08-24, two sittings five
+  // days apart, and a range reads as a span of recording that did not happen.
   const day = Array.isArray(p.days) && p.days.length > 1
-    ? `${p.days[0]}–${p.days[p.days.length - 1]}`
+    ? p.days.join(", ")
     : p.recordedAt ? p.recordedAt.slice(0, 10) : "?";
   // The sample count travels with the number. A composite from one run and a
   // composite averaged over five read identically without it, and on this corpus

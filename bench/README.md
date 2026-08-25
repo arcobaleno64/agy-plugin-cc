@@ -273,10 +273,12 @@ recorded against, every repeat in `samples`, and no `source`; a seeded one carri
   seeded on two, and `gemini.adversarial` is unrecorded entirely.
   On the two repository-scoped cases codex's adversarial reviewer scores **43** and
   **65** against its own single-shot **0** and **62**, and agy's scores **84** and
-  **55** against its own **0** and **43**. The `caller-contract` legs are the measured
-  half: agy's +84 and codex's +43 clear anything either cell moves between runs. The
-  `stale-duplicate` legs — +12 for agy against its own ±65 on that case, +3 for codex —
-  do not, so exploration is a reading there only on `caller-contract`.
+  **55** against its own **0** and **43**. Only one of those four legs is a measurement
+  by this board's own rule: agy's +84 on `caller-contract`, against a band of 42.
+  Codex's +43 on the same case sits under its own ±65 (`codex.adversarial` posts
+  65, 0, 65 there), and the `stale-duplicate` legs are +12 for agy against ±65 and +3
+  for codex. So exploration is a reading for agy on `caller-contract` and nowhere else
+  yet — three of the four gains are inside the noise they would have to clear.
 - **`codex.native` — still seeded, and now for a known reason.** Pointing
   `BENCH_CODEX_COMPANION` at the installed codex plugin 1.0.6 makes the cell run: the
   companion completes, exits 0, and returns a payload carrying `review`, `target`,
@@ -395,7 +397,7 @@ have since been re-recorded, so none of them are comparable to these.
 | `agy.deep` | 77, 77, 96 | 88, 88, 52 | 69, 76, 69 | 69, 69, 69 | 93, 95, 93 | 95, 55, 55 | 55, 90, 55 | 40 |
 | `agy.shallow` | 81, 81, 81 | 0, 0, 45 | 62, 64, 81 | 69, 69, 69 | 76, 93, 76 | 0, 0, 0 | 0, 0, 55 | 55 |
 | `codex.adversarial` | 69, 81, 69 | 0, 0, 0 | 79, 79, 79 | 53, 53, 53 | 95, 76, 93 | 65, 0, 65 | 65, 65, 65 | **65** |
-| `agy.adversarial` | 64, 81, 79 | 42, 88, 42 | 81, 84, 84 | 53, 53, 53 | 98, 98, 95 | 100, 95, 52 | 55, 55, 55 | 48 |
+| `agy.adversarial` | 64, 81, 79 | 42, 88, 42 | 81, 84, 84 | 53, 53, 53 | 98, 98, 95 | 100, 95, 58 | 55, 55, 55 | 46 |
 
 An earlier version of this table carried a struck-through row for `gemini.deep` as it
 was before the engine mix-up was found — AGY under a gemini label. That row is gone
