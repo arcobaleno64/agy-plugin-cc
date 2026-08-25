@@ -1,0 +1,136 @@
+{
+  "caseId": "caller-contract",
+  "cell": "agy.adversarial",
+  "recordedAt": "2026-08-25T01:21:06.489Z",
+  "verdict": "needs-attention",
+  "summary": "Do not ship: changing findUser to return a result envelope breaks existing consumers, locking out administrators and corrupting profile route responses.",
+  "findings": [
+    {
+      "severity": "critical",
+      "title": "Breaking change to findUser return contract breaks existing callers",
+      "body": "Changing findUser from returning a user record or null to returning a result envelope ({ ok: true, user } | { ok: false, reason }) breaks all unmigrated callers. Consumers expecting user | null receive a truthy object on lookup failure and cannot access user properties directly on success.",
+      "file": "src/store.js",
+      "line_start": 7,
+      "line_end": 13,
+      "confidence": 1,
+      "recommendation": "Update all callers across the codebase to handle the envelope return structure, or maintain the original findUser return signature and export a separate envelope-based lookup function."
+    },
+    {
+      "severity": "critical",
+      "title": "Admin authorization check unconditionally fails due to envelope nesting",
+      "body": "requireAdmin checks 'user && user.role === \"admin\"', but findUser now returns '{ ok: true, user: row }'. Because 'user.role' is undefined on the envelope, every request fails authorization and receives an HTTP 403 Forbidden response, locking out administrators.",
+      "file": "src/routes/admin.js",
+      "line_start": 4,
+      "line_end": 8,
+      "confidence": 1,
+      "recommendation": "Update requireAdmin to check result.ok and inspect result.user.role instead of user.role."
+    },
+    {
+      "severity": "high",
+      "title": "Profile route bypasses 404 check on missing users and returns undefined fields",
+      "body": "profileRoute checks 'if (!user)' to return HTTP 404. Because findUser now returns '{ ok: false, reason: \"not-found\" }' on missing lookups, the return value is truthy, causing non-existent users to bypass the 404 guard and return HTTP 200 with undefined properties. Existing users also return undefined for id and name because user is nested under user.user.",
+      "file": "src/routes/profile.js",
+      "line_start": 4,
+      "line_end": 8,
+      "confidence": 1,
+      "recommendation": "Update profileRoute to check 'if (!result.ok)' for the 404 response and unwrap result.user for the 200 JSON payload."
+    }
+  ],
+  "latencyMs": 37889,
+  "engineVersion": "1.1.19",
+  "engineObserved": "agy",
+  "samples": [
+    {
+      "verdict": "needs-attention",
+      "summary": "Changing findUser to return an envelope object breaks existing callers, causing complete admin authorization lockout and broken profile route responses.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Admin authorization check fails for all users due to return envelope mismatch",
+          "body": "findUser now returns a result envelope ({ ok: true, user } or { ok: false, reason }) instead of the user object directly. In requireAdmin, user.role is evaluated directly on the returned envelope object where role is undefined. Consequently, user.role === 'admin' is always false, causing all requests—including legitimate admin requests—to be rejected with HTTP 403 Forbidden.",
+          "file": "src/routes/admin.js",
+          "line_start": 4,
+          "line_end": 8,
+          "confidence": 1,
+          "recommendation": "Update requireAdmin to check result.ok and access user properties via result.user (e.g., const result = findUser(req.params.id); if (result.ok && result.user.role === 'admin') return next();)."
+        },
+        {
+          "severity": "high",
+          "title": "Profile route fails to return 404 and returns undefined fields due to truthy error envelope",
+          "body": "When findUser does not find a user, it returns { ok: false, reason: 'not-found' }. Because this envelope object is truthy, the if (!user) 404 check never triggers. The route subsequently reads user.id and user.name directly from the envelope object where they are undefined, causing profileRoute to respond with HTTP 200 { id: undefined, name: undefined } for both non-existent and existing users.",
+          "file": "src/routes/profile.js",
+          "line_start": 4,
+          "line_end": 8,
+          "confidence": 1,
+          "recommendation": "Update profileRoute to verify result.ok before reading user data (e.g., const result = findUser(req.params.id); if (!result.ok) return res.status(404).json({ error: 'not found' }); return res.json({ id: result.user.id, name: result.user.name });)."
+        }
+      ],
+      "latencyMs": 26380
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Changing findUser to return a result envelope breaks existing callers in admin and profile routes, locking out administrators and corrupting profile responses.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Admin authorization lockout caused by unhandled result envelope",
+          "body": "findUser was changed to return an envelope ({ ok: true, user }) rather than the raw user object. In requireAdmin, user.role is evaluated on the envelope object where role is undefined. Consequently, user.role === 'admin' always evaluates to false, causing all legitimate admin requests to be denied with a 403 Forbidden response.",
+          "file": "src/routes/admin.js",
+          "line_start": 4,
+          "line_end": 8,
+          "confidence": 1,
+          "recommendation": "Update requireAdmin to inspect the result envelope (e.g., const resUser = findUser(req.params.id); if (resUser.ok && resUser.user.role === 'admin') return next();)."
+        },
+        {
+          "severity": "high",
+          "title": "Profile route bypasses 404 handling and returns undefined fields",
+          "body": "findUser now returns { ok: false, reason: 'not-found' } when a user is not found. Because this object is truthy, the if (!user) guard fails to trigger and the route does not return a 404. Furthermore, accessing user.id and user.name on the envelope returns undefined, resulting in HTTP 200 responses with empty/undefined payloads for both existing and non-existing users.",
+          "file": "src/routes/profile.js",
+          "line_start": 4,
+          "line_end": 8,
+          "confidence": 1,
+          "recommendation": "Update profileRoute to verify result.ok and access user fields via result.user (e.g., if (!result.ok) return res.status(404)...; return res.json({ id: result.user.id, name: result.user.name });)."
+        }
+      ],
+      "latencyMs": 27613
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: changing findUser to return a result envelope breaks existing consumers, locking out administrators and corrupting profile route responses.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Breaking change to findUser return contract breaks existing callers",
+          "body": "Changing findUser from returning a user record or null to returning a result envelope ({ ok: true, user } | { ok: false, reason }) breaks all unmigrated callers. Consumers expecting user | null receive a truthy object on lookup failure and cannot access user properties directly on success.",
+          "file": "src/store.js",
+          "line_start": 7,
+          "line_end": 13,
+          "confidence": 1,
+          "recommendation": "Update all callers across the codebase to handle the envelope return structure, or maintain the original findUser return signature and export a separate envelope-based lookup function."
+        },
+        {
+          "severity": "critical",
+          "title": "Admin authorization check unconditionally fails due to envelope nesting",
+          "body": "requireAdmin checks 'user && user.role === \"admin\"', but findUser now returns '{ ok: true, user: row }'. Because 'user.role' is undefined on the envelope, every request fails authorization and receives an HTTP 403 Forbidden response, locking out administrators.",
+          "file": "src/routes/admin.js",
+          "line_start": 4,
+          "line_end": 8,
+          "confidence": 1,
+          "recommendation": "Update requireAdmin to check result.ok and inspect result.user.role instead of user.role."
+        },
+        {
+          "severity": "high",
+          "title": "Profile route bypasses 404 check on missing users and returns undefined fields",
+          "body": "profileRoute checks 'if (!user)' to return HTTP 404. Because findUser now returns '{ ok: false, reason: \"not-found\" }' on missing lookups, the return value is truthy, causing non-existent users to bypass the 404 guard and return HTTP 200 with undefined properties. Existing users also return undefined for id and name because user is nested under user.user.",
+          "file": "src/routes/profile.js",
+          "line_start": 4,
+          "line_end": 8,
+          "confidence": 1,
+          "recommendation": "Update profileRoute to check 'if (!result.ok)' for the 404 response and unwrap result.user for the 200 JSON payload."
+        }
+      ],
+      "latencyMs": 37889
+    }
+  ],
+  "raw": "{\n  \"review\": \"Adversarial Review\",\n  \"target\": {\n    \"mode\": \"working-tree\",\n    \"label\": \"working tree diff\",\n    \"explicit\": true\n  },\n  \"engine\": \"agy\",\n  \"gemini\": {\n    \"status\": 0,\n    \"stdout\": \"{\\n  \\\"verdict\\\": \\\"needs-attention\\\",\\n  \\\"summary\\\": \\\"Do not ship: changing findUser to return a result envelope breaks existing consumers, locking out administrators and corrupting profile route responses.\\\",\\n  \\\"findings\\\": [\\n    {\\n      \\\"severity\\\": \\\"critical\\\",\\n      \\\"title\\\": \\\"Breaking change to findUser return contract breaks existing callers\\\",\\n      \\\"body\\\": \\\"Changing findUser from returning a user record or null to returning a result envelope ({ ok: true, user } | { ok: false, reason }) breaks all unmigrated callers. Consumers expecting user | null receive a truthy object on lookup failure and cannot access user properties directly on success.\\\",\\n      \\\"file\\\": \\\"src/store.js\\\",\\n      \\\"line_start\\\": 7,\\n      \\\"line_end\\\": 13,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Update all callers across the codebase to handle the envelope return structure, or maintain the original findUser return signature and export a separate envelope-based lookup function.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"critical\\\",\\n      \\\"title\\\": \\\"Admin authorization check unconditionally fails due to envelope nesting\\\",\\n      \\\"body\\\": \\\"requireAdmin checks 'user && user.role === \\\\\\\"admin\\\\\\\"', but findUser now returns '{ ok: true, user: row }'. Because 'user.role' is undefined on the envelope, every request fails authorization and receives an HTTP 403 Forbidden response, locking out administrators.\\\",\\n      \\\"file\\\": \\\"src/routes/admin.js\\\",\\n      \\\"line_start\\\": 4,\\n      \\\"line_end\\\": 8,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Update requireAdmin to check result.ok and inspect result.user.role instead of user.role.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"high\\\",\\n      \\\"title\\\": \\\"Profile route bypasses 404 check on missing users and returns undefined fields\\\",\\n      \\\"body\\\": \\\"profileRoute checks 'if (!user)' to return HTTP 404. Because findUser now returns '{ ok: false, reason: \\\\\\\"not-found\\\\\\\" }' on missing lookups, the return value is truthy, causing non-existent users to bypass the 404 guard and return HTTP 200 with undefined properties. Existing users also return undefined for id and name because user is nested under user.user.\\\",\\n      \\\"file\\\": \\\"src/routes/profile.js\\\",\\n      \\\"line_start\\\": 4,\\n      \\\"line_end\\\": 8,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Update profileRoute to check 'if (!result.ok)' for the 404 response and unwrap result.user for the 200 JSON payload.\\\"\\n    }\\n  ],\\n  \\\"next_steps\\\": [\\n    \\\"Update src/routes/admin.js to handle the result envelope and check result.user.role.\\\",\\n    \\\"Update src/routes/profile.js to check result.ok and unwrap result.user fields.\\\",\\n    \\\"Add test suites for admin and profile routes covering both existing and missing user scenarios.\\\"\\n  ]\\n}\",\n    \"stderr\": \"\"\n  },\n  \"result\": {\n    \"verdict\": \"needs-attention\",\n    \"summary\": \"Do not ship: changing findUser to return a result envelope breaks existing consumers, locking out administrators and corrupting profile route responses.\",\n    \"findings\": [\n      {\n        \"severity\": \"critical\",\n        \"title\": \"Breaking change to findUser return contract breaks existing callers\",\n        \"body\": \"Changing findUser from returning a user record or null to returning a result envelope ({ ok: true, user } | { ok: false, reason }) breaks all unmigrated callers. Consumers expecting user | null receive a truthy object on lookup failure and cannot access user properties directly on success.\",\n        \"file\": \"src/store.js\",\n        \"line_start\": 7,\n        \"line_end\": 13,\n        \"confidence\": 1,\n        \"recommendation\": \"Update all callers across the codebase to handle the envelope return structure, or maintain the original findUser return signature and export a se"
+}

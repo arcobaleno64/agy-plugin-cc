@@ -64,6 +64,25 @@
   pins that split and waits for the server process to exit before removing its
   temporary Windows directory.
 
+- **`agy.adversarial` now covers all seven cases, and the two new ones changed the
+  axis's claim rather than confirming it.** Recorded on `caller-contract` and
+  `stale-duplicate` (agy 1.1.19, three samples each). The adversarial and harness axes
+  now span the same corpus, so comparing them is comparing prompts and not case lists.
+
+  Over five file-scoped cases `agy.deep -> agy.adversarial` read recall 0.79 -> 0.72
+  with precision and false positives flat, which supported "it reports less, and that
+  is the whole of the difference". At seven cases it reads recall 0.76 -> 0.70,
+  precision 0.92 -> 0.88, false positives 0.29 -> 0.38: the adversarial prompt still
+  does not buy recall, and now it spends a little precision failing to. The trade runs
+  the wrong way on both ends.
+
+  Per-case it is not one behaviour either: **82.3** on `caller-contract` against
+  `agy.deep`'s 68.3, **55.0** on `stale-duplicate` against 66.7 -- ahead by 14 on one,
+  behind by 12 on the other, both inside spreads of 48 and 40. And `stale-duplicate`
+  posts 55, 55, 55, which is not stability but the same half-answer three times: the
+  v1 copy is missed in every repeat. Zero spread on a cell that fails identically is
+  the reading this board already warns about.
+
 - **Half of the -13 prompt penalty is now diagnosed, and the other half is now known
   not to be what it looked like.** The board reported that `prompts/review.md`, run
   without tools, costs 13 composite points against the bench's neutral prompt, and
