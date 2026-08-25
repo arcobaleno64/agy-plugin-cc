@@ -150,16 +150,21 @@ export function installFailingAgyExecutable(binDir) {
 }
 
 export function buildFailingAgyEnv(binDir) {
-  const sep = process.platform === "win32" ? ";" : ":";
   const home = path.join(binDir, "agy-home");
   fs.mkdirSync(path.join(home, ".gemini", "antigravity-cli", "brain"), { recursive: true });
   return {
-    ...process.env,
-    PATH: `${binDir}${sep}${process.env.PATH}`,
+    // This builder was the one the three isolation fixes above never reached. It
+    // prepended to PATH rather than closing it, which is the exact defect
+    // 4b39509 was written to fix -- and the `--engine agy` tests below it run a
+    // stand-in that a developer machine with a real agy installed can resolve
+    // past, spending a real turn on a test asserting a fixture's stderr.
+    ...inheritedEnvWithoutCredentials(),
+    PATH: pathWithoutRealEngines(binDir),
     HOME: home,
     USERPROFILE: home,
     GEMINI_ENGINE: "agy",
-    GEMINI_HOME: path.join(home, ".gemini")
+    GEMINI_HOME: path.join(home, ".gemini"),
+    GEMINI_COMPANION_DISABLE_KEYCHAIN: "1"
   };
 }
 

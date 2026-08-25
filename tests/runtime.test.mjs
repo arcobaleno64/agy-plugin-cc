@@ -2132,9 +2132,18 @@ test("the fixture env drops an inherited API key, which would outrank the stand-
 
   try {
     const binDir = makeTempDir();
-    for (const [name, env] of [["buildEnv", buildEnv(binDir)], ["buildEnvUnavailable", buildEnvUnavailable(binDir)]]) {
+    const builders = [
+      ["buildEnv", buildEnv(binDir)],
+      ["buildEnvUnavailable", buildEnvUnavailable(binDir)],
+      ["buildFailingAgyEnv", buildFailingAgyEnv(binDir)]
+    ];
+    for (const [name, env] of builders) {
       assert.equal(env.GEMINI_API_KEY, undefined, `${name} must not hand the child an inherited GEMINI_API_KEY`);
       assert.equal(env.GOOGLE_API_KEY, undefined, `${name} must not hand the child an inherited GOOGLE_API_KEY`);
+      // Every builder must close PATH rather than merely go first on it: the
+      // `--engine agy` tests run a stand-in that a real installation further
+      // down the PATH can be resolved past, which spends a real turn.
+      assert.equal(env.PATH, pathWithoutRealEngines(binDir), `${name} must drop directories holding a real engine`);
     }
   } finally {
     for (const [key, value] of Object.entries(previous)) {
