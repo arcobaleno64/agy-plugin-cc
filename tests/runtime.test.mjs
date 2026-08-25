@@ -2117,3 +2117,38 @@ test("the fixture PATH drops directories holding a real gemini or agy", () => {
   assert.ok(!built.includes(realish), "a directory holding a real agy is dropped");
   assert.ok(built.includes(innocent), "everything else is kept, so node and git stay reachable");
 });
+
+test("the fixture env drops an inherited API key, which would outrank the stand-in credential", () => {
+  // Same class of leak as the PATH one above, one layer further in: the key wins
+  // over every stored credential, so a fixture that inherits one reports ready no
+  // matter what the stand-in was told to be. It stayed hidden because CI exports
+  // no key -- only a developer machine with one ever saw the red.
+  const previous = {
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+    GOOGLE_API_KEY: process.env.GOOGLE_API_KEY
+  };
+  process.env.GEMINI_API_KEY = "AIza-inherited-from-the-shell";
+  process.env.GOOGLE_API_KEY = "AIza-inherited-from-the-shell";
+
+  try {
+    const binDir = makeTempDir();
+    const builders = [
+      ["buildEnv", buildEnv(binDir)],
+      ["buildEnvUnavailable", buildEnvUnavailable(binDir)],
+      ["buildFailingAgyEnv", buildFailingAgyEnv(binDir)]
+    ];
+    for (const [name, env] of builders) {
+      assert.equal(env.GEMINI_API_KEY, undefined, `${name} must not hand the child an inherited GEMINI_API_KEY`);
+      assert.equal(env.GOOGLE_API_KEY, undefined, `${name} must not hand the child an inherited GOOGLE_API_KEY`);
+      // Every builder must close PATH rather than merely go first on it: the
+      // `--engine agy` tests run a stand-in that a real installation further
+      // down the PATH can be resolved past, which spends a real turn.
+      assert.equal(env.PATH, pathWithoutRealEngines(binDir), `${name} must drop directories holding a real engine`);
+    }
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
