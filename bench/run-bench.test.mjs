@@ -208,6 +208,34 @@ test("the README's cell table lists exactly the cells that exist", () => {
   assert.deepEqual([...documented].sort(), [...CELL_IDS].sort());
 });
 
+test("the README's ablation table agrees with the ablation artifact", () => {
+  // The README prints means over two cases; the artifact's `summary` is per-case and
+  // arm A also ran a third. Printing one and storing the other is how the six drifts
+  // this branch fixed got in, so the artifact carries the exact printed table too.
+  const readme = fs
+    .readFileSync(path.join(import.meta.dirname, "README.md"), "utf8")
+    .replace(/\r\n/g, "\n");
+  const artifact = JSON.parse(
+    fs.readFileSync(path.join(import.meta.dirname, "ablations", "prompt-penalty-2026-08-25.json"), "utf8")
+  );
+
+  const from = readme.indexOf("> | arm | removed | composite | recall | findings |");
+  assert.notEqual(from, -1, "ablation table header not found in bench/README.md");
+  const until = readme.indexOf("\n>\n", from);
+  assert.notEqual(until, -1, "ablation table is not followed by a blank quoted line");
+  const rows = [...readme.slice(from, until).matchAll(/^> \| `?([A-Za-z.]+)`? \|[^|]*\| ([\d.]+) \| ([\d.]+) \| ([\d.]+) \|$/gm)];
+  assert.equal(rows.length, 4, "expected four data rows in the ablation table");
+
+  for (const [, arm, composite, recall, findings] of rows) {
+    const stored = artifact.comparisonTable[arm];
+    assert.ok(stored, `README names arm ${arm}, artifact does not`);
+    // The README rounds to one decimal; the artifact keeps two.
+    assert.equal(Number(composite), Math.round(stored.composite * 10) / 10, `${arm} composite`);
+    assert.equal(Number(recall), stored.recall, `${arm} recall`);
+    assert.equal(Number(findings), stored.findingsCount, `${arm} findings`);
+  }
+});
+
 test("scoreReview gives full recall and clean precision when both planted defects are found", () => {
   const findings = [
     finding({ severity: "critical", title: "SQL injection", body: "not parameterized", line_start: 10, line_end: 12 }),

@@ -80,9 +80,51 @@ one scorer grades all of them.
 > What that penalty is *not*: it is not the `DEEP REVIEW MODE` block, which the
 > `*.shallow` cells never see, and it is not a thinner input — the probe over all
 > seven cases puts `REVIEW_INPUT` between 645 and 1414 characters against a 400,000
-> cap, with the full diff present in both. It is `prompts/review.md` itself, and
-> what in it costs the points is not yet established. Until it is, this is a fact
-> about the two prompts, not a diagnosis of either.
+> cap, with the full diff present in both. It is `prompts/review.md` itself, and an
+> ablation takes half of it apart
+> ([`ablations/prompt-penalty-2026-08-25.json`](ablations/prompt-penalty-2026-08-25.json)).
+>
+> The ablation runs review.md's *text* through the same single-shot path as the
+> `*.model` cells, with the same diff substituted into `{{REVIEW_INPUT}}`, so the only
+> thing that varies between it and the model axis is the prompt string. That
+> reproduces the penalty: on `async-lifecycle` and `auth-basic` the verbatim prompt
+> lands at 68.7 and 82.0, against `agy.shallow`'s 69 and 81. The cause is the prompt
+> text, not how the companion builds its input.
+>
+> | arm | removed | composite | recall | findings |
+> |---|---|:-:|:-:|:-:|
+> | `agy.model` | — (the neutral prompt) | 93.0 | 0.97 | 4.83 |
+> | E | D + `<review_scope>` | 86.2 | 0.87 | 4.33 |
+> | D | all four hedging blocks | 84.2 | 0.87 | 4.83 |
+> | A | nothing — review.md verbatim | 75.3 | 0.73 | 3.83 |
+>
+> **+8.8 of the 17.7 is four hedging blocks** — `<calibration_rules>`, `<finding_bar>`,
+> `<operating_stance>`, `<grounding_rules>` — and the mechanism is volume: dropping
+> them takes the findings count from 3.83 to 4.83, exactly `agy.model`'s. Removing
+> them in pairs (arms B and C, in the artifact) buys about +4 each, in per-case
+> directions that disagree, so no single block carries it.
+>
+> **`<review_scope>` is not a cause.** The prediction was that an enumerated category
+> list aims attention, so removing it should move recall. Recall does not move at all
+> — 0.867 either way — and the +2.0 in composite sits inside a band whose single
+> samples run 79 to 96.
+>
+> **The remaining ~6.8 is not suppression, and is not attributed.** At arm E the
+> prompt is down to 1731 characters from 3250 and reports as many findings as the
+> neutral one, but hits 0.87 of the planted defects against 0.97. Same volume, worse
+> aim. What is left — the `<role>` framing, the XML sectioning itself, sheer length —
+> is smaller than the noise band at three samples, so choosing between them needs more
+> repeats rather than more arms, and that experiment has not been run.
+>
+> **The ablation covers the file-scoped end only.** The two largest per-case penalties
+> (−40 on `repo-context`, −25 on `stale-duplicate`) sit on repository-scoped two-defect
+> cases that neither end of the control can solve without tools. A composite that moves
+> 40 points on two planted defects is one finding either way, and three samples of one
+> finding decides nothing, so those cases were left out rather than explained.
+>
+> One thing held across all 33 runs: **precision never moved.** It is ~1.00 in every
+> arm, verbatim prompt included. Whatever this prompt spends recall on, it is not
+> buying precision with it — the same signature the adversarial axis showed.
 >
 > **These numbers were read off a matcher that had to be fixed first.** It credited a
 > finding for naming a defect's subject without making its claim, and the credit was

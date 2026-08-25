@@ -1,0 +1,2465 @@
+{
+  "question": "What in plugins/gemini/prompts/review.md costs 13 composite points when the model has no tools?",
+  "method": "review.md text substituted into the same single-shot path as the *.model cells (lib/adapters.mjs runAgyModel), {{REVIEW_INPUT}} <- the same unified diff the model cells receive, {{TARGET_LABEL}} <- \"working tree diff\". Only the prompt string varies. Arms remove whole XML blocks from review.md.",
+  "caveat": "REVIEW_INPUT here is the diff alone; the companion also appends commit history. That residual is why arm A sits 4.9 below agy.shallow on the mean, and why vacuous-tests was dropped from the ablation after arm A.",
+  "engine": "agy",
+  "engineVersion": "1.1.19",
+  "recordedAt": "2026-08-25",
+  "repeats": 3,
+  "arms": {
+    "A": {
+      "removed": [],
+      "note": "prompts/review.md verbatim"
+    },
+    "B": {
+      "removed": [
+        "calibration_rules",
+        "finding_bar"
+      ]
+    },
+    "C": {
+      "removed": [
+        "operating_stance",
+        "grounding_rules"
+      ]
+    },
+    "D": {
+      "removed": [
+        "calibration_rules",
+        "finding_bar",
+        "operating_stance",
+        "grounding_rules"
+      ]
+    },
+    "E": {
+      "removed": [
+        "calibration_rules",
+        "finding_bar",
+        "operating_stance",
+        "grounding_rules",
+        "review_scope"
+      ]
+    }
+  },
+  "summary": {
+    "A": {
+      "async-lifecycle": {
+        "n": 3,
+        "composite": 68.667,
+        "recall": 0.667,
+        "precision": 0.933,
+        "findingsCount": 3.667
+      },
+      "auth-basic": {
+        "n": 3,
+        "composite": 82,
+        "recall": 0.8,
+        "precision": 1,
+        "findingsCount": 4
+      },
+      "vacuous-tests": {
+        "n": 3,
+        "composite": 66.333,
+        "recall": 0.583,
+        "precision": 1,
+        "findingsCount": 2.333
+      }
+    },
+    "B": {
+      "async-lifecycle": {
+        "n": 3,
+        "composite": 73.667,
+        "recall": 0.733,
+        "precision": 0.933,
+        "findingsCount": 4
+      },
+      "auth-basic": {
+        "n": 3,
+        "composite": 86,
+        "recall": 0.867,
+        "precision": 1,
+        "findingsCount": 4.333
+      }
+    },
+    "C": {
+      "async-lifecycle": {
+        "n": 3,
+        "composite": 67.667,
+        "recall": 0.6,
+        "precision": 1,
+        "findingsCount": 3
+      },
+      "auth-basic": {
+        "n": 3,
+        "composite": 91,
+        "recall": 0.933,
+        "precision": 1,
+        "findingsCount": 4.667
+      }
+    },
+    "D": {
+      "async-lifecycle": {
+        "n": 3,
+        "composite": 82,
+        "recall": 0.867,
+        "precision": 0.89,
+        "findingsCount": 5
+      },
+      "auth-basic": {
+        "n": 3,
+        "composite": 86.333,
+        "recall": 0.867,
+        "precision": 1,
+        "findingsCount": 4.667
+      }
+    },
+    "E": {
+      "async-lifecycle": {
+        "n": 3,
+        "composite": 86.333,
+        "recall": 0.867,
+        "precision": 1,
+        "findingsCount": 4.333
+      },
+      "auth-basic": {
+        "n": 3,
+        "composite": 86,
+        "recall": 0.867,
+        "precision": 1,
+        "findingsCount": 4.333
+      }
+    }
+  },
+  "runs": [
+    {
+      "caseId": "async-lifecycle",
+      "sample": 1,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 3,
+        "missed": [
+          "floating-promise",
+          "unbounded-map"
+        ],
+        "recall": 0.6,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 2,
+          "within1": 1,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.67,
+        "findingsCount": 3,
+        "composite": 69
+      },
+      "findings": [
+        {
+          "severity": "high",
+          "title": "False success returned on job execution error",
+          "body": "In runOne, the catch block returns { id, ok: true } when an exception is thrown during job setup or logging, masking failures and incorrectly reporting failed jobs as successful.",
+          "file": "src/queue.js",
+          "line_start": 26,
+          "line_end": 28,
+          "confidence": 1,
+          "recommendation": "Return { id, ok: false, error } in the catch block so callers can detect and handle job failures."
+        },
+        {
+          "severity": "high",
+          "title": "Unclosed file handle and map leak on log size limit",
+          "body": "In openJob, if stat.size exceeds 1,000,000 bytes, an error is thrown without closing the opened FileHandle or removing the entry from the handles map, leaking file descriptors.",
+          "file": "src/queue.js",
+          "line_start": 9,
+          "line_end": 11,
+          "confidence": 1,
+          "recommendation": "Call await handle.close() and remove the key from handles before throwing, or use a try-finally block to ensure proper cleanup."
+        },
+        {
+          "severity": "medium",
+          "title": "Unhandled promise rejection in heartbeat interval",
+          "body": "In startHeartbeat, promise-based fs.appendFile is invoked inside setInterval without catching potential rejections, which can trigger unhandled promise rejection errors in Node.js.",
+          "file": "src/queue.js",
+          "line_start": 16,
+          "line_end": 18,
+          "confidence": 0.95,
+          "recommendation": "Attach a .catch() handler to fs.appendFile or wrap it in an async function with try/catch, and return the interval ID for cleanup."
+        }
+      ],
+      "verdict": "needs-attention",
+      "arm": "A"
+    },
+    {
+      "caseId": "async-lifecycle",
+      "sample": 2,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 3,
+        "missed": [
+          "floating-promise",
+          "unbounded-map"
+        ],
+        "recall": 0.6,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 0,
+          "within1": 3,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0,
+        "findingsCount": 3,
+        "composite": 62
+      },
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Error swallowing returns success on failure",
+          "body": "In runOne, the catch block returns { id, ok: true }, identical to the success return path. Any failure during openJob or write operations is silenced and reported as a successful execution.",
+          "file": "src/queue.js",
+          "line_start": 21,
+          "line_end": 29,
+          "confidence": 1,
+          "recommendation": "Return { id, ok: false, error } in the catch block or allow the error to propagate."
+        },
+        {
+          "severity": "high",
+          "title": "Unhandled promise rejection in setInterval callback",
+          "body": "In startHeartbeat, fs.appendFile from node:fs/promises returns a Promise that is neither awaited nor caught with a .catch handler. Any I/O error (e.g. disk full, permission denied) will trigger an unhandled promise rejection and potentially crash the Node.js process.",
+          "file": "src/queue.js",
+          "line_start": 15,
+          "line_end": 19,
+          "confidence": 1,
+          "recommendation": "Attach a .catch() handler to fs.appendFile or handle errors inside an async function within the interval."
+        },
+        {
+          "severity": "medium",
+          "title": "File descriptor and map leak on log size validation error",
+          "body": "In openJob, if stat.size exceeds 1,000,000 bytes, an error is thrown after fs.open has acquired a file handle and stored it in the handles map. The handle is never closed with handle.close() and remains retained in the handles map, leaking system file descriptors.",
+          "file": "src/queue.js",
+          "line_start": 5,
+          "line_end": 13,
+          "confidence": 0.95,
+          "recommendation": "Close the handle with await handle.close() and remove the key from handles before throwing the error."
+        }
+      ],
+      "verdict": "needs-attention",
+      "arm": "A"
+    },
+    {
+      "caseId": "async-lifecycle",
+      "sample": 3,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 4,
+        "missed": [
+          "unbounded-map"
+        ],
+        "recall": 0.8,
+        "precision": 0.8,
+        "falsePositives": 1,
+        "bonus": 0,
+        "severity": {
+          "exact": 1,
+          "within1": 3,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.25,
+        "findingsCount": 5,
+        "composite": 75
+      },
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Catch block masks errors by returning success status",
+          "body": "In `runOne`, the `catch` block catches errors from `openJob` or `handle.write` and returns `{ id, ok: true }`. This swallows failure information and falsely reports failed jobs as successful to callers.",
+          "file": "src/queue.js",
+          "line_start": 26,
+          "line_end": 28,
+          "confidence": 1,
+          "recommendation": "Return `{ id, ok: false, error }` in the catch block or let the error propagate."
+        },
+        {
+          "severity": "high",
+          "title": "Unclosed file descriptor and stale map entry on oversized log error",
+          "body": "If `stat.size > 1_000_000`, `openJob` throws an error without closing `handle` or removing it from `handles`. This permanently leaks the open file descriptor and leaves invalid state in `handles`.",
+          "file": "src/queue.js",
+          "line_start": 9,
+          "line_end": 11,
+          "confidence": 1,
+          "recommendation": "Close `handle` using `await handle.close()` and delete `id` from `handles` before throwing the error."
+        },
+        {
+          "severity": "high",
+          "title": "Unhandled promise rejection in heartbeat interval",
+          "body": "`startHeartbeat` calls `fs.appendFile` (from `node:fs/promises`) inside `setInterval` without handling errors. Any filesystem write failure results in an unhandled promise rejection that can terminate the Node.js process.",
+          "file": "src/queue.js",
+          "line_start": 16,
+          "line_end": 18,
+          "confidence": 0.95,
+          "recommendation": "Attach a `.catch()` handler to `fs.appendFile` or handle errors in an async callback, and return the interval timer ID so it can be cleared."
+        },
+        {
+          "severity": "medium",
+          "title": "Job file handles are never closed after execution",
+          "body": "`runOne` opens a file handle via `openJob` but never closes it upon completion or failure, leading to file descriptor leaks across job executions.",
+          "file": "src/queue.js",
+          "line_start": 21,
+          "line_end": 29,
+          "confidence": 0.9,
+          "recommendation": "Close the file handle in a `finally` block or implement an explicit handle cleanup function."
+        },
+        {
+          "severity": "medium",
+          "title": "Unsanitized `id` allows directory traversal in file paths",
+          "body": "The `id` parameter is interpolated directly into `/var/jobs/${id}.log` and `/var/jobs/${id}.beat` without path sanitization, allowing arbitrary path traversal if `id` contains path separators.",
+          "file": "src/queue.js",
+          "line_start": 6,
+          "line_end": 17,
+          "confidence": 0.9,
+          "recommendation": "Sanitize `id` using `path.basename` or validate that it matches an expected alphanumeric pattern."
+        }
+      ],
+      "verdict": "needs-attention",
+      "arm": "A"
+    },
+    {
+      "caseId": "auth-basic",
+      "sample": 1,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 4,
+        "missed": [
+          "plaintext-compare"
+        ],
+        "recall": 0.8,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 2,
+          "within1": 2,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.5,
+        "findingsCount": 4,
+        "composite": 81
+      },
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "SQL injection via string concatenation in findUser",
+          "body": "User-supplied username is concatenated directly into the SQL query string in findUser, allowing arbitrary SQL injection that can bypass authentication or extract sensitive database contents.",
+          "file": "src/auth.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 1,
+          "recommendation": "Use parameterized queries or prepared statements (e.g., db.query('SELECT * FROM users WHERE name = ?', [username]))."
+        },
+        {
+          "severity": "high",
+          "title": "Hardcoded JWT secret key",
+          "body": "JWT signing secret is hardcoded directly in source code as a static string, allowing anyone with access to the code to forge authentication tokens.",
+          "file": "src/auth.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 1,
+          "recommendation": "Load JWT_SECRET securely from an environment variable (e.g., process.env.JWT_SECRET) and ensure the application errors out if the secret is missing."
+        },
+        {
+          "severity": "high",
+          "title": "Uncaught TypeError when user is not found and plaintext password comparison",
+          "body": "If findUser returns null or undefined when a user does not exist, accessing user.password throws an unhandled TypeError that crashes the request. Additionally, password verification relies on loose equality comparison against plaintext.",
+          "file": "src/auth.js",
+          "line_start": 14,
+          "line_end": 17,
+          "confidence": 1,
+          "recommendation": "Verify user existence before accessing properties (e.g., if (!user) return null;) and use a secure hashing algorithm like bcrypt.compare for password verification."
+        },
+        {
+          "severity": "medium",
+          "title": "Unhandled JSON.parse exception in parseSession",
+          "body": "JSON.parse(raw) will throw an uncaught SyntaxError if raw input is malformed or not a valid JSON string, leading to unhandled runtime errors.",
+          "file": "src/auth.js",
+          "line_start": 21,
+          "line_end": 24,
+          "confidence": 1,
+          "recommendation": "Wrap JSON.parse in a try-catch block to return null or handle malformed input gracefully."
+        }
+      ],
+      "verdict": "needs-attention",
+      "arm": "A"
+    },
+    {
+      "caseId": "auth-basic",
+      "sample": 2,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 4,
+        "missed": [
+          "plaintext-compare"
+        ],
+        "recall": 0.8,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 2,
+          "within1": 2,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.5,
+        "findingsCount": 4,
+        "composite": 81
+      },
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "SQL injection via string concatenation in findUser",
+          "body": "The `findUser` function concatenates the unescaped `username` argument directly into a raw SQL query string. An attacker can supply SQL payloads to bypass authentication, exfiltrate data, or alter database contents.",
+          "file": "src/auth.js",
+          "line_start": 6,
+          "line_end": 10,
+          "confidence": 1,
+          "recommendation": "Use parameterized queries or prepared statements (e.g., `db.query('SELECT * FROM users WHERE name = ?', [username])`) instead of string concatenation."
+        },
+        {
+          "severity": "high",
+          "title": "Unchecked user lookup result and plaintext password comparison",
+          "body": "When a user does not exist and `findUser` returns null or undefined, evaluating `user.password` throws an unhandled runtime TypeError. Additionally, passwords are evaluated as plaintext via loose equality (`==`) rather than hashed with a secure algorithm.",
+          "file": "src/auth.js",
+          "line_start": 13,
+          "line_end": 18,
+          "confidence": 1,
+          "recommendation": "Verify that `user` is non-null before accessing its properties, and compare passwords using an asynchronous hashing library (such as bcrypt or argon2) with constant-time verification."
+        },
+        {
+          "severity": "high",
+          "title": "Hardcoded JWT secret in source code",
+          "body": "The JWT signing secret `JWT_SECRET` is defined as a static literal in source code, allowing anyone with access to the repository to forge valid authentication tokens.",
+          "file": "src/auth.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 1,
+          "recommendation": "Retrieve the JWT secret from environment variables or a secure key store (e.g., `process.env.JWT_SECRET`) and fail fast if it is missing."
+        },
+        {
+          "severity": "medium",
+          "title": "Unhandled exception on invalid input in parseSession",
+          "body": "`JSON.parse` is executed directly on the `raw` input without error handling. Passing invalid JSON causes an uncaught SyntaxError, and passing strings like 'null' will lead to a TypeError when attempting to access `.userId`.",
+          "file": "src/auth.js",
+          "line_start": 21,
+          "line_end": 24,
+          "confidence": 0.95,
+          "recommendation": "Wrap `JSON.parse` in a `try...catch` block, validate the parsed object type, and handle malformed input safely."
+        }
+      ],
+      "verdict": "needs-attention",
+      "arm": "A"
+    },
+    {
+      "caseId": "auth-basic",
+      "sample": 3,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 4,
+        "missed": [
+          "null-check"
+        ],
+        "recall": 0.8,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 3,
+          "within1": 1,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.75,
+        "findingsCount": 4,
+        "composite": 84
+      },
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "SQL injection in findUser",
+          "body": "The `username` parameter is directly concatenated into the SQL query string in `findUser`, exposing the database to SQL injection attacks.",
+          "file": "src/auth.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 1,
+          "recommendation": "Use parameterized queries (e.g., `db.query('SELECT * FROM users WHERE name = ?', [username])`) instead of string concatenation."
+        },
+        {
+          "severity": "high",
+          "title": "Hardcoded JWT secret",
+          "body": "`JWT_SECRET` is hardcoded directly in the source file, which exposes the token signing key if the codebase is shared or leaked.",
+          "file": "src/auth.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 1,
+          "recommendation": "Load the JWT secret from a secure environment variable (e.g., `process.env.JWT_SECRET`)."
+        },
+        {
+          "severity": "high",
+          "title": "Unchecked user lookup result and plaintext password comparison",
+          "body": "In `login`, `user.password` is accessed without checking whether `user` is null/undefined when a user is not found, causing an unhandled TypeError crash. Furthermore, passwords are verified in plaintext using loose equality rather than secure cryptographic hashing.",
+          "file": "src/auth.js",
+          "line_start": 14,
+          "line_end": 17,
+          "confidence": 0.95,
+          "recommendation": "Check if `user` exists before accessing properties, and verify passwords using a secure hashing algorithm like bcrypt or argon2."
+        },
+        {
+          "severity": "medium",
+          "title": "Unhandled exception and null access in parseSession",
+          "body": "`parseSession` calls `JSON.parse(raw)` without error handling, which will throw an unhandled SyntaxError on malformed JSON, and does not verify `session` is non-null before accessing `.userId`.",
+          "file": "src/auth.js",
+          "line_start": 21,
+          "line_end": 24,
+          "confidence": 0.95,
+          "recommendation": "Wrap `JSON.parse` in a `try...catch` block and validate that the parsed object contains `userId` before returning."
+        }
+      ],
+      "verdict": "needs-attention",
+      "arm": "A"
+    },
+    {
+      "caseId": "vacuous-tests",
+      "sample": 1,
+      "ok": true,
+      "score": {
+        "plantedTotal": 4,
+        "found": 3,
+        "missed": [
+          "no-assertion"
+        ],
+        "recall": 0.75,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 2,
+          "within1": 0,
+          "mismatch": 1,
+          "unknown": 0
+        },
+        "severityExactRate": 0.67,
+        "findingsCount": 3,
+        "composite": 79
+      },
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Unawaited async assertion and missing deletion logic in store test",
+          "body": "In test/session.test.js, the test 'deleting a session empties the store' wraps assertions in `process.nextTick` without returning a Promise or using a callback for `node:test`, causing the test runner to complete synchronously before assertions run. Furthermore, no deletion or expiration function (such as `expire('abc')` or `sessions.delete('abc')`) is invoked after setting the session, meaning the assertion `sessions.size === 0` will fail if executed.",
+          "file": "test/session.test.js",
+          "line_start": 20,
+          "line_end": 25,
+          "confidence": 0.95,
+          "recommendation": "Call the deletion/expiration function and avoid unawaited `process.nextTick` callbacks by making the test asynchronous or executing synchronous assertions directly."
+        },
+        {
+          "severity": "medium",
+          "title": "Skipped test for expire() functionality",
+          "body": "In test/session.test.js, `test.skip` is used on the core test 'expire() removes the session', leaving session removal unverified in test runs.",
+          "file": "test/session.test.js",
+          "line_start": 15,
+          "line_end": 18,
+          "confidence": 0.95,
+          "recommendation": "Remove `.skip` from `test.skip` to enable test execution and ensure the expiration logic passes."
+        },
+        {
+          "severity": "low",
+          "title": "Flawed test assertion logic in render test",
+          "body": "In test/session.test.js, the test 'an expired session is listed before a fresh one' checks `lines.indexOf('expired') < lines.indexOf('fresh')` without seeding sessions first. If 'expired' is not present in `lines`, `indexOf('expired')` evaluates to -1, which will evaluate as `< indexOf('fresh')` and cause a false positive pass.",
+          "file": "test/session.test.js",
+          "line_start": 10,
+          "line_end": 13,
+          "confidence": 0.9,
+          "recommendation": "Explicitly seed both an expired and a fresh session in `sessions` before calling `render()`, and assert that both index values are greater than -1 before comparing their order."
+        }
+      ],
+      "verdict": "needs-attention",
+      "arm": "A"
+    },
+    {
+      "caseId": "vacuous-tests",
+      "sample": 2,
+      "ok": true,
+      "score": {
+        "plantedTotal": 4,
+        "found": 2,
+        "missed": [
+          "vacuous-ordering",
+          "permanent-skip"
+        ],
+        "recall": 0.5,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 1,
+          "within1": 1,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.5,
+        "findingsCount": 2,
+        "composite": 60
+      },
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Asynchronous assertion inside process.nextTick escapes test runner lifecycle",
+          "body": "In test/session.test.js (lines 20-25), the test callback is synchronous, allowing node:test to report success before process.nextTick executes. Additionally, no deletion or expiration logic is called after setting the session, causing the deferred assertion checking sessions.size === 0 to fail as an unhandled exception outside the test harness.",
+          "file": "test/session.test.js",
+          "line_start": 20,
+          "line_end": 25,
+          "confidence": 1,
+          "recommendation": "Invoke the deletion logic explicitly and perform assertions synchronously or wrap the asynchronous operation in a returned Promise."
+        },
+        {
+          "severity": "medium",
+          "title": "Malformed payload test provides valid JSON and lacks assertions",
+          "body": "In test/session.test.js (lines 6-8), the test titled 'handles a malformed payload' passes a valid JSON string ('{\"id\":\"abc\",\"expiresAt\":0}') and does not assert on error throwing or return value handling.",
+          "file": "test/session.test.js",
+          "line_start": 6,
+          "line_end": 8,
+          "confidence": 0.95,
+          "recommendation": "Pass actual malformed payload input and verify expected error handling or output using assert.throws or return value assertions."
+        }
+      ],
+      "verdict": "needs-attention",
+      "arm": "A"
+    },
+    {
+      "caseId": "vacuous-tests",
+      "sample": 3,
+      "ok": true,
+      "score": {
+        "plantedTotal": 4,
+        "found": 2,
+        "missed": [
+          "no-assertion",
+          "permanent-skip"
+        ],
+        "recall": 0.5,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 1,
+          "within1": 1,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.5,
+        "findingsCount": 2,
+        "composite": 60
+      },
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Unawaited asynchronous assertion in synchronous test runner",
+          "body": "The test 'deleting a session empties the store' places its assertion inside a `process.nextTick` callback within a synchronous test callback. The `node:test` runner completes the test synchronously before `process.nextTick` executes, causing the test to pass silently regardless of actual state while risking uncaught exceptions thrown outside the test context. Furthermore, no deletion logic is invoked to empty the session store.",
+          "file": "test/session.test.js",
+          "line_start": 20,
+          "line_end": 25,
+          "confidence": 0.95,
+          "recommendation": "Convert the test to return a Promise or use async/await so the runner waits for the callback, and call the appropriate deletion function before asserting `sessions.size === 0`."
+        },
+        {
+          "severity": "medium",
+          "title": "Flawed indexOf comparison causes false positive when substring is missing",
+          "body": "In `lines.indexOf(\"expired\") < lines.indexOf(\"fresh\")`, if 'expired' is not present in `lines`, `indexOf` returns `-1`. If 'fresh' is found at index 0 or later, `-1 < 0` evaluates to `true`, causing the assertion to pass even when expired sessions are omitted entirely.",
+          "file": "test/session.test.js",
+          "line_start": 10,
+          "line_end": 13,
+          "confidence": 0.9,
+          "recommendation": "Check that both `indexOf(\"expired\") !== -1` and `indexOf(\"fresh\") !== -1` before asserting their relative index ordering."
+        }
+      ],
+      "verdict": "needs-attention",
+      "arm": "A"
+    },
+    {
+      "arm": "B",
+      "caseId": "async-lifecycle",
+      "sample": 1,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 3,
+        "missed": [
+          "floating-promise",
+          "unbounded-map"
+        ],
+        "recall": 0.6,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 1,
+          "within1": 2,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.33,
+        "findingsCount": 3,
+        "composite": 65
+      },
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Error catch block returns ok: true on failure",
+          "body": "In runOne, the catch block returns { id, ok: true } upon encountering an error, silently masking failures and falsely reporting failed jobs as successful.",
+          "file": "src/queue.js",
+          "line_start": 26,
+          "line_end": 28,
+          "confidence": 1,
+          "recommendation": "Update the catch block to return { id, ok: false, error } or propagate the error."
+        },
+        {
+          "severity": "medium",
+          "title": "File descriptor leak on oversized log error",
+          "body": "In openJob, if stat.size exceeds 1,000,000 bytes, an exception is thrown without closing the newly opened FileHandle or removing it from the handles map.",
+          "file": "src/queue.js",
+          "line_start": 6,
+          "line_end": 11,
+          "confidence": 0.95,
+          "recommendation": "Close the file handle with await handle.close() and remove it from handles before throwing."
+        },
+        {
+          "severity": "medium",
+          "title": "Unhandled promise rejection in heartbeat interval",
+          "body": "startHeartbeat invokes promise-based fs.appendFile inside setInterval without awaiting or attaching a .catch handler, causing unhandled promise rejections if the filesystem write fails.",
+          "file": "src/queue.js",
+          "line_start": 16,
+          "line_end": 18,
+          "confidence": 0.95,
+          "recommendation": "Attach a .catch error handler to fs.appendFile or wrap it in a try-catch block."
+        }
+      ],
+      "verdict": "needs-attention"
+    },
+    {
+      "arm": "B",
+      "caseId": "async-lifecycle",
+      "sample": 2,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 4,
+        "missed": [
+          "unbounded-map"
+        ],
+        "recall": 0.8,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 2,
+          "within1": 2,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.5,
+        "findingsCount": 4,
+        "composite": 81
+      },
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Failure masked as success in runOne catch block",
+          "body": "In runOne, the catch block returns { id, ok: true }, suppressing any errors thrown during openJob or log writing and falsely reporting failures as successes to callers.",
+          "file": "src/queue.js",
+          "line_start": 26,
+          "line_end": 28,
+          "confidence": 1,
+          "recommendation": "Return { id, ok: false, error: err } or rethrow the error in the catch block."
+        },
+        {
+          "severity": "high",
+          "title": "File handle and map leak when log size limit exceeded",
+          "body": "In openJob, if stat.size exceeds 1,000,000 bytes, an Error is thrown without closing the newly opened file handle or removing it from the handles map, leaking file descriptors.",
+          "file": "src/queue.js",
+          "line_start": 6,
+          "line_end": 11,
+          "confidence": 0.95,
+          "recommendation": "Ensure handle.close() is called and handles.delete(id) is executed before throwing when size validation fails."
+        },
+        {
+          "severity": "medium",
+          "title": "Unhandled promise rejection and unmanaged timer in startHeartbeat",
+          "body": "startHeartbeat invokes fs.appendFile inside setInterval without awaiting or attaching a .catch() handler, risking unhandled promise rejections on filesystem errors. The interval ID is also not returned, preventing cleanup.",
+          "file": "src/queue.js",
+          "line_start": 15,
+          "line_end": 19,
+          "confidence": 0.9,
+          "recommendation": "Handle errors from fs.appendFile and return the interval ID from startHeartbeat so callers can clear the timer."
+        },
+        {
+          "severity": "medium",
+          "title": "Unvalidated job ID in filesystem path construction",
+          "body": "Job IDs are interpolated directly into file paths (/var/jobs/${id}.log and /var/jobs/${id}.beat) without validation or sanitization, potentially allowing path traversal if unsafe characters are supplied.",
+          "file": "src/queue.js",
+          "line_start": 6,
+          "line_end": 17,
+          "confidence": 0.85,
+          "recommendation": "Validate that id matches an expected pattern (e.g. alphanumeric/UUID) before using it in file path construction."
+        }
+      ],
+      "verdict": "needs-attention"
+    },
+    {
+      "arm": "B",
+      "caseId": "async-lifecycle",
+      "sample": 3,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 4,
+        "missed": [
+          "unbounded-map"
+        ],
+        "recall": 0.8,
+        "precision": 0.8,
+        "falsePositives": 1,
+        "bonus": 0,
+        "severity": {
+          "exact": 1,
+          "within1": 3,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.25,
+        "findingsCount": 5,
+        "composite": 75
+      },
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Error swallowed and reported as success",
+          "body": "In runOne, the catch block intercepts any failure from openJob or handle.write and returns { id, ok: true }, falsely indicating success to callers and hiding critical job failures.",
+          "file": "src/queue.js",
+          "line_start": 26,
+          "line_end": 28,
+          "confidence": 1,
+          "recommendation": "Return { id, ok: false, error } or propagate/log the caught exception."
+        },
+        {
+          "severity": "high",
+          "title": "File handle leaked when log exceeds size limit",
+          "body": "In openJob, if stat.size exceeds 1,000,000, an Error is thrown without closing the opened file handle (await handle.close()) or removing it from the handles Map, causing a file descriptor leak.",
+          "file": "src/queue.js",
+          "line_start": 8,
+          "line_end": 11,
+          "confidence": 1,
+          "recommendation": "Close the handle with await handle.close() and remove the key from handles before throwing."
+        },
+        {
+          "severity": "high",
+          "title": "Unhandled promise rejection and timer leak in heartbeat",
+          "body": "startHeartbeat calls the promise-based fs.appendFile inside setInterval without awaiting or catching rejections, causing unhandled promise rejections on I/O failures. Additionally, the timer ID is not returned or stored, preventing cleanup and graceful shutdown.",
+          "file": "src/queue.js",
+          "line_start": 15,
+          "line_end": 19,
+          "confidence": 0.95,
+          "recommendation": "Handle promise rejections with .catch(...) on fs.appendFile and return the timer ID or a stop function to allow clearInterval."
+        },
+        {
+          "severity": "medium",
+          "title": "Unsanitized job ID in filesystem paths",
+          "body": "The id parameter is directly interpolated into filesystem paths (/var/jobs/${id}.log and /var/jobs/${id}.beat) without validation, enabling path traversal if id contains path traversal sequences like ../.",
+          "file": "src/queue.js",
+          "line_start": 6,
+          "line_end": 17,
+          "confidence": 0.9,
+          "recommendation": "Validate id using a strict regex pattern (e.g., /^[a-zA-Z0-9_-]+$/) before constructing paths."
+        },
+        {
+          "severity": "medium",
+          "title": "File handles are never closed after job execution",
+          "body": "Handles stored in the handles map are never closed upon completion of runOne, leading to file descriptor exhaustion over time as more jobs execute.",
+          "file": "src/queue.js",
+          "line_start": 21,
+          "line_end": 28,
+          "confidence": 0.9,
+          "recommendation": "Ensure handle.close() is called and handles.delete(id) is executed in a finally block in runOne."
+        }
+      ],
+      "verdict": "needs-attention"
+    },
+    {
+      "arm": "B",
+      "caseId": "auth-basic",
+      "sample": 1,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 4,
+        "missed": [
+          "plaintext-compare"
+        ],
+        "recall": 0.8,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 2,
+          "within1": 1,
+          "mismatch": 1,
+          "unknown": 0
+        },
+        "severityExactRate": 0.5,
+        "findingsCount": 4,
+        "composite": 81
+      },
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "SQL Injection in findUser",
+          "body": "The findUser function constructs SQL queries using raw string concatenation with the untrusted username parameter, exposing the database to SQL injection attacks and authentication bypass.",
+          "file": "src/auth.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 1,
+          "recommendation": "Use parameterized queries or prepared statements (e.g., db.query('SELECT * FROM users WHERE name = ?', [username]))."
+        },
+        {
+          "severity": "critical",
+          "title": "Unchecked null dereference and plaintext password comparison in login",
+          "body": "If findUser returns null or undefined for a non-existent user, accessing user.password throws an unhandled TypeError. Furthermore, passwords are treated as plaintext and compared using loose equality (==) instead of a secure salted hash comparison.",
+          "file": "src/auth.js",
+          "line_start": 14,
+          "line_end": 17,
+          "confidence": 1,
+          "recommendation": "Check if user exists before property access and verify passwords using a secure hashing algorithm (such as bcrypt or argon2) with constant-time comparison."
+        },
+        {
+          "severity": "high",
+          "title": "Hardcoded JWT secret key",
+          "body": "JWT_SECRET is stored directly as a plaintext constant in the source code, allowing anyone with access to the codebase to forge valid authentication tokens.",
+          "file": "src/auth.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 1,
+          "recommendation": "Load the JWT secret from environment variables (e.g., process.env.JWT_SECRET) or a dedicated secret management service."
+        },
+        {
+          "severity": "medium",
+          "title": "Unhandled JSON.parse exception in parseSession",
+          "body": "parseSession invokes JSON.parse without error handling. Passing invalid JSON or non-string input will throw an uncaught SyntaxError and potentially crash the process or request handler.",
+          "file": "src/auth.js",
+          "line_start": 21,
+          "line_end": 24,
+          "confidence": 1,
+          "recommendation": "Wrap JSON.parse in a try-catch block, validate the input, and safely handle malformed session payloads."
+        }
+      ],
+      "verdict": "needs-attention"
+    },
+    {
+      "arm": "B",
+      "caseId": "auth-basic",
+      "sample": 2,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 4,
+        "missed": [
+          "plaintext-compare"
+        ],
+        "recall": 0.8,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 2,
+          "within1": 2,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.5,
+        "findingsCount": 4,
+        "composite": 81
+      },
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "SQL Injection in findUser query",
+          "body": "The username parameter is concatenated directly into the SQL query string in findUser without sanitization or parameterization, allowing arbitrary SQL injection.",
+          "file": "src/auth.js",
+          "line_start": 6,
+          "line_end": 10,
+          "confidence": 1,
+          "recommendation": "Use parameterized queries (e.g., db.query('SELECT * FROM users WHERE name = ?', [username])) instead of string concatenation."
+        },
+        {
+          "severity": "high",
+          "title": "Missing null check and plaintext password comparison in login",
+          "body": "If findUser returns null, undefined, or empty results when a user is not found, evaluating user.password throws an unhandled TypeError. Additionally, passwords are evaluated in plaintext using loose equality (==).",
+          "file": "src/auth.js",
+          "line_start": 14,
+          "line_end": 17,
+          "confidence": 1,
+          "recommendation": "Check that user exists before accessing properties (e.g., if (user && ...)) and verify passwords using a secure password hashing algorithm (e.g., bcrypt/argon2) with constant-time comparison."
+        },
+        {
+          "severity": "high",
+          "title": "Hardcoded JWT secret key",
+          "body": "JWT_SECRET is hardcoded in source code, leaking cryptographic signing credentials in repository history and preventing secret rotation across environments.",
+          "file": "src/auth.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 1,
+          "recommendation": "Retrieve the JWT secret from environment configuration (e.g., process.env.JWT_SECRET) and validate that it is set at runtime."
+        },
+        {
+          "severity": "medium",
+          "title": "Uncaught SyntaxError in parseSession",
+          "body": "JSON.parse(raw) will throw an uncaught SyntaxError if raw is not valid JSON, missing, or malformed, causing unexpected request failures.",
+          "file": "src/auth.js",
+          "line_start": 21,
+          "line_end": 24,
+          "confidence": 0.95,
+          "recommendation": "Wrap JSON.parse in a try/catch block or perform safe parsing, returning null or throwing a domain-specific error when parsing fails."
+        }
+      ],
+      "verdict": "needs-attention"
+    },
+    {
+      "arm": "B",
+      "caseId": "auth-basic",
+      "sample": 3,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 5,
+        "missed": [],
+        "recall": 1,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 3,
+          "within1": 2,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.6,
+        "findingsCount": 5,
+        "composite": 96
+      },
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "SQL Injection via Unsanitized Query Parameter",
+          "body": "Direct concatenation of `username` into the SQL query in `findUser` allows SQL injection, enabling arbitrary database query execution and authentication bypass.",
+          "file": "src/auth.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 1,
+          "recommendation": "Use parameterized queries or prepared statements (e.g. `db.query('SELECT * FROM users WHERE name = ?', [username])`)."
+        },
+        {
+          "severity": "high",
+          "title": "Hardcoded JWT Secret Key",
+          "body": "The JWT signing secret is hardcoded directly in source code, creating risk of token forgery and unauthorized access if source code is exposed.",
+          "file": "src/auth.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 1,
+          "recommendation": "Retrieve the JWT secret from environment variables or a secret management service (e.g. `process.env.JWT_SECRET`)."
+        },
+        {
+          "severity": "high",
+          "title": "Unchecked Null/Undefined Reference on User Lookup",
+          "body": "If `findUser` returns null or undefined when a user is not found, accessing `user.password` throws an unhandled TypeError that crashes the login flow.",
+          "file": "src/auth.js",
+          "line_start": 14,
+          "line_end": 15,
+          "confidence": 1,
+          "recommendation": "Add a null check to verify `user` exists before accessing its properties (e.g. `if (!user) return null;`)."
+        },
+        {
+          "severity": "high",
+          "title": "Plaintext Password Comparison and Loose Equality",
+          "body": "Comparing passwords in plaintext with loose equality (`==`) indicates unhashed credential storage, exposes the system to timing attacks, and creates type coercion vulnerabilities.",
+          "file": "src/auth.js",
+          "line_start": 15,
+          "line_end": 15,
+          "confidence": 0.95,
+          "recommendation": "Store passwords as salted hashes (e.g. argon2, bcrypt) and verify them using timing-safe comparison functions."
+        },
+        {
+          "severity": "medium",
+          "title": "Uncaught Exception on Malformed JSON Input",
+          "body": "Calling `JSON.parse(raw)` in `parseSession` without exception handling will throw an uncaught SyntaxError on invalid inputs, and does not validate that `session` is non-null before accessing `session.userId`.",
+          "file": "src/auth.js",
+          "line_start": 21,
+          "line_end": 24,
+          "confidence": 0.95,
+          "recommendation": "Wrap `JSON.parse` in a try/catch block and validate the parsed object structure before accessing `session.userId`."
+        }
+      ],
+      "verdict": "needs-attention"
+    },
+    {
+      "arm": "C",
+      "caseId": "async-lifecycle",
+      "sample": 1,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 3,
+        "missed": [
+          "floating-promise",
+          "unbounded-map"
+        ],
+        "recall": 0.6,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 2,
+          "within1": 1,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.67,
+        "findingsCount": 3,
+        "composite": 69
+      },
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Error catch block incorrectly returns success in runOne",
+          "body": "In runOne (lines 26-28), the catch block returns { id, ok: true } when an exception is thrown during job opening or writing. This silently masks failures (such as oversized log files or permission errors) and misreports failed jobs as successful to callers.",
+          "file": "src/queue.js",
+          "line_start": 21,
+          "line_end": 29,
+          "confidence": 1,
+          "recommendation": "Return { id, ok: false, error: err.message } or rethrow the error in the catch block so failures can be detected and handled by callers."
+        },
+        {
+          "severity": "high",
+          "title": "File handle and Map reference leaked when log size limit is exceeded",
+          "body": "In openJob (lines 5-13), the file handle is opened and added to the handles Map before checking stat.size. If stat.size > 1_000_000, an Error is thrown without closing the handle or removing it from handles, causing a file descriptor leak and stale Map entry.",
+          "file": "src/queue.js",
+          "line_start": 5,
+          "line_end": 13,
+          "confidence": 0.95,
+          "recommendation": "Close the handle using await handle.close() and remove the entry from handles Map before throwing the error, or use a try...catch/finally block to ensure cleanup."
+        },
+        {
+          "severity": "medium",
+          "title": "Unhandled promise rejection and untracked timer in startHeartbeat",
+          "body": "In startHeartbeat (lines 15-19), fs.appendFile returns a Promise from node:fs/promises inside setInterval. The returned promise is neither awaited nor caught with .catch(), which will trigger an UnhandledPromiseRejection and potentially crash the Node.js process if file operations fail. Additionally, setInterval timer ID is not returned, preventing caller cleanup.",
+          "file": "src/queue.js",
+          "line_start": 15,
+          "line_end": 19,
+          "confidence": 0.9,
+          "recommendation": "Attach a .catch() handler to fs.appendFile, and return the timer ID from startHeartbeat so the heartbeat interval can be cleared when jobs complete."
+        }
+      ],
+      "verdict": "needs-attention"
+    },
+    {
+      "arm": "C",
+      "caseId": "async-lifecycle",
+      "sample": 2,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 3,
+        "missed": [
+          "unbounded-interval",
+          "unbounded-map"
+        ],
+        "recall": 0.6,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 1,
+          "within1": 2,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.33,
+        "findingsCount": 3,
+        "composite": 65
+      },
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Error masking in catch block",
+          "body": "In runOne (lines 26-28), the catch block returns { id, ok: true }, falsely reporting failed jobs as successful and silencing errors such as oversized logs or I/O failures.",
+          "file": "src/queue.js",
+          "line_start": 26,
+          "line_end": 28,
+          "confidence": 1,
+          "recommendation": "Return { id, ok: false, error } or rethrow/log the error so caller can observe failures."
+        },
+        {
+          "severity": "high",
+          "title": "File handle leak on validation failure",
+          "body": "In openJob (lines 9-11), if stat.size exceeds 1,000,000, an Error is thrown without calling handle.close() or removing the entry from handles, leaking file descriptors.",
+          "file": "src/queue.js",
+          "line_start": 9,
+          "line_end": 11,
+          "confidence": 0.95,
+          "recommendation": "Close handle using await handle.close() and clean up handles.delete(id) before throwing the error."
+        },
+        {
+          "severity": "medium",
+          "title": "Unhandled promise rejection and unmanaged interval in startHeartbeat",
+          "body": "In startHeartbeat (lines 15-19), fs.appendFile returns a Promise that is not awaited or caught inside setInterval, which will cause unhandled promise rejections on I/O failure. Additionally, the timer handle is not returned or tracked for cleanup.",
+          "file": "src/queue.js",
+          "line_start": 15,
+          "line_end": 19,
+          "confidence": 0.9,
+          "recommendation": "Attach a .catch() handler or use an async callback with try/catch on fs.appendFile, and return the timer handle from setInterval so callers can stop the heartbeat."
+        }
+      ],
+      "verdict": "needs-attention"
+    },
+    {
+      "arm": "C",
+      "caseId": "async-lifecycle",
+      "sample": 3,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 3,
+        "missed": [
+          "floating-promise",
+          "unbounded-map"
+        ],
+        "recall": 0.6,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 2,
+          "within1": 1,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.67,
+        "findingsCount": 3,
+        "composite": 69
+      },
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Job execution errors are masked as successful in runOne",
+          "body": "When openJob throws or handle.write fails, the catch block in runOne swallows the error and returns { id, ok: true }, incorrectly reporting failed jobs as successful to callers.",
+          "file": "src/queue.js",
+          "line_start": 26,
+          "line_end": 28,
+          "confidence": 1,
+          "recommendation": "Return { id, ok: false, error } in the catch block or allow the error to propagate."
+        },
+        {
+          "severity": "high",
+          "title": "File handle leaked when log size limit is exceeded",
+          "body": "In openJob, if stat.size exceeds 1_000_000, an Error is thrown without closing the opened handle or removing it from handles, leaking the open file descriptor.",
+          "file": "src/queue.js",
+          "line_start": 9,
+          "line_end": 11,
+          "confidence": 1,
+          "recommendation": "Close the handle via await handle.close() and remove the entry from handles before throwing."
+        },
+        {
+          "severity": "medium",
+          "title": "Unhandled promise rejection in heartbeat interval",
+          "body": "startHeartbeat invokes fs.appendFile inside setInterval without awaiting or catching returned promise rejections, which can cause unhandled promise rejection crashes if filesystem writes fail.",
+          "file": "src/queue.js",
+          "line_start": 16,
+          "line_end": 18,
+          "confidence": 0.95,
+          "recommendation": "Attach a .catch() handler or wrap fs.appendFile in try/catch within the interval callback."
+        }
+      ],
+      "verdict": "needs-attention"
+    },
+    {
+      "arm": "C",
+      "caseId": "auth-basic",
+      "sample": 1,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 5,
+        "missed": [],
+        "recall": 1,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 3,
+          "within1": 2,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.6,
+        "findingsCount": 5,
+        "composite": 96
+      },
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "SQL Injection in findUser",
+          "body": "User input `username` is directly concatenated into the SQL query string in `findUser` at `src/auth.js:6-8`. An attacker can manipulate input to execute arbitrary SQL queries, bypassing authentication or exfiltrating/modifying the database.",
+          "file": "src/auth.js",
+          "line_start": 6,
+          "line_end": 8,
+          "confidence": 1,
+          "recommendation": "Use parameterized queries or prepared statements (e.g. `db.query('SELECT * FROM users WHERE name = ?', [username])`)."
+        },
+        {
+          "severity": "high",
+          "title": "Hardcoded JWT Secret",
+          "body": "The JWT signing secret `JWT_SECRET` is hardcoded as a static string at `src/auth.js:4`. Anyone with codebase access can forge valid authentication tokens.",
+          "file": "src/auth.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 0.95,
+          "recommendation": "Load the JWT secret from environment variables or a secure secret manager (e.g. `process.env.JWT_SECRET`)."
+        },
+        {
+          "severity": "high",
+          "title": "Missing null check on user lookup in login",
+          "body": "If `findUser(username)` returns `null` or `undefined` when a user is not found, accessing `user.password` at `src/auth.js:14` throws an uncaught `TypeError: Cannot read properties of null/undefined`, crashing the request/process.",
+          "file": "src/auth.js",
+          "line_start": 13,
+          "line_end": 16,
+          "confidence": 0.95,
+          "recommendation": "Verify `user` is non-null before accessing properties: `if (user && user.password === password)`."
+        },
+        {
+          "severity": "high",
+          "title": "Plaintext and loose equality password check",
+          "body": "Passwords are compared directly in plaintext with loose equality (`==`) at `src/auth.js:14` instead of using a constant-time cryptographic hash comparison, making passwords vulnerable to leakage and timing attacks.",
+          "file": "src/auth.js",
+          "line_start": 14,
+          "line_end": 14,
+          "confidence": 0.95,
+          "recommendation": "Store hashed passwords and verify them using a secure timing-safe library such as `bcrypt.compare` or `argon2.verify`."
+        },
+        {
+          "severity": "medium",
+          "title": "Uncaught exception on invalid JSON in parseSession",
+          "body": "`JSON.parse(raw)` at `src/auth.js:21` does not handle malformed input or non-object results, causing uncaught `SyntaxError` exceptions or `TypeError` when reading `session.userId`.",
+          "file": "src/auth.js",
+          "line_start": 20,
+          "line_end": 23,
+          "confidence": 0.9,
+          "recommendation": "Wrap `JSON.parse` in a try-catch block and ensure the parsed result is a non-null object before accessing `userId`."
+        }
+      ],
+      "verdict": "needs-attention"
+    },
+    {
+      "arm": "C",
+      "caseId": "auth-basic",
+      "sample": 2,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 4,
+        "missed": [
+          "plaintext-compare"
+        ],
+        "recall": 0.8,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 2,
+          "within1": 2,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.5,
+        "findingsCount": 4,
+        "composite": 81
+      },
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "SQL Injection in findUser",
+          "body": "User input `username` is directly concatenated into the SQL query string in `findUser`, enabling SQL injection attacks that can compromise the database or bypass authentication.",
+          "file": "src/auth.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 1,
+          "recommendation": "Use parameterized queries, such as `db.query(\"SELECT * FROM users WHERE name = ?\", [username])`."
+        },
+        {
+          "severity": "high",
+          "title": "Unhandled null user causes TypeError in login",
+          "body": "If `findUser` returns null or undefined when a user is not found, `user.password` will throw an unhandled TypeError and crash the request path instead of returning null.",
+          "file": "src/auth.js",
+          "line_start": 14,
+          "line_end": 17,
+          "confidence": 1,
+          "recommendation": "Add a null check for `user` before accessing `user.password` and use a secure timing-safe password hash verification mechanism."
+        },
+        {
+          "severity": "high",
+          "title": "Hardcoded JWT secret",
+          "body": "The JWT signing secret is hardcoded in source code, exposing signing credentials and allowing token forgery if the repository is accessible.",
+          "file": "src/auth.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 1,
+          "recommendation": "Load the JWT secret from an environment variable (e.g., `process.env.JWT_SECRET`)."
+        },
+        {
+          "severity": "medium",
+          "title": "Uncaught JSON.parse exception in parseSession",
+          "body": "`JSON.parse(raw)` throws a SyntaxError if `raw` is invalid JSON or throws a TypeError when accessing `.userId` if `raw` parses to null/undefined.",
+          "file": "src/auth.js",
+          "line_start": 21,
+          "line_end": 24,
+          "confidence": 0.95,
+          "recommendation": "Wrap `JSON.parse` in a try-catch block and safely check that `session` is an object before reading `.userId`."
+        }
+      ],
+      "verdict": "needs-attention"
+    },
+    {
+      "arm": "C",
+      "caseId": "auth-basic",
+      "sample": 3,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 5,
+        "missed": [],
+        "recall": 1,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 3,
+          "within1": 2,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.6,
+        "findingsCount": 5,
+        "composite": 96
+      },
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "SQL injection in findUser",
+          "body": "User input `username` is directly concatenated into the SQL query string in `findUser`, allowing arbitrary SQL injection and potential database compromise.",
+          "file": "src/auth.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 1,
+          "recommendation": "Use parameterized queries, for example: `await db.query('SELECT * FROM users WHERE name = ?', [username])`."
+        },
+        {
+          "severity": "high",
+          "title": "Unhandled null reference on non-existent user in login",
+          "body": "If `findUser` returns `null` or `undefined` when a user is not found, accessing `user.password` in `login` throws an uncaught TypeError.",
+          "file": "src/auth.js",
+          "line_start": 14,
+          "line_end": 15,
+          "confidence": 0.95,
+          "recommendation": "Verify `user` exists before accessing properties, e.g., `if (user && user.password === password)`."
+        },
+        {
+          "severity": "high",
+          "title": "Plaintext password comparison using loose equality",
+          "body": "Passwords are authenticated using plaintext loose equality (`user.password == password`) rather than a secure, constant-time cryptographic hash verification.",
+          "file": "src/auth.js",
+          "line_start": 15,
+          "line_end": 15,
+          "confidence": 1,
+          "recommendation": "Hash passwords with bcrypt or argon2 and verify using `await bcrypt.compare(password, user.passwordHash)`."
+        },
+        {
+          "severity": "high",
+          "title": "Hardcoded JWT secret",
+          "body": "The secret key `JWT_SECRET` is hardcoded as a plaintext string in source code, compromising token authenticity if the repository is exposed.",
+          "file": "src/auth.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 1,
+          "recommendation": "Read the secret key from environment configuration via `process.env.JWT_SECRET`."
+        },
+        {
+          "severity": "medium",
+          "title": "Uncaught exception on invalid JSON in parseSession",
+          "body": "Calling `JSON.parse(raw)` without a try-catch block throws an unhandled SyntaxError when `raw` is malformed, and accessing `session.userId` can fail if `session` is not an object.",
+          "file": "src/auth.js",
+          "line_start": 21,
+          "line_end": 24,
+          "confidence": 0.9,
+          "recommendation": "Wrap `JSON.parse` in a `try...catch` block and validate the parsed payload before accessing properties."
+        }
+      ],
+      "verdict": "needs-attention"
+    },
+    {
+      "arm": "D",
+      "caseId": "async-lifecycle",
+      "sample": 1,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 4,
+        "missed": [
+          "unbounded-map"
+        ],
+        "recall": 0.8,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 2,
+          "within1": 2,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.5,
+        "findingsCount": 4,
+        "composite": 81
+      },
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Job failure masked as success in catch block",
+          "body": "In runOne, the catch block returns { id, ok: true } upon encountering an error during openJob or handle.write, concealing execution failures and falsely reporting failed jobs as successful.",
+          "file": "src/queue.js",
+          "line_start": 26,
+          "line_end": 28,
+          "confidence": 1,
+          "recommendation": "Return { id, ok: false, error } or propagate the caught error instead of returning ok: true."
+        },
+        {
+          "severity": "high",
+          "title": "File handle and Map leak when log size exceeds threshold",
+          "body": "In openJob, if stat.size exceeds 1,000,000 bytes, an Error is thrown without closing the opened FileHandle or removing the entry from the handles Map, leaking file descriptors and memory.",
+          "file": "src/queue.js",
+          "line_start": 9,
+          "line_end": 11,
+          "confidence": 0.95,
+          "recommendation": "Ensure handle.close() is awaited and handles.delete(id) is executed before throwing the size threshold error."
+        },
+        {
+          "severity": "medium",
+          "title": "Unhandled promise rejection and unbounded timer in startHeartbeat",
+          "body": "startHeartbeat invokes the asynchronous fs.appendFile inside setInterval without handling promise rejections, risking process termination on filesystem errors. Furthermore, the interval timer cannot be cancelled.",
+          "file": "src/queue.js",
+          "line_start": 15,
+          "line_end": 19,
+          "confidence": 0.95,
+          "recommendation": "Catch potential rejections from fs.appendFile and return the interval ID from startHeartbeat so callers can clear it when jobs finish."
+        },
+        {
+          "severity": "medium",
+          "title": "Missing path sanitization on job ID",
+          "body": "The id parameter is concatenated directly into /var/jobs/${id}.log and /var/jobs/${id}.beat without validation or sanitization, potentially allowing path traversal if unvalidated IDs are provided.",
+          "file": "src/queue.js",
+          "line_start": 6,
+          "line_end": 17,
+          "confidence": 0.9,
+          "recommendation": "Sanitize the id argument using path.basename or validate it against an alphanumeric pattern before constructing file paths."
+        }
+      ],
+      "verdict": "needs-attention"
+    },
+    {
+      "arm": "D",
+      "caseId": "async-lifecycle",
+      "sample": 2,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 4,
+        "missed": [
+          "unbounded-map"
+        ],
+        "recall": 0.8,
+        "precision": 0.67,
+        "falsePositives": 2,
+        "bonus": 0,
+        "severity": {
+          "exact": 0,
+          "within1": 4,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0,
+        "findingsCount": 6,
+        "composite": 69
+      },
+      "findings": [
+        {
+          "severity": "high",
+          "title": "False success returned on job execution failure",
+          "body": "In runOne, the catch block returns { id, ok: true }, masking any exception thrown by openJob or handle.write and falsely reporting failed executions as successful.",
+          "file": "src/queue.js",
+          "line_start": 26,
+          "line_end": 28,
+          "confidence": 1,
+          "recommendation": "Return { id, ok: false, error } in the catch block or rethrow the error so callers can detect failures."
+        },
+        {
+          "severity": "high",
+          "title": "Unhandled promise rejection in heartbeat interval",
+          "body": "startHeartbeat invokes the asynchronous fs.appendFile inside setInterval without awaiting or catching errors. Any filesystem failure will cause an unhandled promise rejection and potentially crash the Node.js process.",
+          "file": "src/queue.js",
+          "line_start": 16,
+          "line_end": 18,
+          "confidence": 0.95,
+          "recommendation": "Attach a .catch() handler to fs.appendFile or wrap it in a try/catch block inside the interval callback."
+        },
+        {
+          "severity": "medium",
+          "title": "File handle leaked when log size limit is exceeded",
+          "body": "When stat.size > 1_000_000 in openJob, an Error is thrown without closing the opened FileHandle or removing it from the handles Map, leaking file descriptors.",
+          "file": "src/queue.js",
+          "line_start": 6,
+          "line_end": 11,
+          "confidence": 0.95,
+          "recommendation": "Close the handle with await handle.close() and clean up handles.delete(id) before throwing the error."
+        },
+        {
+          "severity": "medium",
+          "title": "File handle opened in runOne is never closed",
+          "body": "runOne opens a FileHandle via openJob and writes to it, but never closes the handle afterwards, causing active file descriptors to leak across job runs.",
+          "file": "src/queue.js",
+          "line_start": 21,
+          "line_end": 29,
+          "confidence": 0.9,
+          "recommendation": "Ensure handle.close() is called in a finally block or implement an explicit lifecycle management function to close and release job handles."
+        },
+        {
+          "severity": "medium",
+          "title": "Path traversal vulnerability through unvalidated job ID",
+          "body": "openJob and startHeartbeat concatenate the id parameter directly into /var/jobs/${id}.log and /var/jobs/${id}.beat without validation or sanitization, permitting path traversal if untrusted IDs are provided.",
+          "file": "src/queue.js",
+          "line_start": 6,
+          "line_end": 17,
+          "confidence": 0.85,
+          "recommendation": "Validate id against an alphanumeric whitelist (e.g., /^[a-zA-Z0-9_-]+$/) or use path.basename before constructing file paths."
+        },
+        {
+          "severity": "low",
+          "title": "Unstoppable heartbeat interval timer",
+          "body": "startHeartbeat creates a recurring setInterval timer without returning the timer handle, preventing callers from stopping the heartbeat and potentially keeping the event loop alive indefinitely.",
+          "file": "src/queue.js",
+          "line_start": 15,
+          "line_end": 19,
+          "confidence": 0.9,
+          "recommendation": "Return the interval ID from startHeartbeat or provide a stopHeartbeat function that calls clearInterval."
+        }
+      ],
+      "verdict": "needs-attention"
+    },
+    {
+      "arm": "D",
+      "caseId": "async-lifecycle",
+      "sample": 3,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 5,
+        "missed": [],
+        "recall": 1,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 3,
+          "within1": 2,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.6,
+        "findingsCount": 5,
+        "composite": 96
+      },
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Swallowed error in runOne reports failed jobs as successful",
+          "body": "In runOne, the catch block catches exceptions thrown by openJob or handle.write but returns { id, ok: true }, falsely reporting failures as successful executions and masking critical errors.",
+          "file": "src/queue.js",
+          "line_start": 26,
+          "line_end": 28,
+          "confidence": 1,
+          "recommendation": "Return { id, ok: false, error } in the catch block or propagate the error to the caller."
+        },
+        {
+          "severity": "high",
+          "title": "Unclosed file handle and map leak on oversized logs in openJob",
+          "body": "When stat.size exceeds 1,000,000 bytes, openJob throws an Error without closing the newly opened file handle or deleting the entry from handles, permanently leaking file descriptors.",
+          "file": "src/queue.js",
+          "line_start": 6,
+          "line_end": 11,
+          "confidence": 1,
+          "recommendation": "Close the handle with await handle.close() and remove it from handles before throwing the error."
+        },
+        {
+          "severity": "high",
+          "title": "Unhandled promise rejection and unmanaged interval in startHeartbeat",
+          "body": "fs.appendFile from node:fs/promises returns a Promise that is neither awaited nor caught inside setInterval. Any write failure (e.g. disk full or missing directory) causes an unhandled promise rejection that can terminate the Node.js process. The interval is also unreferenced and cannot be stopped.",
+          "file": "src/queue.js",
+          "line_start": 15,
+          "line_end": 19,
+          "confidence": 0.95,
+          "recommendation": "Add a .catch() handler or async error handling to fs.appendFile, and return the timer ID from startHeartbeat so callers can clearInterval."
+        },
+        {
+          "severity": "high",
+          "title": "Path traversal via unsanitized job ID in filesystem operations",
+          "body": "The id parameter is concatenated directly into `/var/jobs/${id}.log` and `/var/jobs/${id}.beat` without path sanitization or validation, allowing directory traversal sequences (e.g. `../../etc/`) to write to arbitrary locations.",
+          "file": "src/queue.js",
+          "line_start": 6,
+          "line_end": 17,
+          "confidence": 0.95,
+          "recommendation": "Validate id with an allowlist regex (such as /^[a-zA-Z0-9_-]+$/) or use path.basename before constructing the target path."
+        },
+        {
+          "severity": "medium",
+          "title": "Missing handle cleanup on successful job completion",
+          "body": "Handles stored in the handles Map during openJob are never closed or deleted after runOne finishes writing, causing unbounded file descriptor consumption over time.",
+          "file": "src/queue.js",
+          "line_start": 21,
+          "line_end": 29,
+          "confidence": 0.95,
+          "recommendation": "Add a finally block in runOne to close the handle and remove it from handles when the job execution completes."
+        }
+      ],
+      "verdict": "needs-attention"
+    },
+    {
+      "arm": "D",
+      "caseId": "auth-basic",
+      "sample": 1,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 4,
+        "missed": [
+          "null-check"
+        ],
+        "recall": 0.8,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 3,
+          "within1": 1,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.75,
+        "findingsCount": 4,
+        "composite": 84
+      },
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "SQL Injection in findUser",
+          "body": "The username input is directly concatenated into the SQL query string without parameterization or escaping, allowing arbitrary SQL injection and authentication bypass.",
+          "file": "src/auth.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 1,
+          "recommendation": "Use parameterized queries (e.g., db.query('SELECT * FROM users WHERE name = ?', [username]))."
+        },
+        {
+          "severity": "high",
+          "title": "Plaintext password comparison and missing null check",
+          "body": "login performs a plaintext loose equality check on passwords and does not verify whether user exists before accessing user.password, leading to runtime TypeErrors when a user is not found.",
+          "file": "src/auth.js",
+          "line_start": 14,
+          "line_end": 17,
+          "confidence": 0.95,
+          "recommendation": "Ensure user is not null before accessing properties, and compare hashed passwords using a secure constant-time comparator like bcrypt.compare."
+        },
+        {
+          "severity": "high",
+          "title": "Hardcoded JWT secret key",
+          "body": "The JWT signing secret is hardcoded in source code, exposing cryptographic credentials and preventing environment-specific key rotation.",
+          "file": "src/auth.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 1,
+          "recommendation": "Retrieve the JWT secret from environment variables (e.g., process.env.JWT_SECRET) and ensure an error is thrown if it is missing."
+        },
+        {
+          "severity": "medium",
+          "title": "Uncaught SyntaxError in parseSession",
+          "body": "Calling JSON.parse directly on raw input without error handling will throw an uncaught SyntaxError on malformed JSON strings.",
+          "file": "src/auth.js",
+          "line_start": 21,
+          "line_end": 24,
+          "confidence": 0.9,
+          "recommendation": "Wrap JSON.parse in a try/catch block and handle invalid input safely."
+        }
+      ],
+      "verdict": "needs-attention"
+    },
+    {
+      "arm": "D",
+      "caseId": "auth-basic",
+      "sample": 2,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 5,
+        "missed": [],
+        "recall": 1,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 2,
+          "within1": 3,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.4,
+        "findingsCount": 5,
+        "composite": 94
+      },
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "SQL injection in findUser",
+          "body": "The `username` argument is directly concatenated into the SQL query string in `findUser`, enabling arbitrary SQL injection that can expose or modify database records.",
+          "file": "src/auth.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 1,
+          "recommendation": "Use parameterized queries or prepared statements (e.g. `db.query('SELECT * FROM users WHERE name = ?', [username])`)."
+        },
+        {
+          "severity": "critical",
+          "title": "Hardcoded JWT secret key",
+          "body": "`JWT_SECRET` is hardcoded directly in source code, exposing authentication tokens to forgery if the repository or build artifacts are compromised.",
+          "file": "src/auth.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 1,
+          "recommendation": "Read `JWT_SECRET` from secure environment variables (e.g. `process.env.JWT_SECRET`) and ensure the application errors if it is unset."
+        },
+        {
+          "severity": "high",
+          "title": "Plaintext password comparison",
+          "body": "Passwords are verified using plaintext loose comparison (`==`) rather than secure password hashing (e.g. bcrypt/argon2) and constant-time comparison, exposing credentials to theft and timing attacks.",
+          "file": "src/auth.js",
+          "line_start": 15,
+          "line_end": 15,
+          "confidence": 1,
+          "recommendation": "Store passwords hashed using a strong hashing function (such as bcrypt or argon2) and use a corresponding verification function."
+        },
+        {
+          "severity": "high",
+          "title": "Missing null/undefined check for user in login",
+          "body": "If `findUser` returns `null` or `undefined` when a username does not exist, evaluating `user.password` will throw an unhandled `TypeError`.",
+          "file": "src/auth.js",
+          "line_start": 14,
+          "line_end": 16,
+          "confidence": 0.95,
+          "recommendation": "Add a check to verify that `user` exists before accessing properties (e.g. `if (!user) return null;`)."
+        },
+        {
+          "severity": "medium",
+          "title": "Unhandled JSON.parse exception in parseSession",
+          "body": "`JSON.parse` is executed directly without exception handling; invalid or malformed input will throw an uncaught `SyntaxError`.",
+          "file": "src/auth.js",
+          "line_start": 21,
+          "line_end": 24,
+          "confidence": 0.95,
+          "recommendation": "Wrap `JSON.parse` in a try/catch block and handle invalid JSON input gracefully."
+        }
+      ],
+      "verdict": "needs-attention"
+    },
+    {
+      "arm": "D",
+      "caseId": "auth-basic",
+      "sample": 3,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 4,
+        "missed": [
+          "plaintext-compare"
+        ],
+        "recall": 0.8,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 1,
+        "severity": {
+          "exact": 2,
+          "within1": 1,
+          "mismatch": 1,
+          "unknown": 0
+        },
+        "severityExactRate": 0.5,
+        "findingsCount": 5,
+        "composite": 81
+      },
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "SQL Injection in findUser",
+          "body": "The username parameter is concatenated directly into the SQL query string in findUser, allowing arbitrary SQL execution and authentication bypass.",
+          "file": "src/auth.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 1,
+          "recommendation": "Use parameterized queries or prepared statements instead of string concatenation."
+        },
+        {
+          "severity": "critical",
+          "title": "Plaintext Password Comparison and Missing User Null Check",
+          "body": "login performs loose equality comparison against plaintext passwords without hashing, and accessing user.password will throw a TypeError if findUser returns null or undefined for nonexistent users.",
+          "file": "src/auth.js",
+          "line_start": 14,
+          "line_end": 17,
+          "confidence": 1,
+          "recommendation": "Verify that user exists before accessing properties, and use a secure cryptographic password hashing algorithm such as bcrypt or argon2 with constant-time verification."
+        },
+        {
+          "severity": "high",
+          "title": "Hardcoded JWT Secret",
+          "body": "JWT_SECRET is hardcoded in source code, making tokens forgeable if the repository is exposed.",
+          "file": "src/auth.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 1,
+          "recommendation": "Retrieve the JWT secret from environment variables or a secure secret store, and fail fast if it is missing."
+        },
+        {
+          "severity": "medium",
+          "title": "JWT Issued Without Expiration",
+          "body": "jwt.sign is invoked without an expiration option (expiresIn), producing perpetual tokens that cannot be naturally invalidated over time.",
+          "file": "src/auth.js",
+          "line_start": 16,
+          "line_end": 16,
+          "confidence": 0.95,
+          "recommendation": "Set an appropriate token expiration period using the expiresIn option in jwt.sign."
+        },
+        {
+          "severity": "medium",
+          "title": "Unhandled JSON.parse Exception in parseSession",
+          "body": "JSON.parse(raw) will throw an uncaught SyntaxError if given invalid JSON, potentially causing unhandled exceptions or service crashes.",
+          "file": "src/auth.js",
+          "line_start": 21,
+          "line_end": 24,
+          "confidence": 0.95,
+          "recommendation": "Wrap JSON.parse in a try-catch block and safely validate the parsed session object before accessing session.userId."
+        }
+      ],
+      "verdict": "needs-attention"
+    },
+    {
+      "arm": "E",
+      "caseId": "async-lifecycle",
+      "sample": 1,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 4,
+        "missed": [
+          "unbounded-map"
+        ],
+        "recall": 0.8,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 1,
+          "within1": 3,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.25,
+        "findingsCount": 4,
+        "composite": 79
+      },
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Error swallowed and falsely reported as success in runOne",
+          "body": "In runOne, the catch block returns { id, ok: true }, masking any failures during job opening or writing and falsely indicating success to callers.",
+          "file": "src/queue.js",
+          "line_start": 26,
+          "line_end": 28,
+          "confidence": 1,
+          "recommendation": "Return { id, ok: false, error } or rethrow/handle the error properly so failures can be detected."
+        },
+        {
+          "severity": "high",
+          "title": "Unhandled promise rejection and unmanaged timer in startHeartbeat",
+          "body": "fs.appendFile from node:fs/promises returns a Promise that is neither awaited nor caught within the setInterval callback, leading to unhandled promise rejections on I/O errors. Furthermore, the interval timer is not stored or returned, preventing cleanup.",
+          "file": "src/queue.js",
+          "line_start": 16,
+          "line_end": 18,
+          "confidence": 1,
+          "recommendation": "Attach a .catch() handler to fs.appendFile and return or manage the interval timer ID for resource cleanup."
+        },
+        {
+          "severity": "medium",
+          "title": "File descriptor leak on log size check failure in openJob",
+          "body": "When stat.size > 1_000_000, an Error is thrown without closing handle or removing it from handles, leaking the open file descriptor and memory.",
+          "file": "src/queue.js",
+          "line_start": 6,
+          "line_end": 11,
+          "confidence": 1,
+          "recommendation": "Close the handle via await handle.close() and remove it from handles before throwing the error."
+        },
+        {
+          "severity": "high",
+          "title": "Path traversal via unsanitized job ID",
+          "body": "The id parameter is interpolated directly into /var/jobs/${id}.log and /var/jobs/${id}.beat without validation or sanitization, allowing path traversal if id contains sequences like ../.",
+          "file": "src/queue.js",
+          "line_start": 6,
+          "line_end": 17,
+          "confidence": 0.95,
+          "recommendation": "Validate id against an allowlist pattern (e.g., alphanumeric/UUID) or sanitize it using path.basename."
+        }
+      ],
+      "verdict": "needs-attention"
+    },
+    {
+      "arm": "E",
+      "caseId": "async-lifecycle",
+      "sample": 2,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 5,
+        "missed": [],
+        "recall": 1,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 3,
+          "within1": 2,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.6,
+        "findingsCount": 5,
+        "composite": 96
+      },
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Swallowed error in runOne incorrectly reports success",
+          "body": "In runOne, the catch block catches errors from openJob or handle.write but returns { id, ok: true } instead of indicating failure. This completely masks job failures from callers and monitoring.",
+          "file": "src/queue.js",
+          "line_start": 26,
+          "line_end": 28,
+          "confidence": 1,
+          "recommendation": "Return { id, ok: false, error: err.message } or rethrow the error in the catch block."
+        },
+        {
+          "severity": "high",
+          "title": "File handle leak when log file exceeds size limit",
+          "body": "When openJob throws an error due to stat.size > 1_000_000, the opened file handle is never closed and remains registered in the handles Map. Repeated attempts to open oversized logs will exhaust OS file descriptors.",
+          "file": "src/queue.js",
+          "line_start": 8,
+          "line_end": 11,
+          "confidence": 1,
+          "recommendation": "Close the handle with await handle.close() and remove id from handles before throwing the error."
+        },
+        {
+          "severity": "medium",
+          "title": "Missing file handle lifecycle management and cleanup",
+          "body": "openJob stores file handles in the handles Map, but neither runOne nor openJob provides cleanup or closes the handles after operations finish, leading to memory and file handle leaks over time.",
+          "file": "src/queue.js",
+          "line_start": 3,
+          "line_end": 13,
+          "confidence": 0.95,
+          "recommendation": "Close handles when jobs complete (e.g. in a finally block) and provide explicit close/cleanup functions to manage the handles Map."
+        },
+        {
+          "severity": "medium",
+          "title": "Unhandled promise rejection and untracked timer in startHeartbeat",
+          "body": "startHeartbeat calls the async fs.appendFile inside setInterval without awaiting or catching errors, causing unhandled promise rejections on I/O failures. Additionally, the interval timer ID is not returned, making it impossible to cancel.",
+          "file": "src/queue.js",
+          "line_start": 15,
+          "line_end": 19,
+          "confidence": 0.9,
+          "recommendation": "Attach a .catch() handler to fs.appendFile and return the timer ID from startHeartbeat so callers can stop the heartbeat."
+        },
+        {
+          "severity": "medium",
+          "title": "Unsanitized job ID allows potential path traversal",
+          "body": "The id parameter is concatenated directly into filesystem paths without validation or sanitization. If id contains path traversal sequences like '../', files outside /var/jobs could be accessed or modified.",
+          "file": "src/queue.js",
+          "line_start": 6,
+          "line_end": 17,
+          "confidence": 0.85,
+          "recommendation": "Validate id against an alphanumeric/UUID schema and use path.basename or path.resolve with boundary checks."
+        }
+      ],
+      "verdict": "needs-attention"
+    },
+    {
+      "arm": "E",
+      "caseId": "async-lifecycle",
+      "sample": 3,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 4,
+        "missed": [
+          "floating-promise"
+        ],
+        "recall": 0.8,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 3,
+          "within1": 1,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.75,
+        "findingsCount": 4,
+        "composite": 84
+      },
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Path traversal via unsanitized job ID",
+          "body": "The `id` parameter is directly interpolated into file paths (`/var/jobs/${id}.log` and `/var/jobs/${id}.beat`) without validation or sanitization, exposing the system to directory traversal attacks if `id` contains path traversal sequences.",
+          "file": "src/queue.js",
+          "line_start": 6,
+          "line_end": 17,
+          "confidence": 0.95,
+          "recommendation": "Validate `id` using an allowlist regex (e.g. alphanumeric/UUID) and resolve paths safely before performing filesystem operations."
+        },
+        {
+          "severity": "high",
+          "title": "Silent failure masking errors in runOne",
+          "body": "The `catch` block in `runOne` returns `{ id, ok: true }`, falsely reporting job success even when `openJob` or `handle.write` throws an error.",
+          "file": "src/queue.js",
+          "line_start": 26,
+          "line_end": 28,
+          "confidence": 1,
+          "recommendation": "Update the catch block in `runOne` to return `{ id, ok: false, error }` or propagate the error."
+        },
+        {
+          "severity": "medium",
+          "title": "File descriptor leak on oversized log files in openJob",
+          "body": "When a log file exceeds 1,000,000 bytes, `openJob` throws an error without closing `handle` or removing it from `handles`, leading to unclosed file descriptors.",
+          "file": "src/queue.js",
+          "line_start": 6,
+          "line_end": 11,
+          "confidence": 0.95,
+          "recommendation": "Call `await handle.close()` and delete the entry from `handles` before throwing the log size error."
+        },
+        {
+          "severity": "medium",
+          "title": "Unhandled promise rejection in heartbeat interval",
+          "body": "`fs.appendFile` returns a Promise that is neither awaited nor caught inside `setInterval`, causing unhandled promise rejections if file writing fails.",
+          "file": "src/queue.js",
+          "line_start": 16,
+          "line_end": 18,
+          "confidence": 0.9,
+          "recommendation": "Add a `.catch()` handler to `fs.appendFile` and return the interval ID from `startHeartbeat` so callers can cancel it."
+        }
+      ],
+      "verdict": "needs-attention"
+    },
+    {
+      "arm": "E",
+      "caseId": "auth-basic",
+      "sample": 1,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 4,
+        "missed": [
+          "plaintext-compare"
+        ],
+        "recall": 0.8,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 2,
+          "within1": 2,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.5,
+        "findingsCount": 4,
+        "composite": 81
+      },
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "SQL Injection in findUser",
+          "body": "The username parameter is concatenated directly into the SQL query string without sanitization or parameterization, allowing attackers to execute arbitrary SQL commands.",
+          "file": "src/auth.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 1,
+          "recommendation": "Use parameterized queries / prepared statements (e.g. db.query('SELECT * FROM users WHERE name = ?', [username]))."
+        },
+        {
+          "severity": "high",
+          "title": "Hardcoded JWT secret",
+          "body": "The JWT signing secret is hardcoded in source code, exposing cryptographic credentials and risking token forgery if committed to version control.",
+          "file": "src/auth.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 1,
+          "recommendation": "Load the JWT secret from environment variables (e.g. process.env.JWT_SECRET) and fail fast if it is missing."
+        },
+        {
+          "severity": "high",
+          "title": "Plaintext password comparison and missing null check",
+          "body": "Passwords are compared in plaintext with loose equality. Additionally, if findUser returns null or undefined, accessing user.password throws an unhandled TypeError.",
+          "file": "src/auth.js",
+          "line_start": 14,
+          "line_end": 17,
+          "confidence": 1,
+          "recommendation": "Verify that user exists before reading properties and compare passwords using a secure password hashing library (e.g. bcrypt or argon2)."
+        },
+        {
+          "severity": "medium",
+          "title": "Unhandled JSON.parse exception in parseSession",
+          "body": "parseSession calls JSON.parse directly on untrusted input without a try/catch block or null check, causing runtime crashes on malformed JSON or non-object payloads.",
+          "file": "src/auth.js",
+          "line_start": 21,
+          "line_end": 24,
+          "confidence": 0.95,
+          "recommendation": "Wrap JSON.parse in a try/catch block and ensure the parsed result is a valid object before reading session.userId."
+        }
+      ],
+      "verdict": "needs-attention"
+    },
+    {
+      "arm": "E",
+      "caseId": "auth-basic",
+      "sample": 2,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 4,
+        "missed": [
+          "plaintext-compare"
+        ],
+        "recall": 0.8,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 2,
+          "within1": 1,
+          "mismatch": 1,
+          "unknown": 0
+        },
+        "severityExactRate": 0.5,
+        "findingsCount": 4,
+        "composite": 81
+      },
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "SQL injection vulnerability in findUser",
+          "body": "The username parameter is concatenated directly into the SQL query string in findUser, allowing SQL injection and unauthorized authentication bypass.",
+          "file": "src/auth.js",
+          "line_start": 6,
+          "line_end": 9,
+          "confidence": 1,
+          "recommendation": "Use parameterized queries (e.g. `db.query('SELECT * FROM users WHERE name = ?', [username])`) instead of string concatenation."
+        },
+        {
+          "severity": "critical",
+          "title": "Null dereference and plaintext password comparison",
+          "body": "If findUser returns null or undefined when a user is not found, accessing user.password throws a TypeError. Additionally, passwords are compared in plaintext using loose equality instead of a secure password hashing function.",
+          "file": "src/auth.js",
+          "line_start": 14,
+          "line_end": 17,
+          "confidence": 1,
+          "recommendation": "Verify user existence before accessing properties and compare password hashes using a library like bcrypt or argon2."
+        },
+        {
+          "severity": "high",
+          "title": "Hardcoded JWT secret key",
+          "body": "JWT_SECRET is hardcoded in source code, exposing signing secrets to source leaks and preventing per-environment key rotation.",
+          "file": "src/auth.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 1,
+          "recommendation": "Load the JWT secret from environment variables (e.g. `process.env.JWT_SECRET`)."
+        },
+        {
+          "severity": "medium",
+          "title": "Unhandled JSON parsing exception in parseSession",
+          "body": "Calling JSON.parse directly on untrusted input raw without error handling will throw an uncaught SyntaxError on malformed JSON.",
+          "file": "src/auth.js",
+          "line_start": 21,
+          "line_end": 24,
+          "confidence": 0.95,
+          "recommendation": "Wrap JSON.parse in a try/catch block or safely handle invalid JSON inputs."
+        }
+      ],
+      "verdict": "needs-attention"
+    },
+    {
+      "arm": "E",
+      "caseId": "auth-basic",
+      "sample": 3,
+      "ok": true,
+      "score": {
+        "plantedTotal": 5,
+        "found": 5,
+        "missed": [],
+        "recall": 1,
+        "precision": 1,
+        "falsePositives": 0,
+        "bonus": 0,
+        "severity": {
+          "exact": 3,
+          "within1": 2,
+          "mismatch": 0,
+          "unknown": 0
+        },
+        "severityExactRate": 0.6,
+        "findingsCount": 5,
+        "composite": 96
+      },
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "SQL injection vulnerability in findUser",
+          "body": "The `username` input is directly concatenated into the SQL query string in `findUser`, allowing attackers to manipulate queries and execute arbitrary SQL commands.",
+          "file": "src/auth.js",
+          "line_start": 6,
+          "line_end": 11,
+          "confidence": 1,
+          "recommendation": "Use parameterized queries or prepared statements, such as `db.query('SELECT * FROM users WHERE name = ?', [username])`."
+        },
+        {
+          "severity": "high",
+          "title": "Unhandled null user causes runtime exception in login",
+          "body": "If `findUser` returns `null` or `undefined` for a nonexistent username, accessing `user.password` throws an unhandled TypeError, crashing the login request.",
+          "file": "src/auth.js",
+          "line_start": 13,
+          "line_end": 19,
+          "confidence": 1,
+          "recommendation": "Check that `user` is non-null and properly resolved before accessing its properties."
+        },
+        {
+          "severity": "high",
+          "title": "Hardcoded JWT secret key",
+          "body": "A static secret key `hardcoded-super-secret-key` is committed directly to source code, risking token forgery and unauthorized authentication if the repository is exposed.",
+          "file": "src/auth.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 1,
+          "recommendation": "Retrieve the JWT secret from environment variables (e.g. `process.env.JWT_SECRET`) and validate that it is set at startup."
+        },
+        {
+          "severity": "high",
+          "title": "Plaintext password comparison using loose equality",
+          "body": "Passwords are compared directly as plaintext using loose equality (`==`), which exposes plaintext credentials in storage and is vulnerable to timing attacks and type coercion.",
+          "file": "src/auth.js",
+          "line_start": 15,
+          "line_end": 15,
+          "confidence": 0.95,
+          "recommendation": "Store passwords as salted hashes (e.g. using `bcrypt` or `argon2`) and verify with constant-time comparison helper methods."
+        },
+        {
+          "severity": "medium",
+          "title": "Unsafe JSON parsing in parseSession",
+          "body": "`JSON.parse(raw)` will throw an unhandled `SyntaxError` on malformed or non-JSON input, and accessing `.userId` on primitive parsed values or null will throw a TypeError.",
+          "file": "src/auth.js",
+          "line_start": 21,
+          "line_end": 24,
+          "confidence": 1,
+          "recommendation": "Wrap `JSON.parse` in a `try/catch` block and verify that the parsed result is a non-null object before accessing `userId`."
+        }
+      ],
+      "verdict": "needs-attention"
+    }
+  ],
+  "ablationCases": [
+    "async-lifecycle",
+    "auth-basic"
+  ],
+  "comparisonTable": {
+    "agy.model": {
+      "n": 6,
+      "composite": 93,
+      "recall": 0.97,
+      "precision": 1,
+      "findingsCount": 4.83
+    },
+    "A": {
+      "n": 6,
+      "composite": 75.33,
+      "recall": 0.73,
+      "precision": 0.97,
+      "findingsCount": 3.83
+    },
+    "B": {
+      "n": 6,
+      "composite": 79.83,
+      "recall": 0.8,
+      "precision": 0.97,
+      "findingsCount": 4.17
+    },
+    "C": {
+      "n": 6,
+      "composite": 79.33,
+      "recall": 0.77,
+      "precision": 1,
+      "findingsCount": 3.83
+    },
+    "D": {
+      "n": 6,
+      "composite": 84.17,
+      "recall": 0.87,
+      "precision": 0.94,
+      "findingsCount": 4.83
+    },
+    "E": {
+      "n": 6,
+      "composite": 86.17,
+      "recall": 0.87,
+      "precision": 1,
+      "findingsCount": 4.33
+    }
+  },
+  "comparisonTableNote": "Means over `ablationCases` only, and the row `bench/README.md` prints. Arm A also ran vacuous-tests (see `summary`), which is excluded here: its shallow/model gap comes from commit history rather than the prompt."
+}
