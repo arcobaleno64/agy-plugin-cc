@@ -146,3 +146,45 @@ test("a bad model id is still a model failure, not an auth failure", () => {
 
   assert.notEqual(failure.category, "auth");
 });
+
+// These strings were written when AGY was the unreliable engine, and they all sent
+// the user one way: to gemini. Field note gi-2026-08-24-b7c1 is the first recorded
+// case of the reverse -- gemini stalling on a diff AGY answered in about 25 seconds
+// -- and the plugin had nothing to say to that user beyond "retry or shrink it".
+// A condition either engine can produce must not name only one of them.
+test("advice for a failure either engine can hit names both engines", () => {
+  const cases = [
+    ["timeout", { code: "ETIMEDOUT" }],
+    ["no-output", { stdout: "", stderr: "", exitCode: 0 }]
+  ];
+  for (const [expected, data] of cases) {
+    const failure = classifyCliFailure(data);
+    assert.equal(failure.category, expected);
+    assert.match(failure.nextStep, /--engine agy/, `${expected} must offer AGY`);
+    assert.match(failure.nextStep, /--engine gemini/, `${expected} must offer gemini`);
+  }
+});
+
+// The other half of the same rule, and the reason this is not a blanket "always name
+// both": transcript recovery is a mechanism only AGY has, and its brain directory is
+// only AGY's to initialize. Advice that named gemini as an alternative for these
+// would be describing a condition gemini cannot be in. Pinned so a later pass at
+// symmetry does not flatten a real asymmetry into a false one.
+test("advice for an AGY-only condition stays AGY-only", () => {
+  for (const reason of ["brain root missing", "ambiguous conversation match"]) {
+    const failure = classifyCliFailure({ transcriptReason: reason });
+    assert.match(failure.category, /^transcript-/, `${reason} classifies as a transcript failure`);
+    assert.doesNotMatch(failure.nextStep, /--engine agy/, "AGY is already the engine that failed");
+  }
+});
+
+// The stdin rationale outlived its truth. `useStdin` in lib/gemini.mjs is true for
+// AGY from 1.1.2 on, so "use gemini, which sends prompts over stdin" stopped being a
+// difference between the engines and became a difference between AGY versions --
+// which is exactly what the `positional prompt` branch of the classifier catches.
+test("the prompt-too-long advice says which AGY versions it applies to", () => {
+  const failure = classifyCliFailure({ promptTooLong: true });
+  assert.equal(failure.category, "prompt-too-long");
+  assert.match(failure.nextStep, /1\.1\.2/, "the advice is version-scoped, not engine-scoped");
+  assert.match(failure.nextStep, /shorten/i, "and shortening is still the first thing to try");
+});

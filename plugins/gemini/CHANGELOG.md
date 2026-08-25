@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Failure advice no longer sends everyone one way.** The next steps for
+  `timeout`, `no-output`, and `prompt-too-long` were written when AGY was the
+  unreliable engine and all pointed at gemini, so a gemini failure got no engine
+  advice at all. Field note gi-2026-08-24-b7c1 is the first recorded case of the
+  reverse -- gemini stalling for minutes on a diff AGY answered in about 25
+  seconds. The two conditions either engine can produce now name both. The
+  `prompt-too-long` rationale was also stale: AGY has taken the prompt on stdin
+  since 1.1.2, so "use gemini, which sends prompts over stdin" describes a
+  difference between AGY versions, not between engines, and now says so. The
+  AGY-only conditions -- transcript recovery and its brain directory -- stay
+  one-directional, and a test pins that so a later pass at symmetry cannot
+  flatten a real asymmetry into a false one.
+
 - **The MCP surface now says which copy of the plugin is answering.** The host
   resolves a plugin to a versioned directory and keeps that server process for
   the session, while the slash surface is re-read on every invocation, so the two
