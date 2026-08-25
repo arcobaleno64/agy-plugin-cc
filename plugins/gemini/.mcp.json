@@ -2,7 +2,14 @@
   "mcpServers": {
     "gemini": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/gemini-mcp.mjs"]
+      "args": [
+        "-e",
+        "process.env.GEMINI_MCP_STDIO='1';const r=process.env.GEMINI_PLUGIN_ROOT||'';const root=(!r||/[{}]/.test(r))?process.cwd():r;const{pathToFileURL}=require('node:url');const{join}=require('node:path');import(pathToFileURL(join(root,'scripts','gemini-mcp.mjs')).href).catch((e)=>{console.error(e);process.exit(1)})"
+      ],
+      "cwd": ".",
+      "env": {
+        "GEMINI_PLUGIN_ROOT": "${CLAUDE_PLUGIN_ROOT}"
+      }
     }
   }
 }
