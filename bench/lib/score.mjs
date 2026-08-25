@@ -81,8 +81,18 @@ export function findingMatchesPlanted(finding, planted, { lineTolerance = 0 } = 
   return matchQuality(finding, planted, lineTolerance) > 0;
 }
 
+// Extras are matched by the same file rule as planted defects. They were not: this
+// compared literally, and "*" is truthy, so an extra declared for the whole repository
+// could never be credited and every reviewer that found one was charged a false
+// positive for it. Only caller-contract (no-migration-note) and stale-duplicate
+// (worker-unreferenced) declare wildcard extras, which is why the board looked
+// consistent -- and why the cost fell entirely on whichever cell happened to catch
+// them. On the recorded cassettes that is agy.adversarial alone: honouring the
+// wildcard moves it 0.88 -> 0.89 precision and 2.67 -> 2.33 false positives, and
+// leaves every other cell untouched. A scorer that penalises one cell for a legitimate
+// catch is not measuring the thing the board claims to measure.
 function findingMatchesExtra(finding, extra) {
-  if (extra.file && normalizeFile(finding.file) !== normalizeFile(extra.file)) return false;
+  if (!fileMatches(finding.file, extra.file)) return false;
   return keywordsHit(finding, extra.match?.keywords, extra.match?.all);
 }
 

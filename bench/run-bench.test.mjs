@@ -845,3 +845,54 @@ test("the scorecard carries an adversarial axis of its own", () => {
   assert.match(harness, /agy 80/);
   assert.doesNotMatch(harness, /90|60/, "the adversarial cells must not leak into the harness axis");
 });
+
+// A planted defect may declare `file: "*"` when it spans files, and `fileMatches`
+// honours that. Extras did not: the comparison was literal, `"*"` is truthy, and so a
+// legitimate catch of a repository-wide extra was charged as a false positive. The
+// cost landed on whichever cell found it -- on the recorded board, agy.adversarial
+// alone, which read 0.88 precision and 2.67 false positives instead of 0.89 and 2.33.
+test("an allowed extra declared for the whole repository is credited, not penalised", () => {
+  const truth = {
+    planted: [{ id: "planted-one", file: "src/store.js", match: { keywords: ["null deref"] } }],
+    allowed_extras: [{ id: "repo-wide", file: "*", match: { keywords: ["breaking change"] } }]
+  };
+  const findingOfTheExtra = {
+    file: "src/anywhere.js",
+    title: "Breaking change to findUser return contract breaks existing callers",
+    severity: "medium"
+  };
+
+  const scored = scoreReview([findingOfTheExtra], truth);
+  assert.equal(scored.bonus, 1, "a wildcard extra is a legitimate unique catch");
+  assert.equal(scored.falsePositives, 0, "and must not also be charged as a false positive");
+});
+
+// The other half of the rule, so the fix cannot become "extras match anything". An
+// extra that names a file still means that file.
+test("an allowed extra that names a file still only matches that file", () => {
+  const truth = {
+    planted: [],
+    allowed_extras: [{ id: "scoped", file: "src/store.js", match: { keywords: ["breaking change"] } }]
+  };
+  const elsewhere = { file: "src/other.js", title: "Breaking change in the other module", severity: "low" };
+  const here = { file: "src/store.js", title: "Breaking change in the store", severity: "low" };
+
+  assert.equal(scoreReview([elsewhere], truth).bonus, 0, "a different file is not the extra");
+  assert.equal(scoreReview([elsewhere], truth).falsePositives, 1);
+  assert.equal(scoreReview([here], truth).bonus, 1, "the named file is");
+});
+
+// Keywords still gate a wildcard extra. Without this the fix would turn `file: "*"`
+// into "any unmatched finding is a bonus", which would inflate every cell instead of
+// deflating one -- the same defect with its sign flipped.
+test("a wildcard extra still has to match on keywords", () => {
+  const truth = {
+    planted: [],
+    allowed_extras: [{ id: "repo-wide", file: "*", match: { keywords: ["breaking change"] } }]
+  };
+  const unrelated = { file: "src/anywhere.js", title: "Variable named badly", severity: "low" };
+
+  const scored = scoreReview([unrelated], truth);
+  assert.equal(scored.bonus, 0);
+  assert.equal(scored.falsePositives, 1, "an unrelated finding is still a false positive");
+});
