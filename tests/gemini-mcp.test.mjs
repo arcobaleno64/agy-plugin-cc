@@ -56,9 +56,15 @@ test("the MCP surface states which copy of the plugin is answering", async () =>
     initialized.instructions.includes(path.join("scripts", "gemini-mcp.mjs")),
     `instructions must name the running script, got: ${initialized.instructions}`
   );
-  // One version, stated once: a version in the prose that could drift from the one
-  // in serverInfo would reintroduce the ambiguity this exists to remove.
-  assert.ok(initialized.instructions.includes(initialized.serverInfo.version));
+  // The first draft of these instructions told the reader to run
+  // `gemini-companion setup`, which is not a command -- this package publishes no
+  // `bin`. An agent following that verbatim gets command-not-found and is back to
+  // having no comparison version, which is the exact state gi-2026-08-17-a1c7
+  // describes. So the promise pinned here is that the diagnostic the instructions
+  // name is real and runnable, not merely that some path was interpolated.
+  const quoted = initialized.instructions.match(/node "([^"]+)" setup --json/);
+  assert.ok(quoted, `instructions must name a runnable setup command, got: ${initialized.instructions}`);
+  assert.ok(fs.existsSync(quoted[1]), `the setup script the instructions name must exist: ${quoted[1]}`);
 });
 
 // Adversarial review has been on the slash surface since it shipped and is listed

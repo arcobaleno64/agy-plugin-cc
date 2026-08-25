@@ -301,16 +301,28 @@ export async function callTool(name, args = {}, { runtime = DEFAULT_RUNTIME } = 
 // 0.17.3 while the installed plugin was 0.19.0: a tool was simply absent, and the
 // mismatch was found only by reading the server process's command line.
 function serverInstructions() {
+  // Spelled as a runnable command against the directory this module is in, not as
+  // a slash command: this server is also a first-class Codex surface as of 0.22.5,
+  // and on Codex there is no `/reload-plugins`. A remedy only one host can carry
+  // out is no remedy on the host where MCP is the *only* surface, which is exactly
+  // where a stale server is hardest to notice by other means.
+  const companion = path.join(path.dirname(SELF_PATH), "gemini-companion.mjs");
   return [
     `Gemini Companion MCP surface, plugin version ${SERVER_VERSION}, running from ${SELF_PATH}.`,
     "",
     "This version is fixed for the whole session: the host resolves the plugin to a",
     "versioned directory and keeps this process alive, so a plugin update installed",
     "mid-session does not reach these tools. If a tool listed in the README is missing",
-    "here, or a shipped fix appears absent, compare the version above with the one",
-    "`gemini-companion setup` reports -- the slash surface is re-read on every",
-    "invocation, so a difference means this server is the stale one. `/reload-plugins`",
-    "respawns it."
+    "here, or a shipped fix appears absent, suspect that this server is a stale copy.",
+    "",
+    "To confirm it, run:",
+    "",
+    `  node "${companion}" setup --json`,
+    "",
+    "and compare that report's `pluginVersion` with the version above. That script is",
+    "re-read on every run, so a difference means this server is the stale one.",
+    "Restarting the host respawns it; in Claude Code, `/reload-plugins` does so",
+    "without a restart."
   ].join("\n");
 }
 
