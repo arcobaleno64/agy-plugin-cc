@@ -45,17 +45,31 @@ const DEFAULTS = {
   timeout: {
     retryable: true,
     summary: "The CLI command timed out.",
-    nextStep: "Retry later, reduce prompt size or review scope, or use `--engine gemini` for AGY timeouts."
+    // Both engines stall, so both directions are offered. The old wording named
+    // only AGY timing out and pointed at gemini, which left a gemini timeout with
+    // no engine advice at all -- the case in field note gi-2026-08-24-b7c1, where
+    // gemini stalled for minutes on a diff AGY answered in about 25 seconds.
+    nextStep: "Retry later, reduce prompt size or review scope, or run it on the other engine (`--engine agy` or `--engine gemini`)."
   },
   "prompt-too-long": {
     retryable: false,
     summary: "The prompt cannot be sent safely to the selected engine.",
-    nextStep: "Shorten the prompt or use `--engine gemini`, which sends prompts over stdin."
+    // Engine-neutral on purpose. The argv-limit and NUL-byte cases -- the ones an
+    // engine can be at fault for -- never reach this default: assertAgyPromptSafe
+    // throws with its own nextStep, and normalizeFailure prefers an explicit one.
+    // What is left arriving here is the text-matched arm (`context length`, `token
+    // limit`), which is a model's context window rather than an engine's argv, and
+    // is most often gemini. An earlier draft of this line described AGY argv
+    // handling and shipped that to exactly those users.
+    nextStep: "Shorten the prompt, narrow the review scope, or split the diff into smaller runs."
   },
   "no-output": {
     retryable: true,
     summary: "The CLI returned no usable output.",
-    nextStep: "Retry the command; for AGY, initialize it once interactively or use `--engine gemini`."
+    // The AGY half is a real remedy for a real AGY condition and stays. The tail
+    // was not: an engine that returns nothing is a reason to try the other one
+    // whichever engine it was.
+    nextStep: "Retry the command; for AGY, initialize it once interactively. If it repeats, try the other engine (`--engine agy` or `--engine gemini`)."
   },
   "transcript-missing": {
     retryable: true,

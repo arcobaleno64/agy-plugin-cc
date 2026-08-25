@@ -146,3 +146,50 @@ test("a bad model id is still a model failure, not an auth failure", () => {
 
   assert.notEqual(failure.category, "auth");
 });
+
+// These strings were written when AGY was the unreliable engine, and they all sent
+// the user one way: to gemini. Field note gi-2026-08-24-b7c1 is the first recorded
+// case of the reverse -- gemini stalling on a diff AGY answered in about 25 seconds
+// -- and the plugin had nothing to say to that user beyond "retry or shrink it".
+// A condition either engine can produce must not name only one of them.
+test("advice for a failure either engine can hit names both engines", () => {
+  const cases = [
+    ["timeout", { code: "ETIMEDOUT" }],
+    ["no-output", { stdout: "", stderr: "", exitCode: 0 }]
+  ];
+  for (const [expected, data] of cases) {
+    const failure = classifyCliFailure(data);
+    assert.equal(failure.category, expected);
+    assert.match(failure.nextStep, /--engine agy/, `${expected} must offer AGY`);
+    assert.match(failure.nextStep, /--engine gemini/, `${expected} must offer gemini`);
+  }
+});
+
+// The other half of the same rule, and the reason this is not a blanket "always name
+// both": transcript recovery is a mechanism only AGY has, and its brain directory is
+// only AGY's to initialize. Advice that named gemini as an alternative for these
+// would be describing a condition gemini cannot be in. Pinned so a later pass at
+// symmetry does not flatten a real asymmetry into a false one.
+test("advice for an AGY-only condition stays AGY-only", () => {
+  for (const reason of ["brain root missing", "ambiguous conversation match"]) {
+    const failure = classifyCliFailure({ transcriptReason: reason });
+    assert.match(failure.category, /^transcript-/, `${reason} classifies as a transcript failure`);
+    assert.doesNotMatch(failure.nextStep, /--engine agy/, "AGY is already the engine that failed");
+    // Asserting only the absence let the asymmetry be deleted rather than kept: drop
+    // the gemini alternative and nothing here noticed. The escape hatch is the point.
+    assert.match(failure.nextStep, /--engine gemini/, "the way out is still offered");
+  }
+});
+
+// An earlier attempt at this rewrote the default to describe AGY argv handling, on
+// the assumption that the argv cases reach it. They do not: assertAgyPromptSafe
+// throws with its own nextStep and normalizeFailure prefers an explicit one, so the
+// only traffic here is the text-matched arm -- `context length`, `token limit` -- a
+// model's context window, most often gemini's. Those users were handed a paragraph
+// about AGY versions. What is pinned is that this default names no engine at all.
+test("the default prompt-too-long advice belongs to no engine", () => {
+  const failure = classifyCliFailure({ stderr: "Error: context length exceeded for the model" });
+  assert.equal(failure.category, "prompt-too-long");
+  assert.doesNotMatch(failure.nextStep, /--engine/, "a context window is not an engine's fault");
+  assert.match(failure.nextStep, /scope|split/i, "and the remedy is to send less");
+});

@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **Failure advice no longer sends everyone one way.** The next steps for
+  `timeout`, `no-output`, and `prompt-too-long` were written when AGY was the
+  unreliable engine and all pointed at gemini, so a gemini failure got no engine
+  advice at all. Field note gi-2026-08-24-b7c1 is the first recorded case of the
+  reverse -- gemini stalling for minutes on a diff AGY answered in about 25
+  seconds. The two conditions either engine can produce now name both. The
+  `prompt-too-long` default is engine-neutral now for a different reason than the
+  other two: the cases an engine can be blamed for -- AGY's argv limit and NUL
+  bytes -- never reach it, because they throw with their own next step. What
+  reaches it is a model's context window overflowing, most often gemini's, so it
+  now says to send less rather than to switch engines. That advice is pinned
+  where it is produced instead of where it is defaulted. The AGY-only conditions
+  -- transcript recovery and its brain directory -- stay one-directional, and a
+  test pins both halves of that: the advice must not offer AGY to an AGY failure,
+  and must keep offering gemini as the way out.
+
 - **The MCP surface now says which copy of the plugin is answering.** The host
   resolves a plugin to a versioned directory and keeps that server process for
   the session, while the slash surface is re-read on every invocation, so the two

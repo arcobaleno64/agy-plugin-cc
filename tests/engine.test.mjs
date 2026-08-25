@@ -135,6 +135,26 @@ test("agy positional prompt rejects prompts above the safe Windows argv limit", 
   );
 });
 
+// The advice for these two lives at the throw site, not in the DEFAULTS table, so a
+// rewrite of the default cannot reach it -- and a test against the default cannot
+// catch a regression in it. Pinned where it is produced. The wording is engine-named
+// on purpose and correct here: this path runs only when AGY takes the prompt as a
+// command-line argument, which is AGY older than 1.1.2, and gemini genuinely is the
+// way out of it.
+test("the argv-limit advice names the escape it actually has", () => {
+  for (const prompt of ["hello\u0000world", "x".repeat(24_001)]) {
+    assert.throws(
+      () => buildCliArgs("agy", { prompt }),
+      (error) => {
+        assert.equal(error.failure?.category, "prompt-too-long");
+        assert.match(error.failure.nextStep, /--engine gemini/, "gemini is the way off the argv path");
+        assert.match(error.failure.nextStep, /stdin/, "and the reason it works is stated");
+        return true;
+      }
+    );
+  }
+});
+
 test("AGY stdin mode omits --print and prompt while preserving execution flags", () => {
   const prompt = "x".repeat(24_001);
   const args = buildCliArgs("agy", {
