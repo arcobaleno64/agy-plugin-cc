@@ -4,16 +4,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 
 const PLUGIN_ROOT = path.resolve(fileURLToPath(new URL("../plugins/gemini", import.meta.url)));
 
-// Regression guard for the .mcp.json launch path: the declared command/args
-// MUST resolve relative to the plugin root (${CLAUDE_PLUGIN_ROOT}), NOT the
-// host's cwd. A relative "./scripts/..." + cwd "." would fail to launch
-// whenever the user's cwd differs from the plugin dir -- which is the normal
-// case. So we launch EXACTLY what .mcp.json declares, from a temp cwd that is
-// deliberately not the plugin dir, and require it to answer initialize.
+// Regression guard for the .mcp.json launch path: the script argument MUST
+// resolve relative to the plugin root (${CLAUDE_PLUGIN_ROOT}), while the server
+// MUST NOT declare cwd using that placeholder. Codex expands the script argument
+// but may pass cwd through literally on Windows, where process creation then
+// fails with ERROR_DIRECTORY (267). Launch from a temp cwd that is deliberately
+// not the plugin dir and require the server to answer initialize.
 test("the .mcp.json server command launches from a cwd that is not the plugin dir", async () => {
   const config = JSON.parse(fs.readFileSync(path.join(PLUGIN_ROOT, ".mcp.json"), "utf8"));
   const server = config.mcpServers.gemini;
@@ -21,7 +22,7 @@ test("the .mcp.json server command launches from a cwd that is not the plugin di
   const expand = (s) => s.replaceAll("${CLAUDE_PLUGIN_ROOT}", PLUGIN_ROOT);
   const command = expand(server.command);
   const args = server.args.map(expand);
-  const cwd = server.cwd ? expand(server.cwd) : undefined;
+  assert.equal(server.cwd, undefined, ".mcp.json must inherit the host cwd instead of declaring ${CLAUDE_PLUGIN_ROOT} as cwd");
 
   // Sanity: the resolved script path must be absolute and exist, so a
   // relative-path regression (./scripts/...) is caught before spawning.
@@ -29,7 +30,7 @@ test("the .mcp.json server command launches from a cwd that is not the plugin di
   assert.ok(scriptArg && path.isAbsolute(scriptArg) && fs.existsSync(scriptArg), `.mcp.json must resolve gemini-mcp.mjs to an existing absolute path, got: ${scriptArg}`);
 
   const tempCwd = fs.mkdtempSync(path.join(os.tmpdir(), "gemini-mcp-launch-"));
-  const child = spawn(command, args, { cwd: cwd ?? tempCwd, stdio: ["pipe", "pipe", "pipe"], shell: process.platform === "win32" && !path.isAbsolute(command) });
+  const child = spawn(command, args, { cwd: tempCwd, stdio: ["pipe", "pipe", "pipe"] });
 
   try {
     const firstLine = new Promise((resolve, reject) => {
@@ -52,7 +53,10 @@ test("the .mcp.json server command launches from a cwd that is not the plugin di
     assert.equal(reply.result.serverInfo.name, "gemini");
     assert.equal(typeof reply.result.protocolVersion, "string");
   } finally {
-    child.kill();
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill();
+      await once(child, "exit");
+    }
     fs.rmSync(tempCwd, { recursive: true, force: true });
   }
 });

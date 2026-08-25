@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.22.4 — 2026-08-25 — Start the MCP before it can do anything else
+
+- **The Gemini MCP now starts under Codex on Windows.** Its manifest supplied
+  `${CLAUDE_PLUGIN_ROOT}` as both the script location and the process working
+  directory. Codex expands the script argument but passed the working directory
+  through literally, so Windows rejected process creation with error 267 before
+  the server could answer `initialize`. The manifest now inherits the host working
+  directory while keeping the script path rooted at the plugin. The launch test
+  pins that split and waits for the server process to exit before removing its
+  temporary Windows directory.
+
 - **Half of the -13 prompt penalty is now diagnosed, and the other half is now known
   not to be what it looked like.** The board reported that `prompts/review.md`, run
   without tools, costs 13 composite points against the bench's neutral prompt, and
