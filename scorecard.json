@@ -52,6 +52,10 @@
           "version": "0.55.1",
           "cases": 1
         }
+      ],
+      "days": [
+        "2026-08-19",
+        "2026-08-24"
       ]
     },
     "codex.native": {
@@ -84,7 +88,11 @@
       "seeded": false,
       "recordedAt": "2026-08-24T11:18:28.335Z",
       "engineVersion": "1.1.19",
-      "samples": 3
+      "samples": 3,
+      "days": [
+        "2026-08-24",
+        "2026-08-25"
+      ]
     }
   },
   "byCell": {
@@ -200,14 +208,14 @@
     },
     "agy.adversarial": {
       "cell": "agy.adversarial",
-      "cases": 5,
-      "composite": 73,
-      "recall": 0.72,
-      "precision": 0.87,
-      "falsePositives": 2,
-      "bonus": 0,
-      "severityExactRate": 0.5,
-      "latencyMs": 42867
+      "cases": 7,
+      "composite": 72,
+      "recall": 0.7,
+      "precision": 0.89,
+      "falsePositives": 2.33,
+      "bonus": 0.33,
+      "severityExactRate": 0.47,
+      "latencyMs": 40240
     }
   }
 }

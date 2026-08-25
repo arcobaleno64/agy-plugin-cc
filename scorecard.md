@@ -1,6 +1,6 @@
 # review benchmark scorecard — agy · gemini · codex
 
-> Mode: **replay** · repeats: 1 · cases: 7 · generated: 2026-08-25T22:08:01.038Z
+> Mode: **replay** · repeats: 1 · cases: 7 · generated: 2026-08-25T23:23:44.729Z
 
 ## Verdicts
 
@@ -8,7 +8,7 @@
 |---|---|---|
 | **Model** (single-shot, tools off) | **tie** | lead of 8.2 does not clear the ±65 either cell moves between runs · gemini 69.2 ±55 · agy 61 ±65 · codex 51.6 ±20 |
 | **Harness** (agentic reviewers) | **tie** | lead of 2.2 does not clear the ±43 either cell moves between runs · codex 93 (seeded) · agy 75.4 ±40 · gemini 73.2 ±43 |
-| **Adversarial** (agentic, adversarial prompt) | **tie** | lead of 15.7 does not clear the ±65 either cell moves between runs · agy 73 ±46 · codex 57.3 ±65 |
+| **Adversarial** (agentic, adversarial prompt) | **tie** | lead of 14.7 does not clear the ±65 either cell moves between runs · agy 72 ±46 · codex 57.3 ±65 |
 | Harness lift — gemini | +4 | does not clear the ±55 its ends move between runs |
 | Harness lift — codex | +41.4 | one end is seeded — not a measurement |
 | Harness lift — agy | +14.4 | does not clear the ±65 its ends move between runs |
@@ -20,14 +20,14 @@
 | Gemini (model, single-shot) | live 2026-08-24 · 0.56.0 ×3 | 5 | 69.2 | ±55 | 0.68 | 0.83 | 1.67 | 0 | 0.52 | 25964ms |
 | Codex (model, single-shot) | live 2026-08-24 · codex-cli 0.149.0 ×3 | 7 | 51.6 | ±20 | 0.47 | 0.71 | 1.33 | 0.33 | 0.45 | 21867ms |
 | AGY (model, single-shot) | live 2026-08-24 · 1.1.19 ×3 | 7 | 61 | ±65 | 0.58 | 0.74 | 1 | 0 | 0.59 | 37990ms |
-| Gemini (--deep, agentic) | live 2026-08-24 · 0.56.0 ×3 · 1 case on 0.55.1 | 5 | 73.2 | ±43 | 0.72 | 0.85 | 2.33 | 0 | 0.55 | 36868ms |
+| Gemini (--deep, agentic) | live 2026-08-19, 2026-08-24 · 0.56.0 ×3 · 1 case on 0.55.1 | 5 | 73.2 | ±43 | 0.72 | 0.85 | 2.33 | 0 | 0.55 | 36868ms |
 | Codex (native review, agentic) | **seeded** | 2 | 93 | — | 0.9 | 1 | 0 | 1 | 1 | 39850ms |
 | AGY (--deep, agentic) | live 2026-08-24 · 1.1.19 ×3 | 7 | 75.4 | ±40 | 0.76 | 0.92 | 2 | 0 | 0.4 | 34344ms |
 | Gemini (plugin review, no --deep) | — | 0 | — | — | — | — | 0 | 0 | — | — |
 | AGY (plugin review, no --deep) | live 2026-08-24 · 1.1.19 ×3 | 7 | 47.7 | ±55 | 0.46 | 0.63 | 1.33 | 0 | 0.27 | 20665ms |
 | Gemini (adversarial, agentic) | — | 0 | — | — | — | — | 0 | 0 | — | — |
 | Codex (adversarial, agentic) | live 2026-08-24 · codex-cli 0.149.0 ×3 | 7 | 57.3 | ±65 | 0.52 | 0.81 | 3 | 0 | 0.48 | 35043ms |
-| AGY (adversarial, agentic) | live 2026-08-24 · 1.1.19 ×3 | 5 | 73 | ±46 | 0.72 | 0.87 | 2 | 0 | 0.5 | 42867ms |
+| AGY (adversarial, agentic) | live 2026-08-24, 2026-08-25 · 1.1.19 ×3 | 7 | 72 | ±46 | 0.7 | 0.89 | 2.33 | 0.33 | 0.47 | 40240ms |
 
 ## Per-case breakdown
 
@@ -65,7 +65,7 @@
 | caller-contract | agy.shallow | ok | 0 | 0 | 0 | 0 | profile-caller-broken, admin-check-always-passes |
 | caller-contract | gemini.adversarial | skipped (no cassette) | — | — | — | — | — |
 | caller-contract | codex.adversarial | ok | 43 | 0.33 | 0.33 | 0 | admin-check-always-passes |
-| caller-contract | agy.adversarial | skipped (no cassette) | — | — | — | — | — |
+| caller-contract | agy.adversarial | ok | 84 | 0.83 | 0.33 | 0.33 | profile-caller-broken |
 | path-and-input | gemini.model | ok | 80 | 0.73 | 0 | 0 | unbounded-read, unhandled-enoent |
 | path-and-input | codex.model | ok | 58 | 0.47 | 0 | 0 | parseint-radix, unbounded-read, unhandled-enoent |
 | path-and-input | agy.model | ok | 72 | 0.6 | 0 | 0 | unbounded-read, unhandled-enoent |
@@ -98,7 +98,7 @@
 | stale-duplicate | agy.shallow | ok | 18 | 0.17 | 0 | 0 | v1-copy-still-crashes |
 | stale-duplicate | gemini.adversarial | skipped (no cassette) | — | — | — | — | — |
 | stale-duplicate | codex.adversarial | ok | 65 | 0.5 | 0 | 0 | v1-copy-still-crashes |
-| stale-duplicate | agy.adversarial | skipped (no cassette) | — | — | — | — | — |
+| stale-duplicate | agy.adversarial | ok | 55 | 0.5 | 0 | 0 | v1-copy-still-crashes |
 | vacuous-tests | gemini.model | ok | 78 | 0.75 | 0 | 0 | permanent-skip |
 | vacuous-tests | codex.model | ok | 82 | 0.83 | 0 | 0 | permanent-skip |
 | vacuous-tests | agy.model | ok | 71 | 0.67 | 0 | 0 | no-assertion, permanent-skip |
