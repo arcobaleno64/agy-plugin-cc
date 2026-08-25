@@ -81,8 +81,22 @@ export function findingMatchesPlanted(finding, planted, { lineTolerance = 0 } = 
   return matchQuality(finding, planted, lineTolerance) > 0;
 }
 
+// Extras are matched by the same file rule as planted defects. They were not: this
+// compared literally, and "*" is truthy, so an extra declared for the whole repository
+// could never be credited and every reviewer that found one was charged a false
+// positive for it. Only caller-contract (no-migration-note) and stale-duplicate
+// (worker-unreferenced) declare wildcard extras, which is why the board looked
+// consistent -- and why the cost fell entirely on whichever cell happened to catch
+// them, rather than spreading evenly. A scorer that penalises one cell for a
+// legitimate catch is not measuring the thing this board claims to measure.
+//
+// An earlier version of this comment quoted the precision and false-positive move
+// this produces. Those numbers were measured against a different branch's cassettes,
+// not the ones beside this file, so they had no standing here. Whether the fix moves
+// a cell depends on which cassettes are present; the scorecard is where that gets
+// read off.
 function findingMatchesExtra(finding, extra) {
-  if (extra.file && normalizeFile(finding.file) !== normalizeFile(extra.file)) return false;
+  if (!fileMatches(finding.file, extra.file)) return false;
   return keywordsHit(finding, extra.match?.keywords, extra.match?.all);
 }
 
@@ -104,6 +118,11 @@ export function scoreReview(findings, truth, options = {}) {
   const extras = Array.isArray(truth?.allowed_extras) ? truth.allowed_extras : [];
 
   const matchedPlantedIds = new Set();
+  // Extras are consumed like planted defects. They were not, and while every extra was
+  // pinned to one file that was survivable; once "*" is honoured it is not, because a
+  // reviewer could restate one wildcard-keyword claim N times and be credited N bonuses
+  // with no false positive for any of them. One legitimate unique catch is one catch.
+  const matchedExtraIds = new Set();
   const severityByPlanted = new Map(); // planted.id -> best finding severity
 
   let bonus = 0; // legitimate unique catches (allowed_extras)
@@ -127,7 +146,9 @@ export function scoreReview(findings, truth, options = {}) {
       severityByPlanted.set(best.id, finding.severity);
       continue;
     }
-    if (extras.some((e) => findingMatchesExtra(finding, e))) {
+    const extra = extras.find((e) => !matchedExtraIds.has(e.id) && findingMatchesExtra(finding, e));
+    if (extra) {
+      matchedExtraIds.add(extra.id);
       bonus += 1;
       continue;
     }

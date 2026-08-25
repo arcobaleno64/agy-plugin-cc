@@ -25,7 +25,7 @@
     {
       "id": "worker-unreferenced",
       "file": "*",
-      "match": { "keywords": ["worker.js", "never imported", "not wired", "unused module", "no entry point"] }
+      "match": { "all": ["worker.js"], "keywords": ["never imported", "not wired", "unused module", "no entry point"] }
     }
   ]
 }

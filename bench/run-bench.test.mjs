@@ -845,3 +845,105 @@ test("the scorecard carries an adversarial axis of its own", () => {
   assert.match(harness, /agy 80/);
   assert.doesNotMatch(harness, /90|60/, "the adversarial cells must not leak into the harness axis");
 });
+
+// A planted defect may declare `file: "*"` when it spans files, and `fileMatches`
+// honours that. Extras did not: the comparison was literal, `"*"` is truthy, and so a
+// legitimate catch of a repository-wide extra was charged as a false positive. The
+// cost landed on whichever cell found it, rather than spreading evenly. Whether that
+// moves a published number depends on which cassettes are present; the scorecard is
+// where that is read off, not a comment.
+test("an allowed extra declared for the whole repository is credited, not penalised", () => {
+  const truth = {
+    planted: [{ id: "planted-one", file: "src/store.js", match: { keywords: ["null deref"] } }],
+    allowed_extras: [{ id: "repo-wide", file: "*", match: { keywords: ["breaking change"] } }]
+  };
+  const findingOfTheExtra = {
+    file: "src/anywhere.js",
+    title: "Breaking change to findUser return contract breaks existing callers",
+    severity: "medium"
+  };
+
+  const scored = scoreReview([findingOfTheExtra], truth);
+  assert.equal(scored.bonus, 1, "a wildcard extra is a legitimate unique catch");
+  assert.equal(scored.falsePositives, 0, "and must not also be charged as a false positive");
+});
+
+// The other half of the rule, so the fix cannot become "extras match anything". An
+// extra that names a file still means that file.
+test("an allowed extra that names a file still only matches that file", () => {
+  const truth = {
+    planted: [],
+    allowed_extras: [{ id: "scoped", file: "src/store.js", match: { keywords: ["breaking change"] } }]
+  };
+  const elsewhere = { file: "src/other.js", title: "Breaking change in the other module", severity: "low" };
+  const here = { file: "src/store.js", title: "Breaking change in the store", severity: "low" };
+
+  assert.equal(scoreReview([elsewhere], truth).bonus, 0, "a different file is not the extra");
+  assert.equal(scoreReview([elsewhere], truth).falsePositives, 1);
+  assert.equal(scoreReview([here], truth).bonus, 1, "the named file is");
+});
+
+// Keywords still gate a wildcard extra. Without this the fix would turn `file: "*"`
+// into "any unmatched finding is a bonus", which would inflate every cell instead of
+// deflating one -- the same defect with its sign flipped.
+test("a wildcard extra still has to match on keywords", () => {
+  const truth = {
+    planted: [],
+    allowed_extras: [{ id: "repo-wide", file: "*", match: { keywords: ["breaking change"] } }]
+  };
+  const unrelated = { file: "src/anywhere.js", title: "Variable named badly", severity: "low" };
+
+  const scored = scoreReview([unrelated], truth);
+  assert.equal(scored.bonus, 0);
+  assert.equal(scored.falsePositives, 1, "an unrelated finding is still a false positive");
+});
+
+// Honouring `"*"` is only safe if the extras themselves name a subject. `stale-duplicate`
+// listed the bare module name among its any-of keywords, which was inert while a wildcard
+// extra could never match and became repo-wide false-positive amnesty the moment it could:
+// any finding anywhere whose body merely mentioned `worker.js` was credited as a legitimate
+// catch. This is the same defect score.mjs already documents for `repo-context`, which is
+// why the subject now sits in `match.all`. Run against the real ground truth, not a fixture,
+// because the hazard was in the corpus rather than in the scorer.
+test("mentioning the subject is not catching the extra", () => {
+  const truth = JSON.parse(
+    fs.readFileSync(new URL("./corpus/stale-duplicate/ground-truth.json", import.meta.url), "utf8")
+  );
+  const inPassing = {
+    file: "src/unrelated.js",
+    title: "Inconsistent logging",
+    body: "The log format here differs from the one used in worker.js",
+    severity: "low"
+  };
+  const theCatch = {
+    file: "src/worker.js",
+    title: "worker.js is never imported by any entry point",
+    body: "unused module",
+    severity: "medium"
+  };
+
+  const passing = scoreReview([inPassing], truth);
+  assert.equal(passing.bonus, 0, "a passing mention is not the claim");
+  assert.equal(passing.falsePositives, 1, "and is still charged");
+
+  const caught = scoreReview([theCatch], truth);
+  assert.equal(caught.bonus, 1, "the claim, about the subject, is credited");
+  assert.equal(caught.falsePositives, 0);
+});
+
+// Planted defects are consumed; extras were not. Bounded to one file that was survivable,
+// but a wildcard extra with no consumption is an unlimited amnesty: restate one claim N
+// times and collect N bonuses and no false positives. Padding output would have become
+// free, which is the opposite of what this board is for.
+test("one extra is one catch, however many times it is restated", () => {
+  const truth = {
+    planted: [],
+    allowed_extras: [{ id: "repo-wide", file: "*", match: { keywords: ["breaking change"] } }]
+  };
+  const claim = { file: "src/a.js", title: "Breaking change to the return contract", severity: "medium" };
+  const restated = [claim, { ...claim, file: "src/b.js" }, { ...claim, file: "src/c.js" }];
+
+  const scored = scoreReview(restated, truth);
+  assert.equal(scored.bonus, 1, "credited once");
+  assert.equal(scored.falsePositives, 2, "the repeats are still noise");
+});
