@@ -221,9 +221,23 @@ export function pathWithoutRealEngines(binDir, inherited = process.env.PATH) {
   return [binDir, ...kept].join(PATH_SEP);
 }
 
+// GEMINI_API_KEY / GOOGLE_API_KEY outrank every stored credential -- that is the
+// CLI's real precedence, and `hasGeminiCredentials` reproduces it deliberately.
+// So a fixture that inherits one has already answered the question it was built
+// to ask: an "unauthenticated" stand-in reports ready, and the setup fixtures
+// fail on any machine that exports a key while staying green on CI, which has
+// none. This is the same leak already closed for PATH, the keychain and
+// GEMINI_ENGINE; the key was the one left open.
+function inheritedEnvWithoutCredentials() {
+  const env = { ...process.env };
+  delete env.GEMINI_API_KEY;
+  delete env.GOOGLE_API_KEY;
+  return env;
+}
+
 export function buildEnv(binDir) {
   return {
-    ...process.env,
+    ...inheritedEnvWithoutCredentials(),
     PATH: pathWithoutRealEngines(binDir),
     GEMINI_ENGINE: "gemini",
     GEMINI_HOME: path.join(binDir, "gemini-home"),
@@ -238,7 +252,7 @@ export function buildEnv(binDir) {
 // Like buildEnv but does not force an engine and points GEMINI_HOME at an empty
 // directory; pair with installUnavailableEngines for "not ready" assertions.
 export function buildEnvUnavailable(binDir) {
-  const env = { ...process.env };
+  const env = inheritedEnvWithoutCredentials();
   // Must resolve to "auto" regardless of the calling shell's own engine
   // preference (e.g. a developer's GEMINI_ENGINE=agy), so delete it rather
   // than inherit it.
