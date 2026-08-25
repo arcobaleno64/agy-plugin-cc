@@ -679,13 +679,14 @@ test("a spawn that never returned still says why", () => {
   // reason the CLI printed sits on the same `res`. It used to be dropped. Field note
   // gi-2026-08-24-b7c1 is the bill: gemini was retrying an HTTP 429 spending-cap
   // rejection past the cap, the bench reported a timeout, and a spent account was
-  // investigated for a day as engine slowness. Shape below is the real capture.
+  // investigated for a day as engine slowness. Shape below is the real capture's:
+  // the attempts are numbered, so no two of them are equal.
   const stderr = [
     "Warning: True color (24-bit) support not detected.",
-    'Attempt 1 failed with status 429. Retrying with backoff... _ApiError: {"error":{"message":"Your project has exceeded its monthly spending cap.","status":"RESOURCE_EXHAUSTED"}}',
+    'Attempt 1 failed with status 429. _ApiError: {"error":{"message":"Your project has exceeded its monthly spending cap.","status":"RESOURCE_EXHAUSTED"}}',
     "    at throwErrorIfNotOK (file:///C:/x/chunk.js:267240:24)",
     "    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)",
-    'Attempt 2 failed with status 429. Retrying with backoff... _ApiError: {"error":{"message":"Your project has exceeded its monthly spending cap.","status":"RESOURCE_EXHAUSTED"}}'
+    'Attempt 2 failed with status 429. _ApiError: {"error":{"message":"Your project has exceeded its monthly spending cap.","status":"RESOURCE_EXHAUSTED"}}'
   ].join("\n");
 
   const reported = adapters.spawnFailure("gemini", {
@@ -696,21 +697,56 @@ test("a spawn that never returned still says why", () => {
   assert.equal(reported.ok, false);
   assert.match(String(reported.error), /spawnSync cmd\.exe ETIMEDOUT/, "the symptom is still named");
   assert.match(String(reported.error), /exceeded its monthly spending cap/, "and so is the cause");
-  // Stack frames are what push the cause out of a bounded message on a retrying CLI.
+  // Frames say where in the CLI's bundle the throw happened, which no reader can act on.
   assert.doesNotMatch(String(reported.error), /throwErrorIfNotOK|processTicksAndRejections/);
 });
 
-test("the same rejection repeated is reported once", () => {
-  // A retrying CLI prints one error per attempt. Without deduplication the tail of a
-  // bounded message is the last attempt's copy of a line already there, so a longer
-  // retry loop crowds out everything else the CLI said.
-  const line = 'Attempt failed with status 429. _ApiError: {"error":{"message":"quota exhausted"}}';
-  const once = adapters.spawnFailure("gemini", { error: { message: "ETIMEDOUT" }, stderr: line });
-  const tenTimes = adapters.spawnFailure("gemini", {
+test("the cause survives whatever the CLI prints after it", () => {
+  // The first fix here kept the tail of the message, which reads as the safe end to
+  // keep until deduplication moves the cause to the front -- then the tail slice cuts
+  // it off mid-word and the failure reports a shutdown epilogue instead. Reviewed and
+  // reproduced: `(ding cap. RESOURCE_EXHAUSTED Terminated after 180s. For
+  // troubleshooting, see ... Auth: oauth-personal.)`. That is the original defect
+  // rebuilt inside its own fix, so the shape is pinned here.
+  const cause = "_ApiError: Your project has exceeded its monthly spending cap. RESOURCE_EXHAUSTED";
+  const stderr = [
+    ...Array.from({ length: 30 }, () => cause),
+    "Terminated after 180s.",
+    "For troubleshooting, see https://goo.gle/gemini-cli-docs and https://ai.google.dev/gemini-api/docs/troubleshooting for the full list of error codes.",
+    "Session ID: 4f3c9a12-7b8e-4d21-9c05-1a2b3c4d5e6f",
+    "Data collection is disabled. Auth: oauth-personal."
+  ].join("\n");
+
+  const reported = adapters.spawnFailure("gemini", { error: { message: "ETIMEDOUT" }, stderr });
+  assert.match(String(reported.error), /exceeded its monthly spending cap/);
+});
+
+test("a flood of one repeated line does not crowd out what came after it", () => {
+  // What deduplication is actually for, now that the budget is wide. Not what the
+  // first version of this test claimed: the real capture numbers its attempts
+  // (`Attempt 1 failed`, `Attempt 2 failed`), so those lines are never equal and
+  // deduplication does nothing to them. It earns its place on a CLI that repeats one
+  // line often enough to spend the whole budget, which is what is built here.
+  // Long enough, and repeated often enough, that the copies alone overrun the budget:
+  // a fixture that fits under it passes whether or not anything is deduplicated.
+  const repeated = 'Attempt failed with status 429. _ApiError: {"error":{"message":"rate limited, retrying"}}';
+  const stderr = [...Array.from({ length: 60 }, () => repeated), "Terminated after 180s."].join("\n");
+
+  const reported = adapters.spawnFailure("gemini", { error: { message: "ETIMEDOUT" }, stderr });
+  assert.match(String(reported.error), /rate limited/, "the repeated line is still reported");
+  assert.match(String(reported.error), /Terminated after 180s/, "and so is what followed it");
+});
+
+test("a diagnosis on stdout is not lost to a blank stderr", () => {
+  // `res.stderr || res.stdout` picks a stream by truthiness rather than by content, so
+  // a single newline on stderr won and stdout was discarded -- restoring the very
+  // silence this helper exists to end, without changing the code that ends it.
+  const reported = adapters.spawnFailure("codex", {
     error: { message: "ETIMEDOUT" },
-    stderr: Array.from({ length: 10 }, () => line).join("\n")
+    stderr: "\n",
+    stdout: "You've hit your usage limit."
   });
-  assert.equal(tenTimes.error, once.error);
+  assert.match(String(reported.error), /hit your usage limit/);
 });
 
 test("a spawn failure with nothing to add does not report an empty parenthesis", () => {

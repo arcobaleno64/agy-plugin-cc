@@ -102,20 +102,28 @@ function fail(reason) {
 // this lesson twice over -- from codex's usage limit and agy's individual quota. The
 // error branch never got it.
 //
-// Stack frames are dropped and lines deduped before the tail is taken: a retrying CLI
-// repeats the same error, and on the real 9.5KB capture the head was terminal warnings
-// while the cause sat in the middle. The tail of what remains is the part that says why.
+// Nothing here tries to pick out the line that matters, because three attempts at it
+// each failed on a shape the others survived: a tail slice cuts the cause off when
+// deduplication has moved it to the front, a head slice loses it behind terminal
+// warnings, and the longest line is a documentation URL as often as it is the error.
+// So the budget is set wide enough to keep every distinct line instead. The real 9.5KB
+// capture reduces to 9 lines and 2510 characters once stack frames are dropped, and
+// this is one log line in a developer tool -- there is nothing to buy by trimming it
+// further, and a truncated cause is the whole defect being fixed.
+const SPAWN_DETAIL_LIMIT = 3000;
+
 function spawnFailure(label, res) {
-  const detail = [
-    ...new Set(
-      String(res?.stderr || res?.stdout || "")
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter((line) => line && !/^at /.test(line))
-    )
-  ]
-    .join(" ")
-    .slice(-300);
+  // Both streams, concatenated rather than chosen between: `stderr || stdout` picks by
+  // truthiness, so a lone newline on stderr suppressed a diagnosis printed to stdout
+  // and silently restored the pre-change behaviour.
+  const lines = [String(res?.stderr ?? ""), String(res?.stdout ?? "")]
+    .join("\n")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    // Stack frames say where in the CLI's bundle the throw happened, which no bench
+    // reader can act on, and on the real capture they were 8 of 17 lines.
+    .filter((line) => line && !/^at /.test(line));
+  const detail = [...new Set(lines)].join(" ").slice(0, SPAWN_DETAIL_LIMIT);
   const message = res?.error?.message ?? "spawn failed";
   return fail(detail ? `${label} spawn: ${message} (${detail})` : `${label} spawn: ${message}`);
 }
