@@ -288,6 +288,32 @@ export async function callTool(name, args = {}, { runtime = DEFAULT_RUNTIME } = 
   throw new Error(`Unknown tool: ${name}`);
 }
 
+// `serverInfo` already carries the version, but no host shows it to the person or
+// the agent driving the tools, so a stale server is indistinguishable from a
+// current one from inside the session. `instructions` is the one part of the
+// initialize result hosts do surface -- they inject it into the agent's context
+// -- so the version that is actually answering says so where it will be read.
+//
+// This matters because the two surfaces can disagree. The slash surface re-reads
+// its own script on every invocation and is therefore always current; this
+// process is resolved once, from a versioned cache directory, and kept for the
+// session. Field note gi-2026-08-17-a1c7 recorded a session whose MCP server was
+// 0.17.3 while the installed plugin was 0.19.0: a tool was simply absent, and the
+// mismatch was found only by reading the server process's command line.
+function serverInstructions() {
+  return [
+    `Gemini Companion MCP surface, plugin version ${SERVER_VERSION}, running from ${SELF_PATH}.`,
+    "",
+    "This version is fixed for the whole session: the host resolves the plugin to a",
+    "versioned directory and keeps this process alive, so a plugin update installed",
+    "mid-session does not reach these tools. If a tool listed in the README is missing",
+    "here, or a shipped fix appears absent, compare the version above with the one",
+    "`gemini-companion setup` reports -- the slash surface is re-read on every",
+    "invocation, so a difference means this server is the stale one. `/reload-plugins`",
+    "respawns it."
+  ].join("\n");
+}
+
 export async function handleRequest(request, dependencies = {}) {
   if (request.method === "notifications/initialized") return undefined;
   if (request.method === "ping") return {};
@@ -295,7 +321,8 @@ export async function handleRequest(request, dependencies = {}) {
     return {
       protocolVersion: MCP_PROTOCOL_VERSION,
       capabilities: { tools: {} },
-      serverInfo: { name: "gemini", version: SERVER_VERSION }
+      serverInfo: { name: "gemini", version: SERVER_VERSION },
+      instructions: serverInstructions()
     };
   }
   if (request.method === "tools/list") return { tools: TOOLS };

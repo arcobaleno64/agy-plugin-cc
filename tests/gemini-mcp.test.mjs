@@ -33,6 +33,34 @@ test("gemini MCP advertises its identity and six tools", async () => {
   ]);
 });
 
+// `serverInfo.version` was already correct and already useless: no host shows it,
+// so field note gi-2026-08-17-a1c7 had to identify a stale 0.17.3 server by reading
+// its process command line. `instructions` is the part of the initialize result
+// hosts inject into the agent's context, so what is pinned here is that the running
+// version and script path are stated *there* -- asserting only that the string is
+// non-empty would pass on boilerplate that names no version at all.
+test("the MCP surface states which copy of the plugin is answering", async () => {
+  const initialized = await handleRequest({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+  const pluginVersion = JSON.parse(
+    fs.readFileSync(new URL("../plugins/gemini/.claude-plugin/plugin.json", import.meta.url), "utf8")
+  ).version;
+
+  assert.equal(typeof initialized.instructions, "string");
+  assert.ok(
+    initialized.instructions.includes(pluginVersion),
+    `instructions must name the running version (${pluginVersion}), got: ${initialized.instructions}`
+  );
+  // Two surfaces disagreeing is the whole failure, so the version alone is not
+  // enough -- the path is what says *which copy* this is when two are installed.
+  assert.ok(
+    initialized.instructions.includes(path.join("scripts", "gemini-mcp.mjs")),
+    `instructions must name the running script, got: ${initialized.instructions}`
+  );
+  // One version, stated once: a version in the prose that could drift from the one
+  // in serverInfo would reintroduce the ambiguity this exists to remove.
+  assert.ok(initialized.instructions.includes(initialized.serverInfo.version));
+});
+
 // Adversarial review has been on the slash surface since it shipped and is listed
 // in both READMEs under Features, but MCP exposed no way to reach it and said
 // nothing about why — so an agent driving the plugin through MCP had the feature
