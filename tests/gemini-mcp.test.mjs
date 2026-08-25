@@ -33,6 +33,40 @@ test("gemini MCP advertises its identity and six tools", async () => {
   ]);
 });
 
+// `serverInfo.version` was already correct and already useless: no host shows it,
+// so field note gi-2026-08-17-a1c7 had to identify a stale 0.17.3 server by reading
+// its process command line. `instructions` is the part of the initialize result
+// hosts inject into the agent's context, so what is pinned here is that the running
+// version and script path are stated *there* -- asserting only that the string is
+// non-empty would pass on boilerplate that names no version at all.
+test("the MCP surface states which copy of the plugin is answering", async () => {
+  const initialized = await handleRequest({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+  const pluginVersion = JSON.parse(
+    fs.readFileSync(new URL("../plugins/gemini/.claude-plugin/plugin.json", import.meta.url), "utf8")
+  ).version;
+
+  assert.equal(typeof initialized.instructions, "string");
+  assert.ok(
+    initialized.instructions.includes(pluginVersion),
+    `instructions must name the running version (${pluginVersion}), got: ${initialized.instructions}`
+  );
+  // Two surfaces disagreeing is the whole failure, so the version alone is not
+  // enough -- the path is what says *which copy* this is when two are installed.
+  assert.ok(
+    initialized.instructions.includes(path.join("scripts", "gemini-mcp.mjs")),
+    `instructions must name the running script, got: ${initialized.instructions}`
+  );
+  // The first draft of these instructions told the reader to run
+  // `gemini-companion setup`, which is not a command -- this package publishes no
+  // `bin`. An agent following that verbatim gets command-not-found and is back to
+  // having no comparison version, which is the exact state gi-2026-08-17-a1c7
+  // describes. So the promise pinned here is that the diagnostic the instructions
+  // name is real and runnable, not merely that some path was interpolated.
+  const quoted = initialized.instructions.match(/node "([^"]+)" setup --json/);
+  assert.ok(quoted, `instructions must name a runnable setup command, got: ${initialized.instructions}`);
+  assert.ok(fs.existsSync(quoted[1]), `the setup script the instructions name must exist: ${quoted[1]}`);
+});
+
 // Adversarial review has been on the slash surface since it shipped and is listed
 // in both READMEs under Features, but MCP exposed no way to reach it and said
 // nothing about why — so an agent driving the plugin through MCP had the feature

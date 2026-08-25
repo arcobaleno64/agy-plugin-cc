@@ -288,6 +288,44 @@ export async function callTool(name, args = {}, { runtime = DEFAULT_RUNTIME } = 
   throw new Error(`Unknown tool: ${name}`);
 }
 
+// `serverInfo` already carries the version, but no host shows it to the person or
+// the agent driving the tools, so a stale server is indistinguishable from a
+// current one from inside the session. `instructions` is the one part of the
+// initialize result hosts do surface -- they inject it into the agent's context
+// -- so the version that is actually answering says so where it will be read.
+//
+// This matters because the two surfaces can disagree. The slash surface re-reads
+// its own script on every invocation and is therefore always current; this
+// process is resolved once, from a versioned cache directory, and kept for the
+// session. Field note gi-2026-08-17-a1c7 recorded a session whose MCP server was
+// 0.17.3 while the installed plugin was 0.19.0: a tool was simply absent, and the
+// mismatch was found only by reading the server process's command line.
+function serverInstructions() {
+  // Spelled as a runnable command against the directory this module is in, not as
+  // a slash command: this server is also a first-class Codex surface as of 0.22.5,
+  // and on Codex there is no `/reload-plugins`. A remedy only one host can carry
+  // out is no remedy on the host where MCP is the *only* surface, which is exactly
+  // where a stale server is hardest to notice by other means.
+  const companion = path.join(path.dirname(SELF_PATH), "gemini-companion.mjs");
+  return [
+    `Gemini Companion MCP surface, plugin version ${SERVER_VERSION}, running from ${SELF_PATH}.`,
+    "",
+    "This version is fixed for the whole session: the host resolves the plugin to a",
+    "versioned directory and keeps this process alive, so a plugin update installed",
+    "mid-session does not reach these tools. If a tool listed in the README is missing",
+    "here, or a shipped fix appears absent, suspect that this server is a stale copy.",
+    "",
+    "To confirm it, run:",
+    "",
+    `  node "${companion}" setup --json`,
+    "",
+    "and compare that report's `pluginVersion` with the version above. That script is",
+    "re-read on every run, so a difference means this server is the stale one.",
+    "Restarting the host respawns it; in Claude Code, `/reload-plugins` does so",
+    "without a restart."
+  ].join("\n");
+}
+
 export async function handleRequest(request, dependencies = {}) {
   if (request.method === "notifications/initialized") return undefined;
   if (request.method === "ping") return {};
@@ -295,7 +333,8 @@ export async function handleRequest(request, dependencies = {}) {
     return {
       protocolVersion: MCP_PROTOCOL_VERSION,
       capabilities: { tools: {} },
-      serverInfo: { name: "gemini", version: SERVER_VERSION }
+      serverInfo: { name: "gemini", version: SERVER_VERSION },
+      instructions: serverInstructions()
     };
   }
   if (request.method === "tools/list") return { tools: TOOLS };

@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **The MCP surface now says which copy of the plugin is answering.** The host
+  resolves a plugin to a versioned directory and keeps that server process for
+  the session, while the slash surface is re-read on every invocation, so the two
+  can run different versions -- and nothing in the session said so. Field note
+  gi-2026-08-17-a1c7 recorded a server on 0.17.3 against an installed 0.19.0,
+  where a tool was simply absent and the mismatch was found only by reading the
+  server process's command line. `serverInfo.version` already carried the answer
+  but no host displays it; the running version and script path are now stated in
+  the initialize result's `instructions`, which hosts inject into the agent's
+  context. `/reload-plugins` remains the remedy -- the resolution is the host's,
+  not this plugin's. What is fixed here is the silence.
+
 ## 0.22.5 — 2026-08-25 — Neither host reads the manifest the other one's way
 
 - **The Gemini MCP now actually starts under Codex.** 0.22.4 removed the literal
