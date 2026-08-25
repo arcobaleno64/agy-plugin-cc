@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+- **Half of the -13 prompt penalty is now diagnosed, and the other half is now known
+  not to be what it looked like.** The board reported that `prompts/review.md`, run
+  without tools, costs 13 composite points against the bench's neutral prompt, and
+  named that a measurement rather than a diagnosis. An ablation closes part of the gap
+  (`bench/ablations/prompt-penalty-2026-08-25.json`, agy 1.1.19, 33 runs).
+
+  The method matters more than the numbers: review.md's *text* was substituted into the
+  same single-shot path the `*.model` cells use, with the same diff in
+  `{{REVIEW_INPUT}}`, so the prompt string is the only variable. On `async-lifecycle`
+  and `auth-basic` that reproduces `agy.shallow` to within 0.3 and 1.0 points, which is
+  what rules out the companion's input construction as the cause.
+
+  - **+8.8 of 17.7 is four hedging blocks** (`<calibration_rules>`, `<finding_bar>`,
+    `<operating_stance>`, `<grounding_rules>`), acting by suppressing report volume:
+    removing them takes findings from 3.83 to 4.83, exactly `agy.model`'s count.
+    Removing them in pairs buys ~+4 each in per-case directions that disagree, so no
+    single block carries it.
+  - **`<review_scope>` is not a cause.** The prediction was that its enumerated
+    categories aim attention, so recall should move; recall is 0.867 with and without.
+    The +2.0 in composite is inside a band whose single samples run 79 to 96.
+  - **The remaining ~6.8 is not suppression.** At half the original prompt length the
+    findings count matches the neutral prompt while recall is 0.87 against 0.97 — same
+    volume, worse aim. Deciding among what is left (`<role>`, the XML sectioning,
+    length) needs more repeats, not more arms, and was not attempted.
+
+  Two limits stated rather than papered over: the ablation covers the file-scoped end
+  only, since the largest per-case penalties (-40, -25) sit on two-defect
+  repository-scoped cases where one finding is the whole composite; and arm A's
+  `REVIEW_INPUT` is the diff alone, where the companion also appends commit history,
+  which is the 4.9 residual against `agy.shallow` and why `vacuous-tests` was dropped
+  after arm A rather than ablated.
+
+  Across all 33 runs precision never moved from ~1.00. Whatever this prompt spends
+  recall on, it is not buying precision with it -- the same signature the adversarial
+  axis showed.
+
 - **`bench/README.md` was describing a board that no longer existed.** Six places,
   found by re-deriving every number in the file from the cassettes rather than reading
   the prose:
