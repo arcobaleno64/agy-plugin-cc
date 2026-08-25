@@ -1,0 +1,76 @@
+{
+  "caseId": "stale-duplicate",
+  "cell": "agy.adversarial",
+  "recordedAt": "2026-08-25T01:22:57.666Z",
+  "verdict": "needs-attention",
+  "summary": "Do not ship: drain() in worker.js references undefined config.maxBatch, causing loop failure and complete data loss of all batch items.",
+  "findings": [
+    {
+      "severity": "critical",
+      "title": "Undefined config.maxBatch causes NaN loop progression and silent data loss",
+      "body": "In src/worker.js, the drain function slices validated IDs using config.maxBatch. However, config/default.json does not define maxBatch. At runtime, config.maxBatch evaluates to undefined. On the first iteration, ids.slice(0, 0 + undefined) evaluates to ids.slice(0, NaN), returning an empty array []. Next, i += undefined evaluates to NaN, causing i < ids.length to evaluate to false and terminating the loop immediately. Consequently, drain() silently drops all validated IDs and returns { queue: 'ingest', chunks: [[]] }.",
+      "file": "src/worker.js",
+      "line_start": 7,
+      "line_end": 9,
+      "confidence": 1,
+      "recommendation": "Add a positive integer maxBatch property to config/default.json and include a defensive default or validation in src/worker.js to ensure chunking receives a valid positive integer."
+    }
+  ],
+  "latencyMs": 49746,
+  "engineVersion": "1.1.19",
+  "engineObserved": "agy",
+  "samples": [
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: src/worker.js references an undefined config.maxBatch property, causing drain() to drop all IDs and return empty chunks.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Undefined config.maxBatch causes chunking failure and complete data loss in drain",
+          "body": "config/default.json does not define maxBatch, causing config.maxBatch to evaluate to undefined at runtime. In src/worker.js, evaluating ids.slice(i, i + config.maxBatch) performs ids.slice(0, NaN) which returns an empty array []. Furthermore, the loop increment i += config.maxBatch sets i to NaN, immediately failing the loop condition (NaN < ids.length) and terminating after one iteration. Consequently, drain() drops all items in the batch and produces chunks: [[]].",
+          "file": "src/worker.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 1,
+          "recommendation": "Add a positive integer maxBatch setting to config/default.json (and enforce a defensive fallback such as const maxBatch = Number(config.maxBatch) || 100 in src/worker.js) along with unit tests for drain()."
+        }
+      ],
+      "latencyMs": 30300
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: config.maxBatch is missing in default.json, causing drain() to discard all batch items into an empty chunk on every run.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Missing config.maxBatch breaks batch chunking and silently drops all IDs",
+          "body": "config.maxBatch is referenced in the chunking loop of drain(), but config/default.json only defines queueName and retryDelayMs. Because config.maxBatch is undefined, i + config.maxBatch evaluates to NaN. In JavaScript, Array.prototype.slice(0, NaN) resolves to slice(0, 0), producing an empty array []. Furthermore, i += undefined sets i to NaN, causing the loop termination check NaN < ids.length to fail immediately. Consequently, drain() returns { queue: \"ingest\", chunks: [ [] ] } and silently drops all validated IDs.",
+          "file": "src/worker.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 1,
+          "recommendation": "Add the maxBatch property to config/default.json (e.g. \"maxBatch\": 100) and enforce a positive numeric fallback with validation in src/worker.js (e.g. const maxBatch = Number(config.maxBatch) || 100; if (maxBatch <= 0) throw new Error(...))."
+        }
+      ],
+      "latencyMs": 30099
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: drain() in worker.js references undefined config.maxBatch, causing loop failure and complete data loss of all batch items.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Undefined config.maxBatch causes NaN loop progression and silent data loss",
+          "body": "In src/worker.js, the drain function slices validated IDs using config.maxBatch. However, config/default.json does not define maxBatch. At runtime, config.maxBatch evaluates to undefined. On the first iteration, ids.slice(0, 0 + undefined) evaluates to ids.slice(0, NaN), returning an empty array []. Next, i += undefined evaluates to NaN, causing i < ids.length to evaluate to false and terminating the loop immediately. Consequently, drain() silently drops all validated IDs and returns { queue: 'ingest', chunks: [[]] }.",
+          "file": "src/worker.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 1,
+          "recommendation": "Add a positive integer maxBatch property to config/default.json and include a defensive default or validation in src/worker.js to ensure chunking receives a valid positive integer."
+        }
+      ],
+      "latencyMs": 49746
+    }
+  ],
+  "raw": "{\n  \"review\": \"Adversarial Review\",\n  \"target\": {\n    \"mode\": \"working-tree\",\n    \"label\": \"working tree diff\",\n    \"explicit\": true\n  },\n  \"engine\": \"agy\",\n  \"gemini\": {\n    \"status\": 0,\n    \"stdout\": \"{\\n  \\\"verdict\\\": \\\"needs-attention\\\",\\n  \\\"summary\\\": \\\"Do not ship: drain() in worker.js references undefined config.maxBatch, causing loop failure and complete data loss of all batch items.\\\",\\n  \\\"findings\\\": [\\n    {\\n      \\\"severity\\\": \\\"critical\\\",\\n      \\\"title\\\": \\\"Undefined config.maxBatch causes NaN loop progression and silent data loss\\\",\\n      \\\"body\\\": \\\"In src/worker.js, the drain function slices validated IDs using config.maxBatch. However, config/default.json does not define maxBatch. At runtime, config.maxBatch evaluates to undefined. On the first iteration, ids.slice(0, 0 + undefined) evaluates to ids.slice(0, NaN), returning an empty array []. Next, i += undefined evaluates to NaN, causing i < ids.length to evaluate to false and terminating the loop immediately. Consequently, drain() silently drops all validated IDs and returns { queue: 'ingest', chunks: [[]] }.\\\",\\n      \\\"file\\\": \\\"src/worker.js\\\",\\n      \\\"line_start\\\": 7,\\n      \\\"line_end\\\": 9,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Add a positive integer maxBatch property to config/default.json and include a defensive default or validation in src/worker.js to ensure chunking receives a valid positive integer.\\\"\\n    }\\n  ],\\n  \\\"next_steps\\\": [\\n    \\\"Add maxBatch to config/default.json.\\\",\\n    \\\"Add fallback handling and validation for config.maxBatch in src/worker.js.\\\",\\n    \\\"Add unit tests for drain() to verify chunking and queue output across various batch sizes.\\\"\\n  ]\\n}\",\n    \"stderr\": \"\"\n  },\n  \"result\": {\n    \"verdict\": \"needs-attention\",\n    \"summary\": \"Do not ship: drain() in worker.js references undefined config.maxBatch, causing loop failure and complete data loss of all batch items.\",\n    \"findings\": [\n      {\n        \"severity\": \"critical\",\n        \"title\": \"Undefined config.maxBatch causes NaN loop progression and silent data loss\",\n        \"body\": \"In src/worker.js, the drain function slices validated IDs using config.maxBatch. However, config/default.json does not define maxBatch. At runtime, config.maxBatch evaluates to undefined. On the first iteration, ids.slice(0, 0 + undefined) evaluates to ids.slice(0, NaN), returning an empty array []. Next, i += undefined evaluates to NaN, causing i < ids.length to evaluate to false and terminating the loop immediately. Consequently, drain() silently drops all validated IDs and returns { queue: 'ingest', chunks: [[]] }.\",\n        \"file\": \"src/worker.js\",\n        \"line_start\": 7,\n        \"line_end\": 9,\n        \"confidence\": 1,\n        \"recommendation\": \"Add a positive integer maxBatch property to config/default.json and include a defensive default or validation in src/worker.js to ensure chunking receives a valid positive integer.\"\n      }\n    ],\n    \"next_steps\": [\n      \"Add maxBatch to config/default.json.\",\n      \"Add fallback handling and validation for config.maxBatch in src/worker.js.\",\n      \"Add unit tests for drain() to verify chunking and queue output across various batch sizes.\"\n    ]\n  }\n}\n"
+}

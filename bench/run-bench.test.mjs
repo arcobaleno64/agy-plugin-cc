@@ -947,3 +947,40 @@ test("one extra is one catch, however many times it is restated", () => {
   assert.equal(scored.bonus, 1, "credited once");
   assert.equal(scored.falsePositives, 2, "the repeats are still noise");
 });
+
+// The Source column took its date from the first cassette alone, which is fine only
+// while a cell was recorded in one sitting. `agy.adversarial` broke that: five cases on
+// one day and two the next printed as a single day, so the column stated when the cell
+// was supposed to have been recorded rather than what it holds. That is the same
+// failure the version column was fixed for, on a second axis.
+test("a cell recorded across two days says so", () => {
+  const row = (caseId, recordedAt) => ({
+    caseId,
+    cell: "agy.adversarial",
+    status: "ok",
+    score: { composite: 80, recall: 0.8, precision: 0.9, falsePositives: 0, bonus: 0, severityExactRate: 0.5, missed: [] },
+    latencyMs: 1000,
+    provenance: { seeded: false, recordedAt, engineVersion: "1.1.19", samples: 3 }
+  });
+
+  const twoDays = buildScorecard([
+    row("c1", "2026-08-24T00:00:00.000Z"),
+    row("c2", "2026-08-24T00:00:00.000Z"),
+    row("c3", "2026-08-25T00:00:00.000Z")
+  ]);
+  assert.match(twoDays.markdown, /live 2026-08-24, 2026-08-25/, "both days are named");
+
+  // And a cell recorded in one sitting keeps the plain date -- a range on every row
+  // would make "recorded once" and "recorded twice" read the same again.
+  const oneDay = buildScorecard([row("c1", "2026-08-24T00:00:00.000Z"), row("c2", "2026-08-24T09:00:00.000Z")]);
+  assert.match(oneDay.markdown, /live 2026-08-24 ·/);
+  assert.doesNotMatch(oneDay.markdown, /2026-08-24,/);
+
+  // Days are listed, not dashed. `gemini.deep` really does hold 2026-08-19 and
+  // 2026-08-24 -- two sittings five days apart -- and `2026-08-19–2026-08-24` reads as
+  // five days of recording that never happened. Everything between the endpoints is a
+  // day this cell has nothing from.
+  const apart = buildScorecard([row("c1", "2026-08-19T00:00:00.000Z"), row("c2", "2026-08-24T00:00:00.000Z")]);
+  assert.match(apart.markdown, /live 2026-08-19, 2026-08-24/, "both sittings, neither invented");
+  assert.doesNotMatch(apart.markdown, /2026-08-19–/, "and not as a span");
+});

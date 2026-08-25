@@ -124,7 +124,9 @@ one scorer grades all of them.
 >
 > One thing held across all 33 runs: **precision never moved.** It is ~1.00 in every
 > arm, verbatim prompt included. Whatever this prompt spends recall on, it is not
-> buying precision with it — the same signature the adversarial axis showed.
+> buying precision with it. This used to cite the adversarial axis as the same
+> signature; at seven cases that axis no longer shows flat precision (0.92 -> 0.89),
+> so the corroboration is withdrawn. The ablation's own 33 runs are unchanged.
 >
 > **These numbers were read off a matcher that had to be fixed first.** It credited a
 > finding for naming a defect's subject without making its claim, and the credit was
@@ -159,12 +161,27 @@ it is supposed to hold rather than what it holds.
 The prediction behind that separation was wrong, and the measurement is worth keeping
 next to it. Composite is `recall*70 + precision*20 + severityExact*10`, so the guess
 was that the adversarial prompt would buy recall at the cost of false positives.
-Measured on agy 1.1.19 across five cases x3, `agy.deep` -> `agy.adversarial` moved
-recall 0.79 -> 0.72, precision 0.88 -> 0.87 and false positives 0.40 -> 0.40. The
-prediction fails on its own terms: the adversarial prompt did not buy recall, and it
-did not spend precision or false positives failing to. It reports less, and that is
-the whole of the difference. The axis stays separate anyway — the prompts are not
-interchangeable whichever way the scores happen to fall.
+Measured on agy 1.1.19 across all seven cases x3, `agy.deep` -> `agy.adversarial`
+moved recall 0.76 -> 0.70, precision 0.92 -> 0.89 and false positives 0.29 -> 0.33.
+The prediction fails: the adversarial prompt did not buy recall. What it did do is
+cost a little precision and a few more false positives while not buying it, so the
+trade runs the wrong way on both ends. The axis stays separate anyway — the prompts
+are not interchangeable whichever way the scores happen to fall.
+
+The two new cases were the last to be recorded, and adding them changed the claim
+rather than confirming it. Over the original five — four file-scoped plus
+`repo-context`, which is repository-scoped like the two being added — the reading was
+recall 0.79 -> 0.72 with precision and false positives flat at 0.88 -> 0.87 and
+0.40 -> 0.40, which read as "it reports less, and that is the whole of the
+difference". At seven cases that sentence is no longer true. Its per-case behaviour
+is also not one behaviour: on `caller-contract` the adversarial cell posts **84.3**
+against `agy.deep`'s 68.3, and on `stale-duplicate` **55.0** against 66.7 — ahead by
+16 on one and behind by 12 on the other, both inside spreads of 46 and 40.
+
+`stale-duplicate` is worth reading as a shape rather than a number: `agy.adversarial`
+posts 55, 55, 55 there. That is not stability, it is the same half-answer three times
+— the v1 copy is missed in every repeat. A cell that fails identically has no spread,
+which is why spread is read here as *consistent* and never as *trustworthy*.
 
 An earlier version of this paragraph read 0.81 -> 0.77, 0.91 -> 0.92 and 1.67 -> 1.33.
 Those came off the matcher corrected below, which credited a finding for naming a
@@ -247,12 +264,21 @@ recorded against, every repeat in `samples`, and no `source`; a seeded one carri
   identical cases complete under `review --deep` and every adversarial case completes
   under `--engine agy`. It tracks prompt weight on the gemini engine, not the case and
   not the subcommand.
-- **`codex.adversarial` — live-recorded on all seven cases**, `agy.adversarial` on
-  five (codex-cli 0.149.0 and agy 1.1.19, three samples each, 2026-08-24 and
-  2026-08-25). On the two repository-scoped cases codex's adversarial reviewer scores
-  **43** and **65** against its own single-shot **0** and **62** — it explores, so the
-  gain is a harness reading and not a prompt one. `agy.adversarial` has not been run
-  on those two cases yet.
+- **`codex.adversarial` and `agy.adversarial` — both live-recorded on all seven
+  cases** (codex-cli 0.149.0, three samples each, all 2026-08-24; agy 1.1.19, three
+  samples each, five on 2026-08-24 and `caller-contract` and `stale-duplicate` on
+  2026-08-25). `agy.deep` and `agy.adversarial` now span the same seven cases, so
+  comparing *those two* is comparing prompts rather than case lists. That is not yet
+  true of the axes as a whole: `gemini.deep` holds five of seven, `codex.native` is
+  seeded on two, and `gemini.adversarial` is unrecorded entirely.
+  On the two repository-scoped cases codex's adversarial reviewer scores **43** and
+  **65** against its own single-shot **0** and **62**, and agy's scores **84** and
+  **55** against its own **0** and **43**. Only one of those four legs is a measurement
+  by this board's own rule: agy's +84 on `caller-contract`, against a band of 42.
+  Codex's +43 on the same case sits under its own ±65 (`codex.adversarial` posts
+  65, 0, 65 there), and the `stale-duplicate` legs are +12 for agy against ±65 and +3
+  for codex. So exploration is a reading for agy on `caller-contract` and nowhere else
+  yet — three of the four gains are inside the noise they would have to clear.
 - **`codex.native` — still seeded, and now for a known reason.** Pointing
   `BENCH_CODEX_COMPANION` at the installed codex plugin 1.0.6 makes the cell run: the
   companion completes, exits 0, and returns a payload carrying `review`, `target`,
@@ -371,7 +397,7 @@ have since been re-recorded, so none of them are comparable to these.
 | `agy.deep` | 77, 77, 96 | 88, 88, 52 | 69, 76, 69 | 69, 69, 69 | 93, 95, 93 | 95, 55, 55 | 55, 90, 55 | 40 |
 | `agy.shallow` | 81, 81, 81 | 0, 0, 45 | 62, 64, 81 | 69, 69, 69 | 76, 93, 76 | 0, 0, 0 | 0, 0, 55 | 55 |
 | `codex.adversarial` | 69, 81, 69 | 0, 0, 0 | 79, 79, 79 | 53, 53, 53 | 95, 76, 93 | 65, 0, 65 | 65, 65, 65 | **65** |
-| `agy.adversarial` | 64, 81, 79 | 42, 88, 42 | 81, 84, 84 | 53, 53, 53 | 98, 98, 95 | — | — | 46 |
+| `agy.adversarial` | 64, 81, 79 | 42, 88, 42 | 81, 84, 84 | 53, 53, 53 | 98, 98, 95 | 100, 95, 58 | 55, 55, 55 | 46 |
 
 An earlier version of this table carried a struck-through row for `gemini.deep` as it
 was before the engine mix-up was found — AGY under a gemini label. That row is gone
