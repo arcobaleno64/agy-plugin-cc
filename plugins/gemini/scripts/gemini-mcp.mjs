@@ -332,6 +332,19 @@ async function main() {
   }
 }
 
-if (process.argv[1] === SELF_PATH) {
+// Started as the process entry point (`node scripts/gemini-mcp.mjs`), or by the
+// `.mcp.json` bootstrap, which sets GEMINI_MCP_STDIO in its own process before
+// importing this module. The bootstrap exists because Codex passes MCP `args`
+// through literally -- it never expands ${CLAUDE_PLUGIN_ROOT} -- so the script
+// path has to be computed at runtime, and under `node -e` there is no argv[1]
+// to match against at all.
+if (process.argv[1] === SELF_PATH || process.env.GEMINI_MCP_STDIO === "1") {
+  // Consume the signal instead of propagating it. This process hands
+  // `process.env` to the detached worker it spawns, which hands it to the CLI,
+  // so an inherited flag would make every descendant that merely *imports* this
+  // module take over stdin and never exit -- a delegated turn running this
+  // repo's own suite hangs on the files that import it. Deleting it here is what
+  // keeps "importing this module starts nothing" true below the server too.
+  delete process.env.GEMINI_MCP_STDIO;
   main();
 }
