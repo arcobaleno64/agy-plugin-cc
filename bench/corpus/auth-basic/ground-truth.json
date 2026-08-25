@@ -9,7 +9,7 @@
       "line_start": 7,
       "line_end": 9,
       "severity": "critical",
-      "match": { "keywords": ["sql injection", "injection", "parameteriz", "concatenat"] }
+      "match": { "all": ["sql"], "keywords": ["injection", "parameteriz", "concatenat"] }
     },
     {
       "id": "hardcoded-secret",
@@ -18,7 +18,7 @@
       "line_start": 4,
       "line_end": 4,
       "severity": "high",
-      "match": { "keywords": ["hardcoded", "hard-coded", "hard coded", "secret in source", "jwt_secret"] }
+      "match": { "all": ["jwt_secret"], "keywords": ["hardcoded", "hard-coded", "hard coded", "secret in source", "in the source", "committed to source"] }
     },
     {
       "id": "null-check",
@@ -27,7 +27,7 @@
       "line_start": 14,
       "line_end": 15,
       "severity": "medium",
-      "match": { "keywords": ["null check", "null-check", "undefined", "may be null", "user could be", "missing check"] }
+      "match": { "all": ["finduser"], "keywords": ["null check", "null-check", "may be null", "could be null", "user could be", "missing check", "no row", "undefined"] }
     },
     {
       "id": "plaintext-compare",
@@ -36,7 +36,7 @@
       "line_start": 15,
       "line_end": 15,
       "severity": "high",
-      "match": { "keywords": ["plaintext", "plain text", "hash", "bcrypt", "constant-time", "timing attack"] }
+      "match": { "all": ["password"], "keywords": ["plaintext", "plain text", "hash", "bcrypt", "constant-time", "timing attack"] }
     },
     {
       "id": "json-parse",
@@ -45,7 +45,7 @@
       "line_start": 22,
       "line_end": 22,
       "severity": "high",
-      "match": { "keywords": ["json.parse", "unguarded", "try/catch", "throws", "malformed"] }
+      "match": { "all": ["json.parse"], "keywords": ["unguarded", "try/catch", "throws", "malformed", "invalid json"] }
     }
   ],
   "allowed_extras": [

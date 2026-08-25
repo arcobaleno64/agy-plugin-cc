@@ -9,15 +9,7 @@
       "line_start": 6,
       "line_end": 7,
       "severity": "high",
-      "match": {
-        "keywords": [
-          "no assertion",
-          "asserts nothing",
-          "does not assert",
-          "always passes",
-          "no expectation"
-        ]
-      }
+      "match": { "all": ["parsesession"], "keywords": ["no assertion", "asserts nothing", "does not assert", "always passes", "no expectation"] }
     },
     {
       "id": "vacuous-ordering",
@@ -26,18 +18,7 @@
       "line_start": 11,
       "line_end": 12,
       "severity": "high",
-      "match": {
-        "keywords": [
-          "indexof",
-          "-1",
-          "not present",
-          "absent",
-          "empty",
-          "vacuous",
-          "passes when",
-          "missing element"
-        ]
-      }
+      "match": { "all": ["indexof"], "keywords": ["-1", "not present", "absent", "vacuous", "passes when", "missing element"] }
     },
     {
       "id": "permanent-skip",
@@ -46,15 +27,7 @@
       "line_start": 15,
       "line_end": 18,
       "severity": "medium",
-      "match": {
-        "keywords": [
-          "skip",
-          "never runs",
-          "disabled",
-          "not executed",
-          "unprotected"
-        ]
-      }
+      "match": { "all": ["test.skip"], "keywords": ["never runs", "disabled", "not executed", "skipped permanently", "unprotected"] }
     },
     {
       "id": "assertion-never-runs",
@@ -63,17 +36,7 @@
       "line_start": 22,
       "line_end": 24,
       "severity": "high",
-      "match": {
-        "keywords": [
-          "callback",
-          "nexttick",
-          "after the test",
-          "never runs",
-          "asynchronous",
-          "not awaited",
-          "test ends"
-        ]
-      }
+      "match": { "all": ["nexttick"], "keywords": ["callback", "after the test", "never runs", "asynchronous", "not awaited", "test ends"] }
     }
   ],
   "allowed_extras": [

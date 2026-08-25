@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { scoreReview, findingMatchesPlanted, normalizeFile } from "./lib/score.mjs";
+import { CELL_IDS } from "./lib/cells.mjs";
 import { _internal as adapters } from "./lib/adapters.mjs";
 import { buildScorecard } from "./lib/report.mjs";
 import { cassettePath, writeCassette } from "./lib/cassette.mjs";
@@ -67,6 +68,144 @@ test("findingMatchesPlanted matches on keyword when lines are off", () => {
 test("findingMatchesPlanted rejects a different file", () => {
   const f = finding({ file: "src/other.js", line_start: 11, line_end: 11 });
   assert.equal(findingMatchesPlanted(f, TRUTH.planted[0]), false);
+});
+
+// The real miss this pins: `repo-context` plants an undeclared-dependency defect
+// with `file: "*"`, so matching is keyword-only, and one of its keywords was the
+// bare module name. Every reviewer that discussed `src/token.js` at all wrote
+// "jsonwebtoken" somewhere in the body, so a finding about an unvalidated secret
+// was credited with catching a missing manifest entry it never mentioned. That
+// single false credit was worth 42 composite points to one cell (96.7 -> 55.0) and
+// not to others, which is worse than being wrong uniformly: it moved the cells
+// relative to each other, and the whole benchmark is a comparison between cells.
+//
+// `match.all` is the subject the finding has to actually be about; `match.keywords`
+// stays any-of, so a reviewer's choice of words for the claim is still free.
+test("a wildcard defect is not credited to a finding about a different subject", () => {
+  const truth = {
+    planted: [
+      {
+        id: "missing-dependency",
+        file: "*",
+        line_start: 1,
+        line_end: 1,
+        severity: "high",
+        match: {
+          all: ["jsonwebtoken"],
+          keywords: ["undeclared", "not declared", "missing dependency", "not in package.json"]
+        }
+      }
+    ],
+    allowed_extras: []
+  };
+
+  // Says the claim, about the wrong module. Keyword-only matching credits it.
+  const wrongSubject = finding({
+    severity: "high",
+    title: "Missing dependency on the validation middleware",
+    body: "src/routes/profile.js calls validateBody(), which is not declared anywhere in this package.",
+    file: "src/routes/profile.js"
+  });
+  // Names the subject, makes a different claim. `all` alone would credit it.
+  const wrongClaim = finding({
+    severity: "critical",
+    title: "JWT_SECRET used without validation",
+    body: "process.env.JWT_SECRET goes straight to jwt.sign(). Empty string, and jsonwebtoken signs with a zero-length secret.",
+    file: "src/token.js"
+  });
+  // Both: this is the finding the defect was planted for.
+  const theCatch = finding({
+    severity: "high",
+    title: "Undeclared 'jsonwebtoken' dependency",
+    body: "src/token.js requires jsonwebtoken, which is not declared in package.json.",
+    file: "src/token.js"
+  });
+
+  assert.equal(findingMatchesPlanted(wrongSubject, truth.planted[0]), false);
+  assert.equal(findingMatchesPlanted(wrongClaim, truth.planted[0]), false);
+  assert.equal(findingMatchesPlanted(theCatch, truth.planted[0]), true);
+
+  const missed = scoreReview([wrongSubject, wrongClaim], truth);
+  assert.equal(missed.found, 0);
+  assert.equal(missed.falsePositives, 2);
+  assert.deepEqual(missed.missed, ["missing-dependency"]);
+
+  const caught = scoreReview([theCatch], truth);
+  assert.equal(caught.found, 1);
+  assert.equal(caught.falsePositives, 0);
+});
+
+test("every term in `all` has to be there, not just one of them", () => {
+  const planted = {
+    id: "unread-config-key",
+    file: "*",
+    line_start: 1,
+    line_end: 1,
+    severity: "high",
+    match: { all: ["maxbatch", "default.json"], keywords: ["missing", "absent", "not defined"] }
+  };
+
+  // Names the key, blames the wrong file. One of two required terms.
+  const halfRight = finding({
+    title: "config.maxBatch is missing",
+    body: "worker.js reads config.maxBatch, which nothing in src/ ever defines.",
+    file: "src/worker.js"
+  });
+  const bothTerms = finding({
+    title: "config.maxBatch is missing from the shipped config",
+    body: "src/worker.js reads config.maxBatch; config/default.json does not define it.",
+    file: "src/worker.js"
+  });
+
+  assert.equal(findingMatchesPlanted(halfRight, planted), false);
+  assert.equal(findingMatchesPlanted(bothTerms, planted), true);
+});
+
+// A guard on the corpus rather than on the scorer. A `file: "*"` defect has no
+// filename to disambiguate it, so words are the whole rule, and the failure this
+// pins is silent: the defect keeps matching, just too much. Requiring `all` does
+// not make the subject right — it makes leaving the subject out a test failure
+// instead of a number nobody questions.
+test("every repository-scoped defect declares the subject it is about", () => {
+  const corpusDir = path.join(import.meta.dirname, "corpus");
+  const cases = fs
+    .readdirSync(corpusDir, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name);
+  assert.ok(cases.length > 0, "corpus is empty");
+
+  const offenders = [];
+  for (const caseId of cases) {
+    const file = path.join(corpusDir, caseId, "ground-truth.json");
+    if (!fs.existsSync(file)) continue;
+    const truth = JSON.parse(fs.readFileSync(file, "utf8"));
+    for (const p of truth.planted ?? []) {
+      if (p.file && p.file !== "*") continue;
+      if (!Array.isArray(p.match?.all) || p.match.all.length === 0) {
+        offenders.push(`${caseId}/${p.id}`);
+      }
+    }
+  }
+  assert.deepEqual(offenders, []);
+});
+
+// The README's cell table is the only place a reader learns what is on the board,
+// and it drifted silently: two cells were added and the table kept describing nine.
+// A table that omits a cell does not look broken, it looks complete.
+test("the README's cell table lists exactly the cells that exist", () => {
+  // Normalize line endings first. A Windows checkout stores this file with CRLF, so
+  // searching for "\n\n" finds nothing, and `slice(from, -1)` then hands the rest of
+  // the README to a regex that happily matches every later table too.
+  const readme = fs
+    .readFileSync(path.join(import.meta.dirname, "README.md"), "utf8")
+    .replace(/\r\n/g, "\n");
+  const from = readme.indexOf("| Cell | What it is | Isolates |");
+  assert.notEqual(from, -1, "cell table header not found in bench/README.md");
+  const until = readme.indexOf("\n\n", from);
+  assert.notEqual(until, -1, "cell table is not followed by a blank line");
+  const table = readme.slice(from, until);
+  const documented = [...table.matchAll(/^\| `([a-z]+\.[a-z]+)` \|/gm)].map((m) => m[1]);
+  assert.deepEqual([...documented].sort(), [...CELL_IDS].sort());
 });
 
 test("scoreReview gives full recall and clean precision when both planted defects are found", () => {
@@ -486,4 +625,94 @@ test("a companion that cannot say which engine ran is a failure, not a pass", ()
   assert.match(String(silent), /did not report/, "an unreporting companion fails the cell");
 
   assert.equal(adapters.assertExpectedEngine({ engine: null }, null), null, "a cell with no expectation is unaffected");
+});
+
+test("a refused AGY run reports the reason AGY gave, not an empty parenthesis", () => {
+  // AGY puts a refusal in the envelope's `error` and leaves stderr empty. The
+  // failure message used to echo stderr alone, so a spent account read as
+  // `could not parse review JSON ()` — indistinguishable from a parser bug, and
+  // diagnosed as one for three recording attempts.
+  const quotaEnvelope = {
+    conversation_id: "5504cb18",
+    status: "ERROR",
+    response: "",
+    error: "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 94h2m50s."
+  };
+  const stub = () => ({ status: 1, stdout: JSON.stringify(quotaEnvelope), stderr: "" });
+
+  const refused = adapters.runAgyModel("review this", { spawnImpl: stub, resolveBinaryImpl: () => "/usr/bin/agy" });
+  assert.equal(refused.ok, false, "an envelope carrying no review is still a failure");
+  assert.match(String(refused.error), /Individual quota reached/);
+});
+
+test("a cell whose cases were recorded on different versions says so", () => {
+  // Taking the first cassette's version to stand for the cell is how a table states
+  // what a column is supposed to hold rather than what it holds. `agy.model` really
+  // did end up four cases on 1.1.19 and one on 1.1.15 after a re-record was refused.
+  const row = (caseId, engineVersion) => ({
+    caseId,
+    cell: "agy.model",
+    status: "ok",
+    score: { composite: 90, recall: 1, precision: 1, falsePositives: 0, bonus: 0, severityExactRate: 1, missed: [] },
+    latencyMs: 1000,
+    provenance: { seeded: false, recordedAt: "2026-08-24T00:00:00.000Z", engineVersion, samples: 3 }
+  });
+
+  const mixed = buildScorecard([row("c1", "1.1.19"), row("c2", "1.1.19"), row("c3", "1.1.15")]);
+  assert.match(mixed.markdown, /1\.1\.19 ×3 · 1 case on 1\.1\.15/);
+
+  const uniform = buildScorecard([row("c1", "1.1.19"), row("c2", "1.1.19")]);
+  assert.doesNotMatch(uniform.markdown, /case on/, "a cell recorded on one version says nothing extra");
+});
+
+test("the adversarial cells run their tool's adversarial subcommand, not review", () => {
+  // The whole reason the adversarial axis exists is that these are a different
+  // reviewer, so a cell that quietly ran `review` would make the axis a duplicate
+  // of the harness one under a different name.
+  const seen = [];
+  const stub = (_bin, args) => {
+    seen.push(args);
+    return {
+      status: 0,
+      stdout: JSON.stringify({ engine: "agy", result: { verdict: "approve", summary: "s", findings: [] } }),
+      stderr: ""
+    };
+  };
+
+  adapters.runCompanionReview("/companion.mjs", "/repo", ["--deep"], "agy", {
+    spawnImpl: stub,
+    subcommand: "adversarial-review"
+  });
+  assert.equal(seen[0][1], "adversarial-review");
+
+  adapters.runCompanionReview("/companion.mjs", "/repo", ["--deep"], "agy", { spawnImpl: stub });
+  assert.equal(seen[1][1], "review", "the default stays what every existing cell passes");
+});
+
+test("the scorecard carries an adversarial axis of its own", () => {
+  // Folding these into the harness axis would rank a prompt that asks the model to
+  // break confidence in the change against one that asks for a pragmatic review.
+  const row = (cell, composite) => ({
+    caseId: "c1",
+    cell,
+    status: "ok",
+    score: { composite, recall: 1, precision: 1, falsePositives: 0, bonus: 0, severityExactRate: 1, missed: [] },
+    latencyMs: 1000,
+    provenance: { seeded: false, recordedAt: "2026-08-24T00:00:00.000Z", engineVersion: "1.1.19", samples: 3 }
+  });
+
+  const card = buildScorecard([row("agy.adversarial", 90), row("codex.adversarial", 60), row("agy.deep", 80)]);
+  const lineFor = (name) => String(card.markdown.split(/\r?\n/).find((l) => l.includes(`**${name}**`)));
+
+  // Assert what each axis *contains*, not merely that a row with the right title was
+  // printed: pointing the adversarial axis at the harness track still renders the
+  // row, so a title-only assertion passes while the axis reads the wrong cells.
+  const adversarial = lineFor("Adversarial");
+  assert.match(adversarial, /agy 90/);
+  assert.match(adversarial, /codex 60/);
+  assert.doesNotMatch(adversarial, /80/, "agy.deep belongs to the harness axis, not this one");
+
+  const harness = lineFor("Harness");
+  assert.match(harness, /agy 80/);
+  assert.doesNotMatch(harness, /90|60/, "the adversarial cells must not leak into the harness axis");
 });

@@ -19,6 +19,7 @@ Start with the [README](../README.md). Nothing here is required reading to use t
 | [`version-sources.md`](version-sources.md) | Which file is authoritative for each version string, and what keeps them in lockstep. |
 | [`verifying-without-credentials.md`](verifying-without-credentials.md) | How to exercise the engine paths without a Gemini or AGY account. |
 | [`evidence.md`](evidence.md) | The rule this repository investigates by: nothing counts as evidence until it has been seen to fail. Includes the traps already paid for. |
+| [`HANDOVER_MARKETING_AND_RELEASE_PLAYBOOK.md`](HANDOVER_MARKETING_AND_RELEASE_PLAYBOOK.md) | Master handover playbook: Enterprise growth, MCP registry setup, AI-era SEO/AEO/GEO architecture, automated validation metrics, and v1.0.0 roadmap. |
 
 ## Dated records — never rewritten
 

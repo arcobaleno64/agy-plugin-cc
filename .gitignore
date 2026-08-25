@@ -11,6 +11,15 @@ plugins/gemini/scripts/lib/*.log
 # Generated benchmark scorecards
 bench/results/
 
+# Generated AEO benchmark reports (scripts/aeo-benchmark.mjs writes here)
+docs/benchmarks/
+
+# Generated documentation bundle (npm run build:llms-full). Ignored while GitHub
+# Pages is off, because nothing serves it: the /llms.txt spec points this at
+# arcobaleno64.github.io, which is not configured. Turning Pages on means
+# deciding where this is served from, and that decision belongs with this line.
+docs/llms-full.txt
+
 # OS artifacts
 .DS_Store
 Thumbs.db

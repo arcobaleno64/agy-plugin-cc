@@ -9,17 +9,7 @@
       "line_start": 26,
       "line_end": 28,
       "severity": "critical",
-      "match": {
-        "keywords": [
-          "swallow",
-          "ok: true",
-          "reports success",
-          "silently",
-          "catch block",
-          "hides the error",
-          "always returns"
-        ]
-      }
+      "match": { "all": ["runone"], "keywords": ["swallow", "ok: true", "reports success", "silently", "catch block", "hides the error", "always returns", "masks"] }
     },
     {
       "id": "handle-leak",
@@ -28,16 +18,7 @@
       "line_start": 6,
       "line_end": 10,
       "severity": "high",
-      "match": {
-        "keywords": [
-          "file handle",
-          "not closed",
-          "leak",
-          "finally",
-          "close()",
-          "descriptor"
-        ]
-      }
+      "match": { "all": ["openjob"], "keywords": ["file handle", "not closed", "leak", "finally", "close()", "descriptor"] }
     },
     {
       "id": "unbounded-interval",
@@ -46,15 +27,7 @@
       "line_start": 16,
       "line_end": 18,
       "severity": "medium",
-      "match": {
-        "keywords": [
-          "setinterval",
-          "never cleared",
-          "clearinterval",
-          "no handle",
-          "runs forever"
-        ]
-      }
+      "match": { "all": ["setinterval"], "keywords": ["never cleared", "clearinterval", "no handle", "runs forever", "cannot be stopped"] }
     },
     {
       "id": "floating-promise",
@@ -63,16 +36,7 @@
       "line_start": 17,
       "line_end": 17,
       "severity": "high",
-      "match": {
-        "keywords": [
-          "not awaited",
-          "floating promise",
-          "unhandled rejection",
-          "no await",
-          "no catch",
-          "promise is ignored"
-        ]
-      }
+      "match": { "all": ["appendfile"], "keywords": ["not awaited", "floating promise", "unhandled rejection", "no await", "no catch", "promise is ignored"] }
     },
     {
       "id": "unbounded-map",
@@ -81,16 +45,7 @@
       "line_start": 3,
       "line_end": 7,
       "severity": "medium",
-      "match": {
-        "keywords": [
-          "never removed",
-          "grows",
-          "unbounded",
-          "memory",
-          "delete",
-          "map is never"
-        ]
-      }
+      "match": { "all": ["handles"], "keywords": ["never removed", "grows", "unbounded", "delete", "never cleaned"] }
     }
   ],
   "allowed_extras": [

@@ -53,6 +53,14 @@ export function ensureGitRepository(cwd) {
   const result = git(cwd, ["rev-parse", "--show-toplevel"]);
   const errorCode = result.error && "code" in result.error ? result.error.code : null;
   if (errorCode === "ENOENT") {
+    // spawn reports ENOENT for two different absences, and they were both being
+    // read as the first: the binary is not on PATH, or `cwd` does not exist. The
+    // error object cannot tell them apart on Windows — it names the command in
+    // `path` either way — so ask the filesystem. Told "git is not installed" by a
+    // machine with git plainly installed, a caller goes and debugs PATH.
+    if (cwd && !fs.existsSync(cwd)) {
+      throw new Error(`Cannot run git: the directory ${cwd} does not exist.`);
+    }
     throw new Error("git is not installed. Install Git and retry.");
   }
   if (result.status !== 0) {

@@ -58,7 +58,7 @@ function spreadOf(scores) {
 
 function liveCell({ caseId, cell, promptText, repeats, truth }) {
   let repoCtx = null;
-  const needsRepo = CELLS[cell]?.harness === "agentic";
+  const needsRepo = CELLS[cell]?.needsRepo ?? CELLS[cell]?.harness === "agentic";
   try {
     const scores = [];
     const results = [];

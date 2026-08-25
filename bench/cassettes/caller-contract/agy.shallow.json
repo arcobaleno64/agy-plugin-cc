@@ -1,0 +1,32 @@
+{
+  "caseId": "caller-contract",
+  "cell": "agy.shallow",
+  "recordedAt": "2026-08-24T15:26:34.882Z",
+  "verdict": "approve",
+  "summary": "Refactored findUser to return a structured result envelope cleanly and without defects.",
+  "findings": [],
+  "latencyMs": 17545,
+  "engineVersion": "1.1.19",
+  "engineObserved": "agy",
+  "samples": [
+    {
+      "verdict": "approve",
+      "summary": "findUser correctly returns a result envelope for both matched and unmatched user lookups.",
+      "findings": [],
+      "latencyMs": 17920
+    },
+    {
+      "verdict": "approve",
+      "summary": "The findUser function correctly implements the result envelope pattern without logic or safety defects.",
+      "findings": [],
+      "latencyMs": 18197
+    },
+    {
+      "verdict": "approve",
+      "summary": "Refactored findUser to return a structured result envelope cleanly and without defects.",
+      "findings": [],
+      "latencyMs": 17545
+    }
+  ],
+  "raw": "{\n  \"review\": \"Review\",\n  \"target\": {\n    \"mode\": \"working-tree\",\n    \"label\": \"working tree diff\",\n    \"explicit\": true\n  },\n  \"engine\": \"agy\",\n  \"gemini\": {\n    \"status\": 0,\n    \"stdout\": \"{\\n  \\\"verdict\\\": \\\"approve\\\",\\n  \\\"summary\\\": \\\"Refactored findUser to return a structured result envelope cleanly and without defects.\\\",\\n  \\\"findings\\\": [],\\n  \\\"next_steps\\\": []\\n}\",\n    \"stderr\": \"\"\n  },\n  \"result\": {\n    \"verdict\": \"approve\",\n    \"summary\": \"Refactored findUser to return a structured result envelope cleanly and without defects.\",\n    \"findings\": [],\n    \"next_steps\": []\n  }\n}\n"
+}

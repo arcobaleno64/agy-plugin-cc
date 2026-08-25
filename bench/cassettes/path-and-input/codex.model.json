@@ -1,0 +1,126 @@
+{
+  "caseId": "path-and-input",
+  "cell": "codex.model",
+  "recordedAt": "2026-08-24T04:41:05.746Z",
+  "verdict": "needs-attention",
+  "summary": "User-controlled names permit arbitrary file reads and shell command execution.",
+  "findings": [
+    {
+      "severity": "critical",
+      "title": "Shell command injection in archive",
+      "body": "archive interpolates name directly into an execSync shell command. A crafted name containing shell metacharacters can execute arbitrary commands with the process privileges; quoting only the path would also be insufficient without avoiding the shell.",
+      "file": "src/files.js",
+      "line_start": 12,
+      "line_end": 14,
+      "confidence": 0.99,
+      "recommendation": "Use spawnSync or execFileSync with an argument array and shell disabled, validate name against an allowlist, and constrain the resolved source path to ROOT."
+    },
+    {
+      "severity": "high",
+      "title": "Path traversal permits arbitrary file reads",
+      "body": "readUpload joins an untrusted name to ROOT without verifying containment. Absolute paths or ../ segments can escape /srv/uploads and expose any readable UTF-8 file on the host.",
+      "file": "src/files.js",
+      "line_start": 7,
+      "line_end": 10,
+      "confidence": 0.99,
+      "recommendation": "Resolve the candidate path, verify it remains beneath ROOT using path.relative or an equivalent containment check, and reject absolute paths and traversal segments."
+    }
+  ],
+  "latencyMs": 18262,
+  "engineVersion": "codex-cli 0.149.0",
+  "engineObserved": null,
+  "samples": [
+    {
+      "verdict": "needs-attention",
+      "summary": "Untrusted upload names enable arbitrary file reads and shell command execution.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Shell command injection in archive",
+          "body": "archive interpolates name directly into an execSync shell command on line 13. A crafted name containing shell metacharacters can execute arbitrary commands with the process privileges; spaces or option-like names can also corrupt the tar invocation.",
+          "file": "src/files.js",
+          "line_start": 12,
+          "line_end": 14,
+          "confidence": 0.99,
+          "recommendation": "Avoid the shell: use execFileSync or spawnSync with an argument array, validate the name, resolve the source under ROOT, and pass -- before file operands."
+        },
+        {
+          "severity": "high",
+          "title": "Path traversal permits reads outside upload root",
+          "body": "readUpload joins ROOT with an unvalidated name. Values containing ../ are normalized and can escape /srv/uploads, allowing disclosure of any readable UTF-8 file on the host.",
+          "file": "src/files.js",
+          "line_start": 7,
+          "line_end": 10,
+          "confidence": 0.99,
+          "recommendation": "Resolve the candidate path, verify it remains inside ROOT using a separator-aware containment check, and reject absolute or traversal-containing names before reading."
+        }
+      ],
+      "latencyMs": 21553
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Untrusted names enable command execution and filesystem access outside the upload directory.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Shell command injection in archive",
+          "body": "archive interpolates name directly into an execSync shell command twice without quoting or validation. A crafted name containing shell metacharacters can execute arbitrary commands with the service's privileges; leading option characters can also alter tar behavior.",
+          "file": "src/files.js",
+          "line_start": 12,
+          "line_end": 14,
+          "confidence": 1,
+          "recommendation": "Use execFileSync or spawnSync with an argument array and shell disabled, validate the name against an allowlist, and pass -- before file operands."
+        },
+        {
+          "severity": "high",
+          "title": "Upload path traversal",
+          "body": "readUpload joins an unchecked name to ROOT. Values containing parent-directory segments can normalize outside /srv/uploads, allowing disclosure of any readable UTF-8 file reachable by the process.",
+          "file": "src/files.js",
+          "line_start": 7,
+          "line_end": 10,
+          "confidence": 0.99,
+          "recommendation": "Resolve the candidate path, verify it remains beneath ROOT using path.relative or a separator-aware prefix check, and reject absolute paths and traversal segments."
+        },
+        {
+          "severity": "medium",
+          "title": "Page input is accepted without validation",
+          "body": "parseInt accepts malformed prefixes such as \"1junk\", while negative, out-of-range, missing, or nonnumeric values produce unintended indexing or undefined. Callers can therefore receive the wrong page or silently continue with no page.",
+          "file": "src/files.js",
+          "line_start": 16,
+          "line_end": 19,
+          "confidence": 0.96,
+          "recommendation": "Require a canonical integer value, verify Number.isInteger(page) and 0 <= page < pages.length, and return or throw an explicit input error otherwise."
+        }
+      ],
+      "latencyMs": 23438
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "User-controlled names permit arbitrary file reads and shell command execution.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Shell command injection in archive",
+          "body": "archive interpolates name directly into an execSync shell command. A crafted name containing shell metacharacters can execute arbitrary commands with the process privileges; quoting only the path would also be insufficient without avoiding the shell.",
+          "file": "src/files.js",
+          "line_start": 12,
+          "line_end": 14,
+          "confidence": 0.99,
+          "recommendation": "Use spawnSync or execFileSync with an argument array and shell disabled, validate name against an allowlist, and constrain the resolved source path to ROOT."
+        },
+        {
+          "severity": "high",
+          "title": "Path traversal permits arbitrary file reads",
+          "body": "readUpload joins an untrusted name to ROOT without verifying containment. Absolute paths or ../ segments can escape /srv/uploads and expose any readable UTF-8 file on the host.",
+          "file": "src/files.js",
+          "line_start": 7,
+          "line_end": 10,
+          "confidence": 0.99,
+          "recommendation": "Resolve the candidate path, verify it remains beneath ROOT using path.relative or an equivalent containment check, and reject absolute paths and traversal segments."
+        }
+      ],
+      "latencyMs": 18262
+    }
+  ],
+  "raw": "{\"verdict\":\"needs-attention\",\"summary\":\"User-controlled names permit arbitrary file reads and shell command execution.\",\"findings\":[{\"severity\":\"critical\",\"title\":\"Shell command injection in archive\",\"body\":\"archive interpolates name directly into an execSync shell command. A crafted name containing shell metacharacters can execute arbitrary commands with the process privileges; quoting only the path would also be insufficient without avoiding the shell.\",\"file\":\"src/files.js\",\"line_start\":12,\"line_end\":14,\"confidence\":0.99,\"recommendation\":\"Use spawnSync or execFileSync with an argument array and shell disabled, validate name against an allowlist, and constrain the resolved source path to ROOT.\"},{\"severity\":\"high\",\"title\":\"Path traversal permits arbitrary file reads\",\"body\":\"readUpload joins an untrusted name to ROOT without verifying containment. Absolute paths or ../ segments can escape /srv/uploads and expose any readable UTF-8 file on the host.\",\"file\":\"src/files.js\",\"line_start\":7,\"line_end\":10,\"confidence\":0.99,\"recommendation\":\"Resolve the candidate path, verify it remains beneath ROOT using path.relative or an equivalent containment check, and reject absolute paths and traversal segments.\"}],\"next_steps\":[\"Replace shell command construction and add canonical-path containment validation with traversal and command-injection tests.\"]}\n"
+}

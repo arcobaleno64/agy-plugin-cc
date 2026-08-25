@@ -1,115 +1,96 @@
 {
   "caseId": "repo-context",
   "cell": "codex.model",
-  "recordedAt": "2026-08-19T03:19:24.977Z",
+  "recordedAt": "2026-08-24T04:44:46.517Z",
   "verdict": "needs-attention",
-  "summary": "Token issuance can fail at runtime without configuration validation, and committed runtime state can misidentify an unrelated process as an active job.",
+  "summary": "The diff commits live runtime state and adds token issuance without validating its signing secret.",
   "findings": [
     {
-      "severity": "medium",
-      "title": "JWT secret is used without startup validation",
-      "body": "issue() passes process.env.JWT_SECRET directly to jwt.sign; when the variable is absent, token issuance throws synchronously, leaving callers to encounter an avoidable runtime failure instead of a clear configuration error.",
-      "file": "src/token.js",
-      "line_start": 4,
-      "line_end": 4,
-      "confidence": 0.99,
-      "recommendation": "Validate JWT_SECRET at application startup, require a non-empty suitably strong value, and fail with an explicit configuration error before serving requests."
-    },
-    {
-      "severity": "medium",
-      "title": "Ephemeral job state is committed with a live status and fixed PID",
-      "body": "The new state file declares task-123 as running under PID 4242. On another machine or later checkout, that PID may be stale or belong to an unrelated process, so consumers trusting this file could report a nonexistent job or act on the wrong process.",
+      "severity": "high",
+      "title": "Runtime job state is committed as active",
+      "body": "The new state file records a hard-coded running job and PID. Any code that consumes this persisted state can treat a nonexistent task as active or target an unrelated process if PID 4242 is reused, disrupting job recovery or process management.",
       "file": ".omc/state/job.json",
       "line_start": 1,
       "line_end": 1,
+      "confidence": 0.97,
+      "recommendation": "Remove the runtime state file from version control and ignore `.omc/state/`; create and validate job state only at runtime, including checking process identity before acting on a stored PID."
+    },
+    {
+      "severity": "medium",
+      "title": "Missing JWT secret validation",
+      "body": "Token issuance passes `process.env.JWT_SECRET` directly to `jwt.sign`. If the variable is absent or empty, issuance throws synchronously with no controlled configuration error, potentially turning authentication requests into unhandled failures.",
+      "file": "src/token.js",
+      "line_start": 3,
+      "line_end": 4,
       "confidence": 0.96,
-      "recommendation": "Remove the runtime state file from version control, ignore generated .omc/state data, and create state dynamically with PID identity and liveness validation."
+      "recommendation": "Validate `JWT_SECRET` during application startup and fail with an explicit configuration error before serving requests; ensure callers convert signing failures into controlled responses."
     }
   ],
-  "latencyMs": 17229,
-  "engineVersion": "codex-cli 0.147.0",
+  "latencyMs": 20153,
+  "engineVersion": "codex-cli 0.149.0",
+  "engineObserved": null,
   "samples": [
     {
       "verdict": "needs-attention",
-      "summary": "The diff commits stale runtime state and adds token issuance without explicit secret validation.",
-      "findings": [
-        {
-          "severity": "medium",
-          "title": "Runtime job state is committed as active",
-          "body": "The newly tracked state file declares task-123 as running under PID 4242, but both status and PID are ephemeral machine state. A checkout can therefore begin with a false active-job record, potentially blocking new work or causing any state consumer to target an unrelated reused PID.",
-          "file": ".omc/state/job.json",
-          "line_start": 1,
-          "line_end": 1,
-          "confidence": 0.96,
-          "recommendation": "Remove the runtime state file from version control, add the state path to the appropriate ignore file, and create job state only at runtime with stale-PID validation."
-        },
-        {
-          "severity": "medium",
-          "title": "JWT secret is used without configuration validation",
-          "body": "issue passes process.env.JWT_SECRET directly to jwt.sign. If the variable is missing or invalid, token issuance fails at runtime with a library exception and no clear configuration error at startup; this leaves an incomplete failure path in every caller relying on this function.",
-          "file": "src/token.js",
-          "line_start": 3,
-          "line_end": 4,
-          "confidence": 0.93,
-          "recommendation": "Validate JWT_SECRET once during application initialization, reject missing or insufficient configuration with a clear error, and inject the validated secret into the token issuer."
-        }
-      ],
-      "latencyMs": 17835
-    },
-    {
-      "verdict": "needs-attention",
-      "summary": "Token issuance can fail at runtime when JWT configuration is absent, and committed transient job state can become immediately stale.",
+      "summary": "Token issuance can fail at runtime because the signing secret is used without validation.",
       "findings": [
         {
           "severity": "medium",
           "title": "Missing JWT secret validation",
-          "body": "issue() passes process.env.JWT_SECRET directly to jwt.sign; when the variable is missing, jsonwebtoken throws synchronously, leaving token issuance to fail with an unhandled configuration error at runtime.",
-          "file": "src/token.js",
-          "line_start": 3,
-          "line_end": 4,
-          "confidence": 0.99,
-          "recommendation": "Validate JWT_SECRET during application startup, reject empty or inadequate values, and fail with an explicit configuration error before serving requests."
-        },
-        {
-          "severity": "medium",
-          "title": "Transient running-job state is committed",
-          "body": "The repository now records a job as running with hard-coded PID 4242. After checkout or process termination this state is stale, so automation that trusts it may treat a nonexistent or unrelated process as the active job.",
-          "file": ".omc/state/job.json",
-          "line_start": 1,
-          "line_end": 1,
-          "confidence": 0.94,
-          "recommendation": "Remove the runtime state file from version control, ignore .omc/state artifacts, and generate and validate job/PID state at runtime."
-        }
-      ],
-      "latencyMs": 17946
-    },
-    {
-      "verdict": "needs-attention",
-      "summary": "Token issuance can fail at runtime without configuration validation, and committed runtime state can misidentify an unrelated process as an active job.",
-      "findings": [
-        {
-          "severity": "medium",
-          "title": "JWT secret is used without startup validation",
-          "body": "issue() passes process.env.JWT_SECRET directly to jwt.sign; when the variable is absent, token issuance throws synchronously, leaving callers to encounter an avoidable runtime failure instead of a clear configuration error.",
+          "body": "issue() passes process.env.JWT_SECRET directly to jwt.sign without checking that it is configured and non-empty; a missing secret causes token issuance to throw at runtime, potentially breaking every authentication request instead of producing a clear startup/configuration failure.",
           "file": "src/token.js",
           "line_start": 4,
           "line_end": 4,
           "confidence": 0.99,
-          "recommendation": "Validate JWT_SECRET at application startup, require a non-empty suitably strong value, and fail with an explicit configuration error before serving requests."
-        },
+          "recommendation": "Validate JWT_SECRET during application startup and fail fast with a clear configuration error; keep issue() unreachable until a non-empty secret is available."
+        }
+      ],
+      "latencyMs": 19265
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "JWT issuance depends on an unvalidated runtime secret and can fail or produce weakly protected tokens.",
+      "findings": [
         {
-          "severity": "medium",
-          "title": "Ephemeral job state is committed with a live status and fixed PID",
-          "body": "The new state file declares task-123 as running under PID 4242. On another machine or later checkout, that PID may be stale or belong to an unrelated process, so consumers trusting this file could report a nonexistent job or act on the wrong process.",
+          "severity": "high",
+          "title": "JWT secret is not validated",
+          "body": "src/token.js passes process.env.JWT_SECRET directly to jwt.sign without verifying that it exists and has sufficient entropy. A missing value causes token issuance to throw at runtime, while a weak configured value permits attackers to forge valid tokens.",
+          "file": "src/token.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 0.98,
+          "recommendation": "Validate JWT_SECRET during application startup, fail with a clear configuration error when absent, and enforce an appropriately strong secret; pass the validated value into this module."
+        }
+      ],
+      "latencyMs": 20942
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "The diff commits live runtime state and adds token issuance without validating its signing secret.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Runtime job state is committed as active",
+          "body": "The new state file records a hard-coded running job and PID. Any code that consumes this persisted state can treat a nonexistent task as active or target an unrelated process if PID 4242 is reused, disrupting job recovery or process management.",
           "file": ".omc/state/job.json",
           "line_start": 1,
           "line_end": 1,
+          "confidence": 0.97,
+          "recommendation": "Remove the runtime state file from version control and ignore `.omc/state/`; create and validate job state only at runtime, including checking process identity before acting on a stored PID."
+        },
+        {
+          "severity": "medium",
+          "title": "Missing JWT secret validation",
+          "body": "Token issuance passes `process.env.JWT_SECRET` directly to `jwt.sign`. If the variable is absent or empty, issuance throws synchronously with no controlled configuration error, potentially turning authentication requests into unhandled failures.",
+          "file": "src/token.js",
+          "line_start": 3,
+          "line_end": 4,
           "confidence": 0.96,
-          "recommendation": "Remove the runtime state file from version control, ignore generated .omc/state data, and create state dynamically with PID identity and liveness validation."
+          "recommendation": "Validate `JWT_SECRET` during application startup and fail with an explicit configuration error before serving requests; ensure callers convert signing failures into controlled responses."
         }
       ],
-      "latencyMs": 17229
+      "latencyMs": 20153
     }
   ],
-  "raw": "{\"verdict\":\"needs-attention\",\"summary\":\"Token issuance can fail at runtime without configuration validation, and committed runtime state can misidentify an unrelated process as an active job.\",\"findings\":[{\"severity\":\"medium\",\"title\":\"JWT secret is used without startup validation\",\"body\":\"issue() passes process.env.JWT_SECRET directly to jwt.sign; when the variable is absent, token issuance throws synchronously, leaving callers to encounter an avoidable runtime failure instead of a clear configuration error.\",\"file\":\"src/token.js\",\"line_start\":4,\"line_end\":4,\"confidence\":0.99,\"recommendation\":\"Validate JWT_SECRET at application startup, require a non-empty suitably strong value, and fail with an explicit configuration error before serving requests.\"},{\"severity\":\"medium\",\"title\":\"Ephemeral job state is committed with a live status and fixed PID\",\"body\":\"The new state file declares task-123 as running under PID 4242. On another machine or later checkout, that PID may be stale or belong to an unrelated process, so consumers trusting this file could report a nonexistent job or act on the wrong process.\",\"file\":\".omc/state/job.json\",\"line_start\":1,\"line_end\":1,\"confidence\":0.96,\"recommendation\":\"Remove the runtime state file from version control, ignore generated .omc/state data, and create state dynamically with PID identity and liveness validation.\"}],\"next_steps\":[\"Add startup validation for JWT_SECRET and test the missing-secret path.\",\"Remove the committed job state and add the generated state path to the appropriate ignore configuration.\"]}\n"
+  "raw": "{\"verdict\":\"needs-attention\",\"summary\":\"The diff commits live runtime state and adds token issuance without validating its signing secret.\",\"findings\":[{\"severity\":\"high\",\"title\":\"Runtime job state is committed as active\",\"body\":\"The new state file records a hard-coded running job and PID. Any code that consumes this persisted state can treat a nonexistent task as active or target an unrelated process if PID 4242 is reused, disrupting job recovery or process management.\",\"file\":\".omc/state/job.json\",\"line_start\":1,\"line_end\":1,\"confidence\":0.97,\"recommendation\":\"Remove the runtime state file from version control and ignore `.omc/state/`; create and validate job state only at runtime, including checking process identity before acting on a stored PID.\"},{\"severity\":\"medium\",\"title\":\"Missing JWT secret validation\",\"body\":\"Token issuance passes `process.env.JWT_SECRET` directly to `jwt.sign`. If the variable is absent or empty, issuance throws synchronously with no controlled configuration error, potentially turning authentication requests into unhandled failures.\",\"file\":\"src/token.js\",\"line_start\":3,\"line_end\":4,\"confidence\":0.96,\"recommendation\":\"Validate `JWT_SECRET` during application startup and fail with an explicit configuration error before serving requests; ensure callers convert signing failures into controlled responses.\"}],\"next_steps\":[\"Remove and ignore the runtime state artifact.\",\"Add startup validation for `JWT_SECRET` and test missing-secret behavior.\"]}\n"
 }

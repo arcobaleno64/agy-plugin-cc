@@ -1,0 +1,96 @@
+{
+  "caseId": "repo-context",
+  "cell": "agy.shallow",
+  "recordedAt": "2026-08-24T15:32:17.664Z",
+  "verdict": "needs-attention",
+  "summary": "JWT issuance lacks validation for the secret environment variable and a transient state file is tracked in git.",
+  "findings": [
+    {
+      "severity": "medium",
+      "title": "Missing validation for JWT_SECRET environment variable",
+      "body": "In src/token.js (lines 3-5), issue() passes process.env.JWT_SECRET directly into jwt.sign() without checking if it is defined. If the environment variable is unset, jwt.sign() throws a synchronous runtime exception ('secretOrPrivateKey must have a value').",
+      "file": "src/token.js",
+      "line_start": 3,
+      "line_end": 5,
+      "confidence": 0.95,
+      "recommendation": "Assert that process.env.JWT_SECRET is defined before calling jwt.sign, or fail fast with a descriptive configuration error."
+    },
+    {
+      "severity": "low",
+      "title": "Ephemeral runtime state file committed to repository",
+      "body": "In .omc/state/job.json (line 1), a runtime execution state file containing a process ID (pid: 4242) and job status is tracked, which can cause repository pollution and merge conflicts across different environments.",
+      "file": ".omc/state/job.json",
+      "line_start": 1,
+      "line_end": 1,
+      "confidence": 0.9,
+      "recommendation": "Remove .omc/state/job.json from git and add .omc/ to .gitignore."
+    }
+  ],
+  "latencyMs": 17230,
+  "engineVersion": "1.1.19",
+  "engineObserved": "agy",
+  "samples": [
+    {
+      "verdict": "needs-attention",
+      "summary": "Token generation lacks validation for the JWT_SECRET environment variable.",
+      "findings": [
+        {
+          "severity": "medium",
+          "title": "Missing validation for JWT_SECRET environment variable",
+          "body": "In src/token.js, issue() passes process.env.JWT_SECRET directly to jwt.sign() without verifying that the variable is defined. If JWT_SECRET is unset or empty, jwt.sign() throws a runtime error, causing token issuance to fail without a clear configuration error.",
+          "file": "src/token.js",
+          "line_start": 3,
+          "line_end": 5,
+          "confidence": 0.95,
+          "recommendation": "Validate that process.env.JWT_SECRET is defined and non-empty before calling jwt.sign(), throwing a descriptive error or failing fast at startup if it is missing."
+        }
+      ],
+      "latencyMs": 17542
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "The token issuing function lacks validation for the JWT_SECRET environment variable, causing synchronous runtime failures when unset.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Missing validation for JWT_SECRET environment variable",
+          "body": "In src/token.js, jwt.sign is called with process.env.JWT_SECRET without ensuring the environment variable is defined. If JWT_SECRET is unset or empty, jsonwebtoken throws a synchronous error ('secretOrPrivateKey must have a value'), leading to uncaught runtime exceptions during token generation.",
+          "file": "src/token.js",
+          "line_start": 3,
+          "line_end": 5,
+          "confidence": 0.95,
+          "recommendation": "Validate that process.env.JWT_SECRET is defined and non-empty before invoking jwt.sign, or enforce configuration existence during application startup."
+        }
+      ],
+      "latencyMs": 19337
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "JWT issuance lacks validation for the secret environment variable and a transient state file is tracked in git.",
+      "findings": [
+        {
+          "severity": "medium",
+          "title": "Missing validation for JWT_SECRET environment variable",
+          "body": "In src/token.js (lines 3-5), issue() passes process.env.JWT_SECRET directly into jwt.sign() without checking if it is defined. If the environment variable is unset, jwt.sign() throws a synchronous runtime exception ('secretOrPrivateKey must have a value').",
+          "file": "src/token.js",
+          "line_start": 3,
+          "line_end": 5,
+          "confidence": 0.95,
+          "recommendation": "Assert that process.env.JWT_SECRET is defined before calling jwt.sign, or fail fast with a descriptive configuration error."
+        },
+        {
+          "severity": "low",
+          "title": "Ephemeral runtime state file committed to repository",
+          "body": "In .omc/state/job.json (line 1), a runtime execution state file containing a process ID (pid: 4242) and job status is tracked, which can cause repository pollution and merge conflicts across different environments.",
+          "file": ".omc/state/job.json",
+          "line_start": 1,
+          "line_end": 1,
+          "confidence": 0.9,
+          "recommendation": "Remove .omc/state/job.json from git and add .omc/ to .gitignore."
+        }
+      ],
+      "latencyMs": 17230
+    }
+  ],
+  "raw": "{\n  \"review\": \"Review\",\n  \"target\": {\n    \"mode\": \"working-tree\",\n    \"label\": \"working tree diff\",\n    \"explicit\": true\n  },\n  \"engine\": \"agy\",\n  \"gemini\": {\n    \"status\": 0,\n    \"stdout\": \"{\\n  \\\"verdict\\\": \\\"needs-attention\\\",\\n  \\\"summary\\\": \\\"JWT issuance lacks validation for the secret environment variable and a transient state file is tracked in git.\\\",\\n  \\\"findings\\\": [\\n    {\\n      \\\"severity\\\": \\\"medium\\\",\\n      \\\"title\\\": \\\"Missing validation for JWT_SECRET environment variable\\\",\\n      \\\"body\\\": \\\"In src/token.js (lines 3-5), issue() passes process.env.JWT_SECRET directly into jwt.sign() without checking if it is defined. If the environment variable is unset, jwt.sign() throws a synchronous runtime exception ('secretOrPrivateKey must have a value').\\\",\\n      \\\"file\\\": \\\"src/token.js\\\",\\n      \\\"line_start\\\": 3,\\n      \\\"line_end\\\": 5,\\n      \\\"confidence\\\": 0.95,\\n      \\\"recommendation\\\": \\\"Assert that process.env.JWT_SECRET is defined before calling jwt.sign, or fail fast with a descriptive configuration error.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"low\\\",\\n      \\\"title\\\": \\\"Ephemeral runtime state file committed to repository\\\",\\n      \\\"body\\\": \\\"In .omc/state/job.json (line 1), a runtime execution state file containing a process ID (pid: 4242) and job status is tracked, which can cause repository pollution and merge conflicts across different environments.\\\",\\n      \\\"file\\\": \\\".omc/state/job.json\\\",\\n      \\\"line_start\\\": 1,\\n      \\\"line_end\\\": 1,\\n      \\\"confidence\\\": 0.9,\\n      \\\"recommendation\\\": \\\"Remove .omc/state/job.json from git and add .omc/ to .gitignore.\\\"\\n    }\\n  ],\\n  \\\"next_steps\\\": [\\n    \\\"Validate process.env.JWT_SECRET prior to invoking jwt.sign().\\\",\\n    \\\"Untrack .omc/state/job.json and ignore the .omc directory in .gitignore.\\\"\\n  ]\\n}\",\n    \"stderr\": \"\"\n  },\n  \"result\": {\n    \"verdict\": \"needs-attention\",\n    \"summary\": \"JWT issuance lacks validation for the secret environment variable and a transient state file is tracked in git.\",\n    \"findings\": [\n      {\n        \"severity\": \"medium\",\n        \"title\": \"Missing validation for JWT_SECRET environment variable\",\n        \"body\": \"In src/token.js (lines 3-5), issue() passes process.env.JWT_SECRET directly into jwt.sign() without checking if it is defined. If the environment variable is unset, jwt.sign() throws a synchronous runtime exception ('secretOrPrivateKey must have a value').\",\n        \"file\": \"src/token.js\",\n        \"line_start\": 3,\n        \"line_end\": 5,\n        \"confidence\": 0.95,\n        \"recommendation\": \"Assert that process.env.JWT_SECRET is defined before calling jwt.sign, or fail fast with a descriptive configuration error.\"\n      },\n      {\n        \"severity\": \"low\",\n        \"title\": \"Ephemeral runtime state file committed to repository\",\n        \"body\": \"In .omc/state/job.json (line 1), a runtime execution state file containing a process ID (pid: 4242) and job status is tracked, which can cause repository pollution and merge conflicts across different environments.\",\n        \"file\": \".omc/state/job.json\",\n        \"line_start\": 1,\n        \"line_end\": 1,\n        \"confidence\": 0.9,\n        \"recommendation\": \"Remove .omc/state/job.json from git and add .omc/ to .gitignore.\"\n      }\n    ],\n    \"next_steps\": [\n      \"Validate process.env.JWT_SECRET prior to invoking jwt.sign().\",\n      \"Untrack .omc/state/job.json and ignore the .omc directory in .gitignore.\"\n    ]\n  }\n}\n"
+}

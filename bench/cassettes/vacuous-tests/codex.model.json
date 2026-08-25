@@ -1,0 +1,166 @@
+{
+  "caseId": "vacuous-tests",
+  "cell": "codex.model",
+  "recordedAt": "2026-08-24T04:42:21.772Z",
+  "verdict": "needs-attention",
+  "summary": "The new tests can pass without exercising the intended session behavior and leave asynchronous failures outside the test lifecycle.",
+  "findings": [
+    {
+      "severity": "medium",
+      "title": "Deletion test neither deletes nor awaits its assertion",
+      "body": "The test inserts a session but never calls a deletion operation, then schedules its only assertion with process.nextTick without returning a promise or accepting a callback. The test therefore completes before verification; the assertion may become an uncaught asynchronous error, and no deletion path is actually tested.",
+      "file": "test/session.test.js",
+      "line_start": 20,
+      "line_end": 25,
+      "confidence": 0.99,
+      "recommendation": "Call the deletion API and assert the result and store size synchronously, or return/await a promise that resolves after the callback."
+    },
+    {
+      "severity": "medium",
+      "title": "Expired-session ordering assertion permits missing output",
+      "body": "Using indexOf positions does not establish that both labels exist. If \"expired\" is absent while \"fresh\" is present, -1 is less than the fresh index and the test passes despite missing the expired session entirely. The test also creates no sessions before rendering, making it dependent on external mutable state.",
+      "file": "test/session.test.js",
+      "line_start": 10,
+      "line_end": 13,
+      "confidence": 0.98,
+      "recommendation": "Arrange explicit expired and fresh sessions, assert both indices are non-negative, then assert the expired index is lower."
+    },
+    {
+      "severity": "low",
+      "title": "Malformed-payload test has no observable assertion",
+      "body": "The test supplies syntactically valid JSON and makes no assertion about the return value, thrown error, or session-store state. It only verifies that this particular payload does not throw, so malformed-input handling can remain broken unnoticed.",
+      "file": "test/session.test.js",
+      "line_start": 6,
+      "line_end": 8,
+      "confidence": 0.97,
+      "recommendation": "Provide genuinely malformed or schema-invalid input and assert the documented error, fallback result, and absence of unintended store mutation."
+    }
+  ],
+  "latencyMs": 25225,
+  "engineVersion": "codex-cli 0.149.0",
+  "engineObserved": null,
+  "samples": [
+    {
+      "verdict": "needs-attention",
+      "summary": "The new tests contain false-positive and order-dependent paths that do not reliably verify session behavior.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Deletion test completes before its assertion runs",
+          "body": "The test schedules its only assertion with process.nextTick() but neither returns a promise nor accepts a test callback, so the test completes synchronously and can be reported as passing before the assertion executes. It also never invokes any deletion operation, making the expected empty store unsupported and potentially producing an uncaught asynchronous assertion later.",
+          "file": "test/session.test.js",
+          "line_start": 20,
+          "line_end": 25,
+          "confidence": 0.99,
+          "recommendation": "Invoke the session-deletion API in the test and assert the resulting store state synchronously, or await a promise that resolves after the scheduled operation before returning from the test."
+        },
+        {
+          "severity": "medium",
+          "title": "Malformed-payload test has no observable expectation",
+          "body": "The test calls parseSession but makes no assertion about its return value or error behavior. It passes for nearly any non-throwing implementation, including one that silently accepts the purportedly malformed payload, so it cannot detect the behavior named by the test.",
+          "file": "test/session.test.js",
+          "line_start": 6,
+          "line_end": 8,
+          "confidence": 0.98,
+          "recommendation": "Assert the required contract explicitly, such as assert.throws for rejection or deep equality against the expected validation result."
+        },
+        {
+          "severity": "medium",
+          "title": "Render-order test depends on unstated shared session state",
+          "body": "The test calls render() without inserting expired and fresh sessions. Its result therefore depends on module initialization or state left by other tests, making it order-dependent and unable to prove ordering for controlled inputs.",
+          "file": "test/session.test.js",
+          "line_start": 10,
+          "line_end": 13,
+          "confidence": 0.96,
+          "recommendation": "Clear the shared store, insert one known expired session and one known fresh session, then assert their positions in the rendered output and verify both markers are present."
+        },
+        {
+          "severity": "low",
+          "title": "Expire behavior is permanently excluded from the suite",
+          "body": "The only direct test of expire() is skipped, so regressions in its return value or removal behavior will not fail the test run.",
+          "file": "test/session.test.js",
+          "line_start": 15,
+          "line_end": 18,
+          "confidence": 0.99,
+          "recommendation": "Remove test.skip and isolate the shared session store before and after the test so expire() is exercised deterministically."
+        }
+      ],
+      "latencyMs": 26329
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "The new tests leave session deletion and malformed-payload behavior effectively unverified.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Deletion test neither deletes nor awaits its assertion",
+          "body": "The test inserts a session but never calls expire() or any deletion operation, then schedules an assertion with process.nextTick without returning or awaiting completion. The test can finish before the assertion runs, so it does not reliably verify deletion and may produce asynchronous activity after test completion.",
+          "file": "test/session.test.js",
+          "line_start": 19,
+          "line_end": 24,
+          "confidence": 0.99,
+          "recommendation": "Call the deletion API directly and assert synchronously, or await a Promise that resolves after the scheduled operation before asserting the store size."
+        },
+        {
+          "severity": "medium",
+          "title": "Malformed-payload test uses valid JSON and has no assertion",
+          "body": "The supplied payload is syntactically valid and contains both expected-looking fields. With no assertion, the test only checks that this particular valid input does not throw and cannot verify rejection, fallback behavior, or the parsed result for an actually malformed payload.",
+          "file": "test/session.test.js",
+          "line_start": 6,
+          "line_end": 8,
+          "confidence": 0.98,
+          "recommendation": "Pass genuinely malformed or schema-invalid input and assert the documented error, return value, or recovery behavior."
+        },
+        {
+          "severity": "medium",
+          "title": "Core expiration behavior is permanently skipped",
+          "body": "The only test that directly calls expire() is marked skipped, leaving its return value and session-removal behavior uncovered while the active deletion test never invokes it.",
+          "file": "test/session.test.js",
+          "line_start": 15,
+          "line_end": 18,
+          "confidence": 0.99,
+          "recommendation": "Remove test.skip and assert both that expire(\"abc\") returns true and that sessions.has(\"abc\") is false afterward."
+        }
+      ],
+      "latencyMs": 24165
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "The new tests can pass without exercising the intended session behavior and leave asynchronous failures outside the test lifecycle.",
+      "findings": [
+        {
+          "severity": "medium",
+          "title": "Deletion test neither deletes nor awaits its assertion",
+          "body": "The test inserts a session but never calls a deletion operation, then schedules its only assertion with process.nextTick without returning a promise or accepting a callback. The test therefore completes before verification; the assertion may become an uncaught asynchronous error, and no deletion path is actually tested.",
+          "file": "test/session.test.js",
+          "line_start": 20,
+          "line_end": 25,
+          "confidence": 0.99,
+          "recommendation": "Call the deletion API and assert the result and store size synchronously, or return/await a promise that resolves after the callback."
+        },
+        {
+          "severity": "medium",
+          "title": "Expired-session ordering assertion permits missing output",
+          "body": "Using indexOf positions does not establish that both labels exist. If \"expired\" is absent while \"fresh\" is present, -1 is less than the fresh index and the test passes despite missing the expired session entirely. The test also creates no sessions before rendering, making it dependent on external mutable state.",
+          "file": "test/session.test.js",
+          "line_start": 10,
+          "line_end": 13,
+          "confidence": 0.98,
+          "recommendation": "Arrange explicit expired and fresh sessions, assert both indices are non-negative, then assert the expired index is lower."
+        },
+        {
+          "severity": "low",
+          "title": "Malformed-payload test has no observable assertion",
+          "body": "The test supplies syntactically valid JSON and makes no assertion about the return value, thrown error, or session-store state. It only verifies that this particular payload does not throw, so malformed-input handling can remain broken unnoticed.",
+          "file": "test/session.test.js",
+          "line_start": 6,
+          "line_end": 8,
+          "confidence": 0.97,
+          "recommendation": "Provide genuinely malformed or schema-invalid input and assert the documented error, fallback result, and absence of unintended store mutation."
+        }
+      ],
+      "latencyMs": 25225
+    }
+  ],
+  "raw": "{\"verdict\":\"needs-attention\",\"summary\":\"The new tests can pass without exercising the intended session behavior and leave asynchronous failures outside the test lifecycle.\",\"findings\":[{\"severity\":\"medium\",\"title\":\"Deletion test neither deletes nor awaits its assertion\",\"body\":\"The test inserts a session but never calls a deletion operation, then schedules its only assertion with process.nextTick without returning a promise or accepting a callback. The test therefore completes before verification; the assertion may become an uncaught asynchronous error, and no deletion path is actually tested.\",\"file\":\"test/session.test.js\",\"line_start\":20,\"line_end\":25,\"confidence\":0.99,\"recommendation\":\"Call the deletion API and assert the result and store size synchronously, or return/await a promise that resolves after the callback.\"},{\"severity\":\"medium\",\"title\":\"Expired-session ordering assertion permits missing output\",\"body\":\"Using indexOf positions does not establish that both labels exist. If \\\"expired\\\" is absent while \\\"fresh\\\" is present, -1 is less than the fresh index and the test passes despite missing the expired session entirely. The test also creates no sessions before rendering, making it dependent on external mutable state.\",\"file\":\"test/session.test.js\",\"line_start\":10,\"line_end\":13,\"confidence\":0.98,\"recommendation\":\"Arrange explicit expired and fresh sessions, assert both indices are non-negative, then assert the expired index is lower.\"},{\"severity\":\"low\",\"title\":\"Malformed-payload test has no observable assertion\",\"body\":\"The test supplies syntactically valid JSON and makes no assertion about the return value, thrown error, or session-store state. It only verifies that this particular payload does not throw, so malformed-input handling can remain broken unnoticed.\",\"file\":\"test/session.test.js\",\"line_start\":6,\"line_end\":8,\"confidence\":0.97,\"recommendation\":\"Provide genuinely malformed or schema-invalid input and assert the documented error, fallback result, and absence of unintended store mutation.\"}],\"next_steps\":[\"Rewrite the tests with explicit setup, synchronous or awaited assertions, and enable the skipped expire test.\"]}\n"
+}

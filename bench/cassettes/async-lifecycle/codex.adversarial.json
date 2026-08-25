@@ -1,0 +1,196 @@
+{
+  "caseId": "async-lifecycle",
+  "cell": "codex.adversarial",
+  "recordedAt": "2026-08-24T11:10:23.942Z",
+  "verdict": "needs-attention",
+  "summary": "Do not ship: untrusted job IDs can escape the jobs directory, execution failures are reported as successes, and persistent resources are never released.",
+  "findings": [
+    {
+      "severity": "critical",
+      "title": "Job IDs permit arbitrary filesystem path traversal",
+      "body": "The caller-controlled id is interpolated directly into filesystem paths. An id such as ../../tmp/target resolves outside /var/jobs, allowing runOne or startHeartbeat to append to attacker-selected .log or .beat files wherever the process has write permission. This crosses a filesystem trust boundary and can corrupt application or system data.",
+      "file": "src/queue.js",
+      "line_start": 4,
+      "line_end": 5,
+      "confidence": 0.99,
+      "recommendation": "Reject IDs that do not match a strict allowlist, resolve the final path, and verify it remains beneath a canonical /var/jobs directory before opening or appending. Apply the same centralized path construction to heartbeat files."
+    },
+    {
+      "severity": "high",
+      "title": "All job failures are falsely reported as successful",
+      "body": "The catch block discards every exception—including permission failures, oversized logs, invalid paths, and failed writes—and returns ok: true. runAll therefore resolves with apparent success even when no job started, preventing retries and hiding partial or total failure from callers and monitoring.",
+      "file": "src/queue.js",
+      "line_start": 20,
+      "line_end": 27,
+      "confidence": 1,
+      "recommendation": "Return ok: false with a safe error classification or rethrow the exception; make runAll expose partial failures explicitly and log sufficient context for recovery."
+    },
+    {
+      "severity": "high",
+      "title": "Opened file handles are never closed",
+      "body": "openJob stores every opened handle in a process-wide map, and neither the successful nor failing path closes it. The oversized-log exception leaks immediately; successful jobs also retain descriptors indefinitely. Repeated or attacker-selected IDs can exhaust file descriptors and make subsequent filesystem operations fail process-wide.",
+      "file": "src/queue.js",
+      "line_start": 4,
+      "line_end": 12,
+      "confidence": 0.99,
+      "recommendation": "Close handles in a finally block after writes, and close before throwing from openJob. Remove the global map unless persistent ownership and an explicit shutdown/replacement lifecycle are implemented."
+    },
+    {
+      "severity": "medium",
+      "title": "Heartbeat lifecycle creates permanent timers and unhandled write failures",
+      "body": "Every call starts an interval with no returned handle or stop mechanism. The async appendFile promise is also ignored, so permission, disk-full, or path failures can become unhandled rejections while the interval continues indefinitely. Repeated starts accumulate timers and writes after the associated job ends.",
+      "file": "src/queue.js",
+      "line_start": 14,
+      "line_end": 18,
+      "confidence": 0.98,
+      "recommendation": "Return a cleanup function or timer handle, prevent duplicate heartbeats per job, stop it when the job ends, and await or catch append failures with observable failure handling."
+    }
+  ],
+  "latencyMs": 31020,
+  "engineVersion": "codex-cli 0.149.0",
+  "engineObserved": null,
+  "samples": [
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: failures are reported as success, caller-controlled IDs can escape the jobs directory, and both file handles and heartbeat timers leak.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "All job failures are falsely reported as successful",
+          "body": "The catch block converts every failure—including open, permission, size-limit, and write failures—into `{ ok: true }`. Consequently `runAll` can report complete success when no job started, preventing retries and hiding operational failure.",
+          "file": "src/queue.js",
+          "line_start": 25,
+          "line_end": 27,
+          "confidence": 1,
+          "recommendation": "Return `{ id, ok: false, error }` or rethrow; ensure `runAll` exposes partial failures to its caller and add tests for open and write rejection."
+        },
+        {
+          "severity": "high",
+          "title": "Unvalidated job IDs permit path traversal",
+          "body": "The caller-controlled `id` is interpolated directly into filesystem paths. An ID containing `../` can resolve outside `/var/jobs`, allowing append operations to unintended `.log` or `.beat` files under the process account's permissions.",
+          "file": "src/queue.js",
+          "line_start": 5,
+          "line_end": 6,
+          "confidence": 0.99,
+          "recommendation": "Reject IDs outside a strict allowlist such as `[A-Za-z0-9_-]+`, resolve the final path, and verify it remains beneath the canonical jobs directory before opening or appending."
+        },
+        {
+          "severity": "high",
+          "title": "File handles leak on both successful and rejected jobs",
+          "body": "Every opened handle is retained in the global map and is never closed. The handle is inserted before `stat()`, so oversized files and stat failures leak too; repeated IDs overwrite the map entry without closing the prior handle. Sustained or retried workloads can exhaust file descriptors and make subsequent jobs fail.",
+          "file": "src/queue.js",
+          "line_start": 5,
+          "line_end": 13,
+          "confidence": 1,
+          "recommendation": "Define explicit handle ownership and close handles in `finally`; do not cache them unless required, and close any previous handle before replacing a map entry."
+        },
+        {
+          "severity": "medium",
+          "title": "Heartbeat intervals cannot be stopped and async write failures are unhandled",
+          "body": "`startHeartbeat` discards the interval handle, so callers cannot stop the timer during job completion or shutdown. Each tick also ignores the promise returned by `appendFile`; filesystem rejection can become an unhandled rejection while the interval continues issuing writes indefinitely.",
+          "file": "src/queue.js",
+          "line_start": 15,
+          "line_end": 19,
+          "confidence": 1,
+          "recommendation": "Return a cleanup function or timer handle, stop it when the job ends, and await or explicitly catch append failures with a defined failure/observability policy."
+        }
+      ],
+      "latencyMs": 29787
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: the queue falsely reports failed jobs as successful and leaks long-lived file/timer resources.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Every job failure is reported as success",
+          "body": "The catch path returns `{ ok: true }`, so open, stat, size-limit, and write failures are indistinguishable from successful execution. `runAll` consequently resolves with an all-success result even when no job started, hiding operational failure and preventing safe retry or recovery.",
+          "file": "src/queue.js",
+          "line_start": 24,
+          "line_end": 26,
+          "confidence": 1,
+          "recommendation": "Return `{ id, ok: false, error }` or rethrow the error, and add tests covering open, size-limit, and write failures."
+        },
+        {
+          "severity": "high",
+          "title": "Job IDs can escape the intended directory",
+          "body": "The caller-controlled `id` is interpolated directly into filesystem paths. An ID containing traversal segments such as `../../tmp/job` resolves outside `/var/jobs`, allowing append/create operations in other writable locations with a `.log` or `.beat` suffix. This is security-relevant if IDs cross any trust boundary.",
+          "file": "src/queue.js",
+          "line_start": 5,
+          "line_end": 5,
+          "confidence": 0.94,
+          "recommendation": "Reject IDs outside a strict allowlist such as `/^[A-Za-z0-9_-]+$/`, and resolve the final path before verifying it remains beneath `/var/jobs`."
+        },
+        {
+          "severity": "high",
+          "title": "File handles are never closed",
+          "body": "Each `runOne` opens a descriptor and stores it permanently in `handles`; neither successful writes nor failure paths close it. The size-limit exception also leaves the newly opened handle in the map. Repeated or duplicate jobs can exhaust descriptors, while duplicate IDs overwrite the only reference to an older open handle.",
+          "file": "src/queue.js",
+          "line_start": 4,
+          "line_end": 13,
+          "confidence": 0.99,
+          "recommendation": "Close each handle in a `finally` block after writing. If persistent handles are required, define explicit replacement and shutdown logic that closes old handles before deleting or overwriting map entries."
+        },
+        {
+          "severity": "medium",
+          "title": "Heartbeat timers cannot be stopped and discard write failures",
+          "body": "Every call creates a perpetual interval but returns no timer handle or cleanup function. The async `appendFile` promise is also ignored, so write errors become unhandled rejections while the interval continues retrying forever. Repeated starts can duplicate heartbeats and keep the process alive during shutdown.",
+          "file": "src/queue.js",
+          "line_start": 15,
+          "line_end": 19,
+          "confidence": 0.99,
+          "recommendation": "Return a stop/dispose function, retain and clear the interval during job completion and shutdown, and explicitly await or catch each append failure with observable failure handling."
+        }
+      ],
+      "latencyMs": 31662
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: untrusted job IDs can escape the jobs directory, execution failures are reported as successes, and persistent resources are never released.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Job IDs permit arbitrary filesystem path traversal",
+          "body": "The caller-controlled id is interpolated directly into filesystem paths. An id such as ../../tmp/target resolves outside /var/jobs, allowing runOne or startHeartbeat to append to attacker-selected .log or .beat files wherever the process has write permission. This crosses a filesystem trust boundary and can corrupt application or system data.",
+          "file": "src/queue.js",
+          "line_start": 4,
+          "line_end": 5,
+          "confidence": 0.99,
+          "recommendation": "Reject IDs that do not match a strict allowlist, resolve the final path, and verify it remains beneath a canonical /var/jobs directory before opening or appending. Apply the same centralized path construction to heartbeat files."
+        },
+        {
+          "severity": "high",
+          "title": "All job failures are falsely reported as successful",
+          "body": "The catch block discards every exception—including permission failures, oversized logs, invalid paths, and failed writes—and returns ok: true. runAll therefore resolves with apparent success even when no job started, preventing retries and hiding partial or total failure from callers and monitoring.",
+          "file": "src/queue.js",
+          "line_start": 20,
+          "line_end": 27,
+          "confidence": 1,
+          "recommendation": "Return ok: false with a safe error classification or rethrow the exception; make runAll expose partial failures explicitly and log sufficient context for recovery."
+        },
+        {
+          "severity": "high",
+          "title": "Opened file handles are never closed",
+          "body": "openJob stores every opened handle in a process-wide map, and neither the successful nor failing path closes it. The oversized-log exception leaks immediately; successful jobs also retain descriptors indefinitely. Repeated or attacker-selected IDs can exhaust file descriptors and make subsequent filesystem operations fail process-wide.",
+          "file": "src/queue.js",
+          "line_start": 4,
+          "line_end": 12,
+          "confidence": 0.99,
+          "recommendation": "Close handles in a finally block after writes, and close before throwing from openJob. Remove the global map unless persistent ownership and an explicit shutdown/replacement lifecycle are implemented."
+        },
+        {
+          "severity": "medium",
+          "title": "Heartbeat lifecycle creates permanent timers and unhandled write failures",
+          "body": "Every call starts an interval with no returned handle or stop mechanism. The async appendFile promise is also ignored, so permission, disk-full, or path failures can become unhandled rejections while the interval continues indefinitely. Repeated starts accumulate timers and writes after the associated job ends.",
+          "file": "src/queue.js",
+          "line_start": 14,
+          "line_end": 18,
+          "confidence": 0.98,
+          "recommendation": "Return a cleanup function or timer handle, prevent duplicate heartbeats per job, stop it when the job ends, and await or catch append failures with observable failure handling."
+        }
+      ],
+      "latencyMs": 31020
+    }
+  ],
+  "raw": "{\n  \"review\": \"Adversarial Review\",\n  \"target\": {\n    \"mode\": \"working-tree\",\n    \"label\": \"working tree diff\",\n    \"explicit\": true\n  },\n  \"threadId\": \"01a03376-7203-7142-81e3-5a22c2114f40\",\n  \"context\": {\n    \"repoRoot\": \"C:/Users/arcobaleno/AppData/Local/Temp/bench-async-lifecycle-9XpAdk\",\n    \"branch\": \"main\",\n    \"summary\": \"Reviewing 0 staged, 1 unstaged, and 0 untracked file(s).\"\n  },\n  \"codex\": {\n    \"status\": 0,\n    \"stderr\": \"\",\n    \"stdout\": \"{\\\"verdict\\\":\\\"needs-attention\\\",\\\"summary\\\":\\\"Do not ship: untrusted job IDs can escape the jobs directory, execution failures are reported as successes, and persistent resources are never released.\\\",\\\"findings\\\":[{\\\"severity\\\":\\\"critical\\\",\\\"title\\\":\\\"Job IDs permit arbitrary filesystem path traversal\\\",\\\"body\\\":\\\"The caller-controlled id is interpolated directly into filesystem paths. An id such as ../../tmp/target resolves outside /var/jobs, allowing runOne or startHeartbeat to append to attacker-selected .log or .beat files wherever the process has write permission. This crosses a filesystem trust boundary and can corrupt application or system data.\\\",\\\"file\\\":\\\"src/queue.js\\\",\\\"line_start\\\":4,\\\"line_end\\\":5,\\\"confidence\\\":0.99,\\\"recommendation\\\":\\\"Reject IDs that do not match a strict allowlist, resolve the final path, and verify it remains beneath a canonical /var/jobs directory before opening or appending. Apply the same centralized path construction to heartbeat files.\\\"},{\\\"severity\\\":\\\"high\\\",\\\"title\\\":\\\"All job failures are falsely reported as successful\\\",\\\"body\\\":\\\"The catch block discards every exception—including permission failures, oversized logs, invalid paths, and failed writes—and returns ok: true. runAll therefore resolves with apparent success even when no job started, preventing retries and hiding partial or total failure from callers and monitoring.\\\",\\\"file\\\":\\\"src/queue.js\\\",\\\"line_start\\\":20,\\\"line_end\\\":27,\\\"confidence\\\":1,\\\"recommendation\\\":\\\"Return ok: false with a safe error classification or rethrow the exception; make runAll expose partial failures explicitly and log sufficient context for recovery.\\\"},{\\\"severity\\\":\\\"high\\\",\\\"title\\\":\\\"Opened file handles are never closed\\\",\\\"body\\\":\\\"openJob stores every opened handle in a process-wide map, and neither the successful nor failing path closes it. The oversized-log exception leaks immediately; successful jobs also retain descriptors indefinitely. Repeated or attacker-selected IDs can exhaust file descriptors and make subsequent filesystem operations fail process-wide.\\\",\\\"file\\\":\\\"src/queue.js\\\",\\\"line_start\\\":4,\\\"line_end\\\":12,\\\"confidence\\\":0.99,\\\"recommendation\\\":\\\"Close handles in a finally block after writes, and close before throwing from openJob. Remove the global map unless persistent ownership and an explicit shutdown/replacement lifecycle are implemented.\\\"},{\\\"severity\\\":\\\"medium\\\",\\\"title\\\":\\\"Heartbeat lifecycle creates permanent timers and unhandled write failures\\\",\\\"body\\\":\\\"Every call starts an interval with no returned handle or stop mechanism. The async appendFile promise is also ignored, so permission, disk-full, or path failures can become unhandled rejections while the interval continues indefinitely. Repeated starts accumulate timers and writes after the associated job ends.\\\",\\\"file\\\":\\\"src/queue.js\\\",\\\"line_start\\\":14,\\\"line_end\\\":18,\\\"confidence\\\":0.98,\\\"recommendation\\\":\\\"Return a cleanup function or timer handle, prevent duplicate heartbeats per job, stop it when the job ends, and await or catch append failures with observable failure handling.\\\"}],\\\"next_steps\\\":[\\\"Block shipment until ID containment, truthful failure propagation, file-handle closure, and heartbeat cleanup are covered by failure-path tests.\\\"]}\",\n    \"reasoning\": []\n  },\n  \"result\": {\n    \"verdict\": \"needs-attention\",\n    \"summary\": \"Do not ship: untrusted job IDs can escape the jobs directory, execution failures are reported as successes, and persistent resources are never released.\",\n    \"findings\""
+}

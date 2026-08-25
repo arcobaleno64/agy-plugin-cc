@@ -1,0 +1,4 @@
+{
+  "queueName": "ingest",
+  "retryDelayMs": 500
+}

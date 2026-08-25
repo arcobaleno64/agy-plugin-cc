@@ -1,0 +1,86 @@
+{
+  "caseId": "caller-contract",
+  "cell": "agy.deep",
+  "recordedAt": "2026-08-24T14:39:53.435Z",
+  "verdict": "needs-attention",
+  "summary": "Changing findUser to return a result envelope breaks existing callers in profile and admin routes.",
+  "findings": [
+    {
+      "severity": "critical",
+      "title": "Breaking change in findUser return signature breaks callers in profile and admin routes",
+      "body": "findUser was changed from returning User | null to returning a result envelope ({ ok: true, user } | { ok: false, reason: 'not-found' }). Existing callers in src/routes/profile.js and src/routes/admin.js were not updated. In profile.js, absent users receive a truthy { ok: false } object which bypasses the !user 404 check and responds with 200 and undefined fields, while found users have undefined id and name properties. In admin.js, checking user.role on the envelope evaluates to undefined, causing requireAdmin to reject all valid admins with 403 Forbidden.",
+      "file": "src/store.js",
+      "line_start": 7,
+      "line_end": 13,
+      "confidence": 1,
+      "recommendation": "Update src/routes/profile.js and src/routes/admin.js to handle the result envelope (checking result.ok and accessing result.user), or keep findUser returning User | null to preserve backward compatibility."
+    }
+  ],
+  "latencyMs": 33387,
+  "engineVersion": "1.1.19",
+  "engineObserved": "agy",
+  "samples": [
+    {
+      "verdict": "needs-attention",
+      "summary": "Updating findUser to return a result envelope breaks call sites in admin middleware and profile routes.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Profile route does not unwrap findUser result envelope",
+          "body": "findUser was modified to return an envelope object ({ ok: true, user } or { ok: false, reason }), but profileRoute still expects a direct user object or null. Because the returned object is always truthy, missing users bypass the 404 check, and accessing user.id / user.name evaluates to undefined.",
+          "file": "src/routes/profile.js",
+          "line_start": 4,
+          "line_end": 8,
+          "confidence": 1,
+          "recommendation": "Update profileRoute to check result.ok (returning 404 when false) and access user properties via result.user."
+        },
+        {
+          "severity": "high",
+          "title": "Admin middleware fails authorization due to changed findUser contract",
+          "body": "findUser now returns a result envelope ({ ok: true, user }), but requireAdmin checks user.role directly on the returned envelope object where role is undefined. Consequently, admin access checks will always fail with 403 Forbidden.",
+          "file": "src/routes/admin.js",
+          "line_start": 4,
+          "line_end": 8,
+          "confidence": 1,
+          "recommendation": "Update requireAdmin to check result.ok && result.user.role === 'admin' before calling next()."
+        }
+      ],
+      "latencyMs": 44753
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Changing findUser to return a result envelope breaks existing callers in the admin and profile routes.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Breaking change to findUser return signature breaks existing callers",
+          "body": "findUser previously returned the user object directly or null. It now returns an envelope ({ ok: true, user } or { ok: false, reason: 'not-found' }). Existing callers in src/routes/admin.js and src/routes/profile.js still treat the return value as the user object or null. In src/routes/profile.js, failure objects evaluate truthy, bypassing the not-found check and returning undefined fields with HTTP 200; successful lookups also fail to read id and name directly. In src/routes/admin.js, user.role is undefined for all users, causing valid admins to be blocked with HTTP 403.",
+          "file": "src/store.js",
+          "line_start": 7,
+          "line_end": 13,
+          "confidence": 1,
+          "recommendation": "Update callers in src/routes/admin.js and src/routes/profile.js to check result.ok and access result.user, or preserve backwards compatibility in findUser."
+        }
+      ],
+      "latencyMs": 34053
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Changing findUser to return a result envelope breaks existing callers in profile and admin routes.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Breaking change in findUser return signature breaks callers in profile and admin routes",
+          "body": "findUser was changed from returning User | null to returning a result envelope ({ ok: true, user } | { ok: false, reason: 'not-found' }). Existing callers in src/routes/profile.js and src/routes/admin.js were not updated. In profile.js, absent users receive a truthy { ok: false } object which bypasses the !user 404 check and responds with 200 and undefined fields, while found users have undefined id and name properties. In admin.js, checking user.role on the envelope evaluates to undefined, causing requireAdmin to reject all valid admins with 403 Forbidden.",
+          "file": "src/store.js",
+          "line_start": 7,
+          "line_end": 13,
+          "confidence": 1,
+          "recommendation": "Update src/routes/profile.js and src/routes/admin.js to handle the result envelope (checking result.ok and accessing result.user), or keep findUser returning User | null to preserve backward compatibility."
+        }
+      ],
+      "latencyMs": 33387
+    }
+  ],
+  "raw": "{\n  \"review\": \"Review\",\n  \"target\": {\n    \"mode\": \"working-tree\",\n    \"label\": \"working tree diff\",\n    \"explicit\": true\n  },\n  \"engine\": \"agy\",\n  \"gemini\": {\n    \"status\": 0,\n    \"stdout\": \"{\\n  \\\"verdict\\\": \\\"needs-attention\\\",\\n  \\\"summary\\\": \\\"Changing findUser to return a result envelope breaks existing callers in profile and admin routes.\\\",\\n  \\\"findings\\\": [\\n    {\\n      \\\"severity\\\": \\\"critical\\\",\\n      \\\"title\\\": \\\"Breaking change in findUser return signature breaks callers in profile and admin routes\\\",\\n      \\\"body\\\": \\\"findUser was changed from returning User | null to returning a result envelope ({ ok: true, user } | { ok: false, reason: 'not-found' }). Existing callers in src/routes/profile.js and src/routes/admin.js were not updated. In profile.js, absent users receive a truthy { ok: false } object which bypasses the !user 404 check and responds with 200 and undefined fields, while found users have undefined id and name properties. In admin.js, checking user.role on the envelope evaluates to undefined, causing requireAdmin to reject all valid admins with 403 Forbidden.\\\",\\n      \\\"file\\\": \\\"src/store.js\\\",\\n      \\\"line_start\\\": 7,\\n      \\\"line_end\\\": 13,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Update src/routes/profile.js and src/routes/admin.js to handle the result envelope (checking result.ok and accessing result.user), or keep findUser returning User | null to preserve backward compatibility.\\\"\\n    }\\n  ],\\n  \\\"next_steps\\\": [\\n    \\\"Update src/routes/profile.js to check result.ok and access result.user\\\",\\n    \\\"Update src/routes/admin.js to check result.ok and verify result.user.role === 'admin'\\\",\\n    \\\"Add test cases for requireAdmin and profileRoute covering existing, missing, and non-admin users\\\"\\n  ]\\n}\",\n    \"stderr\": \"\"\n  },\n  \"result\": {\n    \"verdict\": \"needs-attention\",\n    \"summary\": \"Changing findUser to return a result envelope breaks existing callers in profile and admin routes.\",\n    \"findings\": [\n      {\n        \"severity\": \"critical\",\n        \"title\": \"Breaking change in findUser return signature breaks callers in profile and admin routes\",\n        \"body\": \"findUser was changed from returning User | null to returning a result envelope ({ ok: true, user } | { ok: false, reason: 'not-found' }). Existing callers in src/routes/profile.js and src/routes/admin.js were not updated. In profile.js, absent users receive a truthy { ok: false } object which bypasses the !user 404 check and responds with 200 and undefined fields, while found users have undefined id and name properties. In admin.js, checking user.role on the envelope evaluates to undefined, causing requireAdmin to reject all valid admins with 403 Forbidden.\",\n        \"file\": \"src/store.js\",\n        \"line_start\": 7,\n        \"line_end\": 13,\n        \"confidence\": 1,\n        \"recommendation\": \"Update src/routes/profile.js and src/routes/admin.js to handle the result envelope (checking result.ok and accessing result.user), or keep findUser returning User | null to preserve backward compatibility.\"\n      }\n    ],\n    \"next_steps\": [\n      \"Update src/routes/profile.js to check result.ok and access result.user\",\n      \"Update src/routes/admin.js to check result.ok and verify result.user.role === 'admin'\",\n      \"Add test cases for requireAdmin and profileRoute covering existing, missing, and non-admin users\"\n    ]\n  }\n}\n"
+}

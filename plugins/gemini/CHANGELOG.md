@@ -2,6 +2,316 @@
 
 ## Unreleased
 
+- **`bench/README.md` was describing a board that no longer existed.** Six places,
+  found by re-deriving every number in the file from the cassettes rather than reading
+  the prose:
+
+  - the header and cell table said "three axes, nine cells" and omitted both `*.shallow`
+    cells entirely — a table missing a row does not look broken, it looks complete;
+  - the adversarial measurement was quoted from the loose matcher: recall
+    0.81 -> 0.77 is really 0.79 -> 0.72, precision 0.91 -> 0.92 is 0.88 -> 0.87, and
+    false positives 1.67 -> 1.33 is 0.40 -> 0.40. The conclusion survives — the
+    adversarial prompt reports less — but the two numbers that made it look like a
+    precision-for-recall trade do not;
+  - the per-repeat spread table was stale twice over, from re-recording and from
+    re-scoring. `agy.model` on `repo-context` was printed as 0, 65, 65; it is
+    55, 55, 55, and the +-65 noise band now comes from `stale-duplicate`;
+  - three of the four readings under that table quoted lifts and leads that have all
+    moved (gemini's lift -0.2 -> +4, AGY's +10.2 -> +14.4, the axis leads 6.4 and 3.2
+    -> 8.2 and 2.2);
+  - two coverage bullets still said "all five cases";
+  - a `lib/report.mjs:48` citation pointed at provenance code; spread is at :59.
+
+  Reading 1 needed rewriting rather than renumbering, because its surviving claim
+  inverted. It used to say the deep cells were steady on `repo-context` while the model
+  cells thrashed. They now move 43 and 36 there, while `agy.model` posts 55, 55, 55 and
+  `codex.model` posts 0, 0, 0 — perfect steadiness that means nothing, because a cell
+  that fails the same way every time has no spread. Low spread on this board reads as
+  *consistent*, not *trustworthy*.
+
+  The struck-through row for the mislabelled `gemini.deep` was retired rather than
+  corrected: its cassettes are deleted, so it cannot be re-scored, and pre-fix numbers
+  sitting in a table of post-fix ones is the error this whole pass is about.
+
+  A test now asserts the README's cell table lists exactly the cells in `CELLS`.
+  Mutation-confirmed by deleting a row.
+
+- **codex now reads on the two repository-scoped cases too.** `codex.model` and
+  `codex.adversarial` recorded on `caller-contract` and `stale-duplicate`, three
+  samples each, codex-cli 0.149.0 — twelve live runs, no cassette overwritten.
+
+  | case | codex.model | codex.adversarial | agy.model | agy.deep |
+  |---|:-:|:-:|:-:|:-:|
+  | caller-contract | 0 | 43 | 0 | 68 |
+  | stale-duplicate | 62 | 65 | 43 | 67 |
+
+  `caller-contract` is 0 for both single-shot cells, which is the case working: its
+  two defects sit in callers the diff never touches, so there is nothing in the diff
+  to find. Codex's adversarial reviewer explores, and it clears its own single-shot
+  reading on both — a harness reading, not a prompt one, and the same direction agy's
+  `--deep` shows.
+
+  `codex.adversarial` needs `BENCH_CODEX_COMPANION`; without it the cell reports
+  `skipped (companion path not configured)` and costs nothing, which is how the first
+  half of this recording ran before the variable was set.
+
+- **The scorer credited a finding for naming a defect's subject without making its
+  claim.** `repo-context` plants an undeclared dependency with `file: "*"`, so it is
+  matched on words alone — and one of those words was the bare module name. Every
+  reviewer that discussed `src/token.js` wrote "jsonwebtoken" somewhere, so a finding
+  about an unvalidated secret was credited with catching a missing manifest entry it
+  never mentioned. `agy.model` on that case was reading 96.7; it is 55.0.
+
+  A ground-truth `match` now takes `all` (every-of: the subject) alongside `keywords`
+  (any-of: the claim), and the three wildcard cases declare both. Mutation-confirmed
+  against ignoring `all` and against relaxing it to any-of.
+
+  This mattered more than its size: the false credit was worth 42 points to one cell
+  and nothing to others, and a board whose whole purpose is comparing cells is worse
+  off being wrong unevenly than being wrong uniformly.
+
+  The four file-scoped cases were split the same way. Five defects sharing one file
+  also share a vocabulary, and `undefined`, `leak`, `throws`, `memory` and `..` were
+  carrying credit with no claim attached to them. Findings matching more than one of
+  their case's planted defects fell from 16% to 2.4%, and no cell's mean moved by
+  more than 1.5 points — the correction was concentrated, not diffuse.
+
+  What remains at 2.4% is left deliberately: all ten are findings that report two
+  defects in one entry ("Plaintext Password Comparison and Unchecked Null User"),
+  which the scorer credits once and therefore under-counts. Whether a merged finding
+  should earn both credits is a question about the scorer's semantics, not about
+  keyword looseness, and it is not answered here.
+
+  A `file: "*"` defect that does not declare `match.all` is now a test failure. There
+  the filename disambiguates nothing, so leaving the subject out is silent: the defect
+  goes on matching, just too much.
+
+- **The harness lift, split: exploration is worth +28 and the plugin's own review
+  prompt is worth −13.** The `*.shallow` control cells now record, and the −4.4 lift
+  reported earlier turns out to have been two opposing effects cancelling.
+  Measured on agy 1.1.19, seven cases, three samples each: `model → shallow` (prompt
+  only) averages −13.3, `shallow → deep` (exploration only) averages +27.8.
+
+  Both halves land where the design predicts. Exploration is worth +68, +61 and +49 on
+  the three repository-scoped cases and +2, +2, 0, +12 on the four file-scoped ones. The
+  prompt penalty concentrates on those same repository-scoped cases (−40 on
+  `repo-context`, −25 on `stale-duplicate`).
+
+  What that penalty is not: not the `DEEP REVIEW MODE` block, which the `*.shallow`
+  cells never see, and not a thinner input — probed across all seven cases,
+  `REVIEW_INPUT` runs 645 to 1414 characters against a 400,000 cap with the full diff
+  present in both arms. It is `prompts/review.md` itself, and what in it costs the
+  points is not established. An earlier draft of this entry blamed a prompt "that
+  tells the model to fold in dependency manifests, callers and untracked files";
+  `review.md` says no such thing — lines 75-80 forbid tools outright.
+
+  Refusing every remaining ambiguous credit takes exploration to +12.5, but that is a
+  statement about how a merged finding is counted rather than about the matcher, and
+  most of the swing is `caller-contract`, where two of the four recorded findings
+  report both planted defects in one entry.
+
+  Two defects had to be fixed to get the reading. The runner decided whether to
+  materialize a repository from `harness === "agentic"`, which is true of every cell
+  that runs a companion except these two — so they ran with `--cwd` pointing at
+  nothing. `needsRepo` is now declared on the cell instead of inferred.
+
+- **`ensureGitRepository` stops blaming PATH for a directory that does not exist.**
+  spawn reports ENOENT for both absences and names the command in `error.path` either
+  way, so a missing `cwd` surfaced as `git is not installed. Install Git and retry.` on
+  a machine with git plainly installed — and sent this session to debug PATH. It now
+  checks the directory and says which absence it found. Mutation-confirmed.
+
+- **Two repository-scoped corpus cases, and the first evidence on this board that
+  exploration does anything.** The harness axis existed to measure defects a reviewer
+  can only find by looking beyond the diff, and exactly one case
+  (`repo-context`) planted any. `caller-contract` changes `findUser`'s return shape —
+  a clean refactor read on its own — while two callers the diff never mentions keep the
+  old contract, one of them an `if (user && user.role === "admin")` check that is now
+  always truthy. `stale-duplicate` fixes a crash in `src/api/v2/validate.js` while an
+  identical `v1` copy keeps it, and adds a worker reading a `config.maxBatch` that
+  `config/default.json` does not define.
+
+  Measured on agy 1.1.19, three samples: `caller-contract` is **0 → 68** from
+  `agy.model` to `agy.deep` — the single-shot cell misses both defects outright — and
+  `stale-duplicate` is **43 → 67**. Both gaps are far outside any band on the board,
+  against a whole-corpus harness lift of −4.4. The negative lift was corpus
+  composition, not a finding about exploration.
+
+  The gemini cells could not be recorded on either case, and the reason is no longer
+  confined to heavy prompts: `gemini.model` on `caller-contract`'s 21-line diff timed
+  out twice at the 180s cap, on a case `agy.model` answers in ~25s, hours after the same
+  cell recorded all five original cases. agy is unaffected throughout. Field notes
+  updated; codex cells not attempted this round.
+
+- **The harness lift now says what it actually spans.** The number is a
+  `model → agentic` composite delta presented as the harness's contribution, and it
+  changes three things at once: the prompt (the neutral 33-line bench prompt versus the
+  plugin's 84-line `review.md`), the input (a diff embedded in the prompt versus a
+  repository to find it in), and whether tools are allowed. Isolating exploration needs
+  a cell holding the first two fixed, and there is not one.
+
+  Two further limits are written down beside it. The sign is a fact about corpus
+  composition — per-case deltas on the current five cases run from −20 to +17 on both
+  engines, so the reported −4.4 and −4.6 say as much about which cases exist as about
+  any harness. And exactly one case plants repository-scoped defects (`file: "*"` in
+  `repo-context`'s ground truth), so the capability the axis exists to measure rests on
+  a single case. What would help is cases of that kind, not repeats: the README's own
+  finding 4 already explains that the spread statistic is a range and cannot shrink
+  with sampling.
+
+  Documentation only — no cassette, cell or scoring rule changed.
+
+- **The bench grew a third axis: each tool's adversarial reviewer, measured
+  separately from its default one.** `gemini.adversarial`, `codex.adversarial` and
+  `agy.adversarial` join on a new `plugin-adversarial` track, and the scorecard ranks
+  them in their own row. They are not more entries on the harness axis on purpose:
+  `prompts/review.md` asks for a pragmatic review and `prompts/adversarial-review.md`
+  asks the model to break confidence in the change. Ranking one against the other
+  would have been the third instance today of a column stating what it was supposed to
+  hold rather than what it holds.
+
+  The reason first written down for that separation was a prediction, and it was
+  wrong: with composite weighted `recall*70`, the adversarial prompt was supposed to
+  win the column by trading precision for recall. It does the opposite. `agy.deep` ->
+  `agy.adversarial`, five cases x3 on 1.1.19: recall 0.81 -> 0.77, precision
+  0.91 -> 0.92, false positives 1.67 -> 1.33. The comments, this entry and the bench
+  README now carry the measurement instead of the guess. The axis stays separate
+  because the prompts are not interchangeable, which was the part that did not depend
+  on which way the scores fell.
+
+  `runCompanionReview` gained a `subcommand` option (default `review`, so every
+  existing cell is unchanged) and the three cells pass `adversarial-review`. Both new
+  behaviours are mutation-confirmed — including, on the second attempt, the axis test:
+  the first version asserted only that a row with the right title was printed, which
+  still passed when the axis was pointed at the harness track. It now asserts which
+  cells' numbers land in which row.
+
+  `codex.adversarial` and `agy.adversarial` are recorded on all five cases
+  (codex-cli 0.149.0, agy 1.1.19, three samples each). This is also the only axis codex
+  can be measured on at all while #679 stands.
+
+- **The gemini cells are on 0.56.0, except where the engine stops answering.**
+  `gemini.model` recorded all five cases; `gemini.deep` recorded four. On
+  `vacuous-tests` a `--deep` review returns nothing at 420s — empty stdout, empty
+  stderr, reproduced three times — while the other four finish in ~35s, so that cassette
+  stays at 0.55.1 and the scorecard now shows the mixed read rather than hiding it.
+  `gemini.adversarial` could not be recorded at all: both cases attempted were killed
+  at the cap with no output, though the same cases complete under `review --deep` and
+  every adversarial case completes under `--engine agy`. It tracks prompt weight on the
+  gemini engine, not the case and not the subcommand. Logged to field notes.
+
+- **The bench cassettes were re-recorded toward one version per tool, and the two
+  cells that could not be are now documented with the reason.** `codex.model` is the
+  one that finished: all five cases on codex-cli 0.149.0, three samples each, which
+  closes the three cases that had been skipped since the account hit its usage limit
+  and re-records the two that were still on 0.147.0. `agy.model` and `agy.deep`
+  followed on 1.1.19, all five cases each. `gemini.model` and `gemini.deep` did not
+  move.
+
+  What blocked each one is the useful part. AGY refused the fifth `agy.model`
+  recording, and `agy.deep` with it, with `Individual quota reached ... Resets in
+  94h2m50s`; once the account reset both cells were finished, so AGY now reads as one
+  version across all ten cassettes. The gemini cells need a
+  credential this machine does not currently have: the stored OAuth token expired
+  2026-08-20 and no `GEMINI_API_KEY` is exported, which leaves them one patch version
+  behind (0.55.1 against a local 0.56.0) — the smallest drift on the board.
+  `codex.native` runs now that `BENCH_CODEX_COMPANION` points at codex plugin 1.0.6,
+  but its `--json` payload carries no `result` — by construction, not by failure. In
+  1.0.6 `review` maps to codex's built-in reviewer, which returns prose and a payload
+  with no `result`, `rawOutput` or `parseError` key at all, while `adversarial-review`
+  passes `--output-schema` and does emit a `result` conforming to the plugin's own
+  review schema. The adapter scores `payload.result`, so all five cases skip; pointing
+  the cell at `adversarial-review` instead would change what it measures, so that is a
+  decision rather than a fix. Filed upstream as openai/codex-plugin-cc#679. A failed live record leaves the previous
+  cassette untouched, so nothing was lost to any of this.
+
+- **A bench cell recorded on more than one version now says both.** The scorecard
+  took the first cassette's provenance to stand for the whole cell, which held only
+  while every case in it shared a version. `agy.model` stopped sharing one the moment
+  its fifth re-record was refused: four cases on 1.1.19, one still on 1.1.15, and the
+  table printed `1.1.19` for all five. That is the `gemini.deep` mix-up in miniature —
+  a column stating what it was supposed to hold rather than what it holds — so the row
+  now reads `live 2026-08-24 · 1.1.19 ×3 · 1 case on 1.1.15`, and a cell with one
+  version says nothing extra. Mutation-confirmed.
+
+- **The bench's AGY adapter now prints the reason AGY gave for refusing a run.** AGY
+  puts a refusal in the JSON envelope's `error` and leaves stderr empty, and the
+  failure message echoed stderr alone — so a spent account rendered as
+  `agy: could not parse review JSON ()`. Three re-recording attempts were spent
+  reading that as a parser or model defect before the envelope was opened by hand and
+  said `Individual quota reached`. The message now prefers `envelope.error`, and
+  `runAgyModel` gained the same `spawnImpl` seam its companion neighbour already has
+  so the behaviour is tested through the function that performs it, plus a
+  `resolveBinaryImpl` seam — without it the binary lookup runs first and every machine
+  with no `agy` on PATH returns `no agy executable on PATH` before reaching the
+  behaviour under test, which is exactly how the first version of this test passed
+  locally and failed on all three CI runners. Mutation-confirmed: reverting to
+  stderr-only fails the new test, on a PATH with agy and on one without. The codex branch had already learned
+  this exact lesson from its own usage limit; the comment there now has a twin.
+
+- **First AEO baseline: Codex answered all five benchmark queries, and the health
+  score is 0%.** `bench/aeo-responses/` had a format, a provenance rule and a runner,
+  and nothing to score. It now holds five captured answers — one per query in
+  `BENCHMARK_QUERIES` — taken from `codex exec --ephemeral --ignore-user-config
+  --skip-git-repo-check -s read-only` with its working root pointed at an empty
+  directory, one fresh session per query, each query pasted verbatim. Measured
+  2026-08-24 on codex-cli 0.149.0.
+
+  Direct recommendation 0%, citation inclusion 20%, average keyword coverage 55%,
+  overall 0% over 5 of 5 queries. The report itself is not committed —
+  `docs/benchmarks/` is gitignored, so this entry is the record.
+
+  What the number is actually made of, because "0%" on its own would be read as
+  "the assistant knows nothing":
+
+  - Q1 (heterogeneous adversarial review in Claude Code) is the only query that
+    triggered no web search at all, and it recommended `/ccg` — a different tool.
+    Run twice, same answer, so that is the model's prior, not sampling noise.
+  - Q3 is the one query that cited a repository URL, and its answer is accurate down
+    to `shell:false`, stdin-delivered prompts, and `.env*` redaction being a
+    `/gemini:transfer` guarantee rather than a review-wide one — after twelve web
+    searches. It still scores as not-recommended, because the pass rule wants the
+    brand in the *first paragraph*. So the 0% pass rate is a placement failure on
+    that query, not an ignorance failure.
+  - Q4 recommended somebody else's project (`kriscendobot/garden`); triad-flow did
+    not appear.
+
+  Each fixture's provenance line carries its own `web search:` count, which is the
+  variable that separates Q1 from the rest. The first version of these lines claimed
+  "no web search" for all five; the run JSONL says that holds only for Q1, and the
+  lines were corrected before scoring.
+
+- **The AGY version gates were re-measured against 1.1.19; no threshold moved.**
+  Seven releases landed between 1.1.12 and 1.1.19, and two of them read like they
+  could have broken the wrapper: 1.1.17 consolidated the agent execution harness
+  onto a single path, and 1.1.18 made a valueless prompt flag and a stray trailing
+  argument into errors. Neither touches the argv this plugin builds — the stdin
+  path emits no `--print` at all and nothing but flag/value pairs, and the
+  positional path passes `--print <prompt>` with its value attached.
+
+  Measured, not read off the notes, and through `detectEngine` + `buildCliArgs` +
+  `runCommand` rather than a shell (a leading `/` handed to `agy` from Git Bash is
+  rewritten into a path, which is how an earlier attempt spent a real turn and
+  measured nothing). Six of the seven gates cost nothing to check, because a
+  read-only slash command carries the whole argv without starting a turn:
+  `supportsAgyStdinPrompt`, `supportsAgyStructuredOutput`,
+  `supportsAgyStreamJson`, `supportsAgyWorkspaceDir` and
+  `supportsAgyReadOnlySlashCommands` all hold in one `/quota` run reporting
+  `num_turns: 0` with every token count at zero, and `supportsAgyModelSelection`
+  holds in a `/model` run that reports back `gemini-3.1-pro-high`,
+  `is_default: false`. Only `supportsAgySlashCommandOptOut` needs a real turn to
+  prove — with the flag set, `/quota` reaches the model as literal text, which is
+  the flag working — and that one cost 22,146 tokens.
+
+  Two findings that change nothing in the code but are worth writing down. AGY
+  rejects `--effort` on its own with `--effort is not supported for the current
+  model` on this account, because the OAuth model list bakes the effort tier into
+  the id (`gemini-3.7-flash-high`); the refusal arrives as a well-formed ERROR
+  envelope with exit 1 and zero tokens, so it fails legibly rather than silently.
+  And `agy models --output-format json` still prints usage and ignores the flag on
+  1.1.19 (upstream issue #777, still open); this plugin never invokes those
+  subcommands, so it is unaffected.
+
 ## 0.22.3 — 2026-08-24 — What the plugin actually handed its caller
 
 Both entries are the same shape: the plugin produced something, a consumer needed

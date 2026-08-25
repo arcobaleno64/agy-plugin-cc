@@ -1,75 +1,116 @@
 {
   "caseId": "repo-context",
   "cell": "agy.model",
-  "recordedAt": "2026-08-19T03:20:21.493Z",
+  "recordedAt": "2026-08-24T05:04:18.964Z",
   "verdict": "needs-attention",
-  "summary": "Token generation relies on process.env.JWT_SECRET without validation, leading to runtime failures or insecure signing if unconfigured.",
+  "summary": "JWT signing secret is used without any existence or strength check, and runtime state containing a PID is committed to source control.",
   "findings": [
     {
       "severity": "high",
-      "title": "Unvalidated JWT_SECRET environment variable",
-      "body": "jwt.sign directly uses process.env.JWT_SECRET without checking if it is defined. If the environment variable is missing or empty, jsonwebtoken throws an unhandled error ('secretOrPrivateKey must have a value'), causing token generation to fail unexpectedly.",
+      "title": "No guard on undefined JWT_SECRET",
+      "body": "process.env.JWT_SECRET is passed directly to jwt.sign() with no prior check. If the environment variable is unset, the value is `undefined`. While modern jsonwebtoken (v8+) throws for an undefined secret with HS256, the resulting error is an opaque library exception ('secretOrPrivateKey must have a value') rather than a clear configuration error, and there is no try/catch or fail-fast validation. In older library versions or if the algorithm were ever changed to 'none', this could silently produce unsigned tokens—a catastrophic auth bypass.",
       "file": "src/token.js",
       "line_start": 4,
       "line_end": 4,
-      "confidence": 0.95,
-      "recommendation": "Validate that process.env.JWT_SECRET is defined and non-empty before signing, throwing a clear error or enforcing startup environment checks, and specify an explicit signing algorithm."
+      "confidence": 0.92,
+      "recommendation": "Validate the secret at module load time: `const secret = process.env.JWT_SECRET; if (!secret) throw new Error('JWT_SECRET env var is required');` and pass `secret` to jwt.sign(). This fails fast on startup instead of on the first token request."
+    },
+    {
+      "severity": "medium",
+      "title": "Runtime state file with PID committed to version control",
+      "body": ".omc/state/job.json contains a hardcoded process ID (4242) and runtime job status. Committing runtime state means every developer or CI clone inherits a stale PID reference, the file will generate constant merge noise, and internal process metadata is leaked into the repository history.",
+      "file": ".omc/state/job.json",
+      "line_start": 1,
+      "line_end": 1,
+      "confidence": 0.85,
+      "recommendation": "Add `.omc/state/` to .gitignore and remove the file from tracking with `git rm --cached .omc/state/job.json`. Generate this file at runtime only."
     }
   ],
-  "latencyMs": 18495,
-  "engineVersion": "1.1.14",
+  "latencyMs": 49967,
+  "engineVersion": "1.1.19",
+  "engineObserved": null,
   "samples": [
     {
       "verdict": "needs-attention",
-      "summary": "The token issuance function lacks validation for the secret key environment variable, causing runtime exceptions if unset.",
+      "summary": "JWT signing secret is never validated, allowing tokens signed with an undefined or empty key, and runtime state containing a PID is committed to version control.",
       "findings": [
         {
-          "severity": "high",
-          "title": "Unvalidated JWT secret key",
-          "body": "process.env.JWT_SECRET is passed directly to jwt.sign without checking if it is defined. If the environment variable is missing or empty, jwt.sign throws a runtime error or risks signing tokens with an invalid key.",
+          "severity": "critical",
+          "title": "JWT_SECRET used without validation — tokens may be signed with empty/undefined key",
+          "body": "process.env.JWT_SECRET is passed directly to jwt.sign() with no existence or length check. If the env var is unset, jwt.sign() throws an opaque error at call time rather than at startup. Worse, if JWT_SECRET is set to an empty string, jsonwebtoken silently accepts it and produces a token signed with a zero-length secret, which any party can forge. This is an authentication bypass.",
           "file": "src/token.js",
           "line_start": 4,
           "line_end": 4,
           "confidence": 0.95,
-          "recommendation": "Validate that process.env.JWT_SECRET is defined and non-empty prior to signing, throwing a clear configuration error if missing."
+          "recommendation": "Guard at module load: const secret = process.env.JWT_SECRET; if (!secret) throw new Error('JWT_SECRET env var must be set and non-empty'); — then use the validated `secret` in jwt.sign()."
+        },
+        {
+          "severity": "medium",
+          "title": "Runtime state file with PID committed to repository",
+          "body": ".omc/state/job.json contains a process ID (4242) and transient job status. Committing machine-local runtime state to version control causes spurious diffs, merge conflicts, and leaks host information. It will also be stale on any other checkout.",
+          "file": ".omc/state/job.json",
+          "line_start": 1,
+          "line_end": 1,
+          "confidence": 0.85,
+          "recommendation": "Add .omc/state/ to .gitignore and remove this file from tracking (git rm --cached)."
         }
       ],
-      "latencyMs": 18450
+      "latencyMs": 43395
     },
     {
       "verdict": "needs-attention",
-      "summary": "Token signing lacks validation for the JWT_SECRET environment variable, leading to unhandled runtime errors if unset.",
+      "summary": "JWT signing secret is used without any existence check, and runtime state is committed to version control.",
       "findings": [
         {
-          "severity": "high",
-          "title": "Unchecked JWT_SECRET environment variable",
-          "body": "jwt.sign is called with process.env.JWT_SECRET without verifying that the secret exists. If the environment variable is missing, jsonwebtoken throws a synchronous error ('\"secretOrPrivateKey\" must have a value'), causing unhandled exceptions during token issuance.",
-          "file": "src/token.js",
-          "line_start": 3,
-          "line_end": 5,
-          "confidence": 0.95,
-          "recommendation": "Validate that process.env.JWT_SECRET is present and non-empty before signing, throwing a clear configuration error if it is not configured."
-        }
-      ],
-      "latencyMs": 19571
-    },
-    {
-      "verdict": "needs-attention",
-      "summary": "Token generation relies on process.env.JWT_SECRET without validation, leading to runtime failures or insecure signing if unconfigured.",
-      "findings": [
-        {
-          "severity": "high",
-          "title": "Unvalidated JWT_SECRET environment variable",
-          "body": "jwt.sign directly uses process.env.JWT_SECRET without checking if it is defined. If the environment variable is missing or empty, jsonwebtoken throws an unhandled error ('secretOrPrivateKey must have a value'), causing token generation to fail unexpectedly.",
+          "severity": "critical",
+          "title": "JWT_SECRET used without validation — undefined secret risks unsigned or weakly-signed tokens",
+          "body": "jwt.sign() receives process.env.JWT_SECRET directly. If the environment variable is unset, the value is undefined. Behaviour then depends on the jsonwebtoken library version: modern versions (≥9) throw an opaque error, but older versions could silently produce an unsigned (alg:none) or empty-secret-signed token, which any attacker can forge. Even in the throwing case, the caller gets no meaningful error context and the failure is unhandled.",
           "file": "src/token.js",
           "line_start": 4,
           "line_end": 4,
           "confidence": 0.95,
-          "recommendation": "Validate that process.env.JWT_SECRET is defined and non-empty before signing, throwing a clear error or enforcing startup environment checks, and specify an explicit signing algorithm."
+          "recommendation": "Validate the secret at module load time: const SECRET = process.env.JWT_SECRET; if (!SECRET) throw new Error('JWT_SECRET environment variable is required'); and pass SECRET to jwt.sign()."
+        },
+        {
+          "severity": "medium",
+          "title": "Runtime state file with ephemeral PID committed to repository",
+          "body": ".omc/state/job.json contains a process ID (4242) and runtime job status. PIDs are machine-specific and ephemeral; committing this file pollutes version history with per-run artefacts, causes needless merge conflicts, and may leak internal operational details. This is almost certainly meant to be a local-only runtime file.",
+          "file": ".omc/state/job.json",
+          "line_start": 1,
+          "line_end": 1,
+          "confidence": 0.9,
+          "recommendation": "Add .omc/state/ (or the entire .omc/ directory) to .gitignore and remove this file from tracking with git rm --cached."
         }
       ],
-      "latencyMs": 18495
+      "latencyMs": 47393
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "JWT signing secret is used without any existence or strength check, and runtime state containing a PID is committed to source control.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "No guard on undefined JWT_SECRET",
+          "body": "process.env.JWT_SECRET is passed directly to jwt.sign() with no prior check. If the environment variable is unset, the value is `undefined`. While modern jsonwebtoken (v8+) throws for an undefined secret with HS256, the resulting error is an opaque library exception ('secretOrPrivateKey must have a value') rather than a clear configuration error, and there is no try/catch or fail-fast validation. In older library versions or if the algorithm were ever changed to 'none', this could silently produce unsigned tokens—a catastrophic auth bypass.",
+          "file": "src/token.js",
+          "line_start": 4,
+          "line_end": 4,
+          "confidence": 0.92,
+          "recommendation": "Validate the secret at module load time: `const secret = process.env.JWT_SECRET; if (!secret) throw new Error('JWT_SECRET env var is required');` and pass `secret` to jwt.sign(). This fails fast on startup instead of on the first token request."
+        },
+        {
+          "severity": "medium",
+          "title": "Runtime state file with PID committed to version control",
+          "body": ".omc/state/job.json contains a hardcoded process ID (4242) and runtime job status. Committing runtime state means every developer or CI clone inherits a stale PID reference, the file will generate constant merge noise, and internal process metadata is leaked into the repository history.",
+          "file": ".omc/state/job.json",
+          "line_start": 1,
+          "line_end": 1,
+          "confidence": 0.85,
+          "recommendation": "Add `.omc/state/` to .gitignore and remove the file from tracking with `git rm --cached .omc/state/job.json`. Generate this file at runtime only."
+        }
+      ],
+      "latencyMs": 49967
     }
   ],
-  "raw": "{\"conversation_id\":\"e5e7cf3a-6022-4d7e-9000-b828fb916ec3\",\"status\":\"SUCCESS\",\"response\":\"{\\n  \\\"verdict\\\": \\\"needs-attention\\\",\\n  \\\"summary\\\": \\\"Token generation relies on process.env.JWT_SECRET without validation, leading to runtime failures or insecure signing if unconfigured.\\\",\\n  \\\"findings\\\": [\\n    {\\n      \\\"severity\\\": \\\"high\\\",\\n      \\\"title\\\": \\\"Unvalidated JWT_SECRET environment variable\\\",\\n      \\\"body\\\": \\\"jwt.sign directly uses process.env.JWT_SECRET without checking if it is defined. If the environment variable is missing or empty, jsonwebtoken throws an unhandled error ('secretOrPrivateKey must have a value'), causing token generation to fail unexpectedly.\\\",\\n      \\\"file\\\": \\\"src/token.js\\\",\\n      \\\"line_start\\\": 4,\\n      \\\"line_end\\\": 4,\\n      \\\"confidence\\\": 0.95,\\n      \\\"recommendation\\\": \\\"Validate that process.env.JWT_SECRET is defined and non-empty before signing, throwing a clear error or enforcing startup environment checks, and specify an explicit signing algorithm.\\\"\\n    }\\n  ],\\n  \\\"next_steps\\\": [\\n    \\\"Add an environment variable guard check for JWT_SECRET in src/token.js or during app initialization.\\\",\\n    \\\"Explicitly set algorithm (e.g., 'HS256') in jwt.sign options to avoid relying on library defaults.\\\"\\n  ]\\n}\\n\",\"duration_seconds\":14.0636541,\"num_turns\":1,\"usage\":{\"input_tokens\":18972,\"output_tokens\":1369,\"thinking_tokens\":1108,\"cache_read_tokens\":0,\"total_tokens\":20341}}\n"
+  "raw": "{\"conversation_id\":\"2783ab69-a0f0-4919-bf13-47037cf62129\",\"status\":\"SUCCESS\",\"response\":\"{\\\"verdict\\\":\\\"needs-attention\\\",\\\"summary\\\":\\\"JWT signing secret is used without any existence or strength check, and runtime state containing a PID is committed to source control.\\\",\\\"findings\\\":[{\\\"severity\\\":\\\"high\\\",\\\"title\\\":\\\"No guard on undefined JWT_SECRET\\\",\\\"body\\\":\\\"process.env.JWT_SECRET is passed directly to jwt.sign() with no prior check. If the environment variable is unset, the value is `undefined`. While modern jsonwebtoken (v8+) throws for an undefined secret with HS256, the resulting error is an opaque library exception ('secretOrPrivateKey must have a value') rather than a clear configuration error, and there is no try/catch or fail-fast validation. In older library versions or if the algorithm were ever changed to 'none', this could silently produce unsigned tokens—a catastrophic auth bypass.\\\",\\\"file\\\":\\\"src/token.js\\\",\\\"line_start\\\":4,\\\"line_end\\\":4,\\\"confidence\\\":0.92,\\\"recommendation\\\":\\\"Validate the secret at module load time: `const secret = process.env.JWT_SECRET; if (!secret) throw new Error('JWT_SECRET env var is required');` and pass `secret` to jwt.sign(). This fails fast on startup instead of on the first token request.\\\"},{\\\"severity\\\":\\\"medium\\\",\\\"title\\\":\\\"Runtime state file with PID committed to version control\\\",\\\"body\\\":\\\".omc/state/job.json contains a hardcoded process ID (4242) and runtime job status. Committing runtime state means every developer or CI clone inherits a stale PID reference, the file will generate constant merge noise, and internal process metadata is leaked into the repository history.\\\",\\\"file\\\":\\\".omc/state/job.json\\\",\\\"line_start\\\":1,\\\"line_end\\\":1,\\\"confidence\\\":0.85,\\\"recommendation\\\":\\\"Add `.omc/state/` to .gitignore and remove the file from tracking with `git rm --cached .omc/state/job.json`. Generate this file at runtime only.\\\"}],\\\"next_steps\\\":[\\\"Add a fail-fast check for JWT_SECRET at module load time in src/token.js\\\",\\\"Add .omc/state/ to .gitignore and remove the tracked state file from the repository\\\"]}\\n\",\"duration_seconds\":45.7332332,\"num_turns\":1,\"usage\":{\"input_tokens\":22503,\"output_tokens\":1181,\"thinking_tokens\":0,\"cache_read_tokens\":0,\"total_tokens\":23684}}\n"
 }

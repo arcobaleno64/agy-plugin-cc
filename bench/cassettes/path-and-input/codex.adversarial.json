@@ -1,0 +1,116 @@
+{
+  "caseId": "path-and-input",
+  "cell": "codex.adversarial",
+  "recordedAt": "2026-08-24T11:13:34.081Z",
+  "verdict": "needs-attention",
+  "summary": "Do not ship: attacker-controlled filenames enable arbitrary command execution and reads outside the upload directory.",
+  "findings": [
+    {
+      "severity": "critical",
+      "title": "Shell interpolation allows arbitrary command execution",
+      "body": "`archive` inserts `name` directly into a shell command twice. A filename containing shell metacharacters such as `;`, `$()`, or redirection operators will be interpreted by the shell when `execSync` runs, allowing arbitrary commands with the application's privileges. Escaping only the path would remain fragile because the archive filename is independently injectable.",
+      "file": "src/files.js",
+      "line_start": 12,
+      "line_end": 14,
+      "confidence": 0.99,
+      "recommendation": "Replace `execSync` with `execFileSync(\"tar\", [\"-czf\", archivePath, \"--\", validatedTarget])`, validate `name` as a basename, and place the archive at an explicitly controlled path."
+    },
+    {
+      "severity": "high",
+      "title": "Path traversal permits reading files outside the upload root",
+      "body": "`path.join(ROOT, name)` normalizes `..` segments but does not enforce that the result remains beneath `/srv/uploads`. A value such as `../secrets.txt` resolves outside the upload directory and is read synchronously, exposing any readable file reachable through traversal.",
+      "file": "src/files.js",
+      "line_start": 7,
+      "line_end": 10,
+      "confidence": 0.99,
+      "recommendation": "Resolve the candidate against `ROOT`, reject absolute names and traversal, then verify the resolved path starts with `path.resolve(ROOT) + path.sep`; consider accepting only a basename or server-generated upload ID."
+    }
+  ],
+  "latencyMs": 24377,
+  "engineVersion": "codex-cli 0.149.0",
+  "engineObserved": null,
+  "samples": [
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: attacker-controlled filenames can escape the upload directory, and archive creation permits shell command injection.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Filename interpolation enables arbitrary command execution",
+          "body": "`archive` inserts `name` and the derived path directly into a shell command. If `name` is externally influenced, shell metacharacters such as `;`, `&&`, command substitutions, or whitespace can execute additional commands under the service account. The same interpolation also lets option-like names alter `tar` behavior.",
+          "file": "src/files.js",
+          "line_start": 11,
+          "line_end": 13,
+          "confidence": 0.99,
+          "recommendation": "Do not invoke a shell. Use `execFileSync`/`spawnSync` with `tar` and each argument supplied separately, reject absolute or traversal names, use `--` before file operands, and place the output under a validated fixed directory."
+        },
+        {
+          "severity": "high",
+          "title": "Path traversal allows reads outside the upload root",
+          "body": "`readUpload` joins an untrusted name to `ROOT` without verifying the normalized result remains inside `/srv/uploads`. A value such as `../../etc/passwd` resolves outside the intended directory and is read synchronously, exposing any service-readable UTF-8 file.",
+          "file": "src/files.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 0.99,
+          "recommendation": "Resolve the candidate against `ROOT`, verify it is a descendant using `path.relative` with explicit rejection of `..` and absolute results, and consider an allowlisted server-generated upload identifier instead of accepting paths."
+        }
+      ],
+      "latencyMs": 23526
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: attacker-controlled filenames enable arbitrary command execution and reads outside the upload directory.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Filename interpolation permits arbitrary shell command execution",
+          "body": "`archive` inserts `name` directly into a shell command. A value containing shell metacharacters such as `;`, `&&`, `$()`, or backticks can execute arbitrary commands with the service's privileges. Unquoted whitespace and leading tar options also make benign filenames unsafe.",
+          "file": "src/files.js",
+          "line_start": 12,
+          "line_end": 13,
+          "confidence": 0.99,
+          "recommendation": "Replace `execSync` with `execFileSync` or `spawnSync` using a fixed executable and argument array, pass `--` before file operands, validate the archive name, and reject any resolved source path outside `ROOT`."
+        },
+        {
+          "severity": "high",
+          "title": "Path traversal allows reading arbitrary accessible files",
+          "body": "`path.join(ROOT, name)` normalizes traversal segments but does not enforce containment. A name such as `../../etc/passwd` resolves outside `/srv/uploads`, allowing disclosure of any UTF-8-readable file accessible to the process. Symlinks inside the upload directory can create the same escape unless canonical paths are checked.",
+          "file": "src/files.js",
+          "line_start": 7,
+          "line_end": 9,
+          "confidence": 0.99,
+          "recommendation": "Resolve and canonicalize both `ROOT` and the target, then reject targets whose canonical path is not a descendant of `ROOT`; define and enforce a restricted filename format if nested paths are unnecessary."
+        }
+      ],
+      "latencyMs": 25347
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Do not ship: attacker-controlled filenames enable arbitrary command execution and reads outside the upload directory.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Shell interpolation allows arbitrary command execution",
+          "body": "`archive` inserts `name` directly into a shell command twice. A filename containing shell metacharacters such as `;`, `$()`, or redirection operators will be interpreted by the shell when `execSync` runs, allowing arbitrary commands with the application's privileges. Escaping only the path would remain fragile because the archive filename is independently injectable.",
+          "file": "src/files.js",
+          "line_start": 12,
+          "line_end": 14,
+          "confidence": 0.99,
+          "recommendation": "Replace `execSync` with `execFileSync(\"tar\", [\"-czf\", archivePath, \"--\", validatedTarget])`, validate `name` as a basename, and place the archive at an explicitly controlled path."
+        },
+        {
+          "severity": "high",
+          "title": "Path traversal permits reading files outside the upload root",
+          "body": "`path.join(ROOT, name)` normalizes `..` segments but does not enforce that the result remains beneath `/srv/uploads`. A value such as `../secrets.txt` resolves outside the upload directory and is read synchronously, exposing any readable file reachable through traversal.",
+          "file": "src/files.js",
+          "line_start": 7,
+          "line_end": 10,
+          "confidence": 0.99,
+          "recommendation": "Resolve the candidate against `ROOT`, reject absolute names and traversal, then verify the resolved path starts with `path.resolve(ROOT) + path.sep`; consider accepting only a basename or server-generated upload ID."
+        }
+      ],
+      "latencyMs": 24377
+    }
+  ],
+  "raw": "{\n  \"review\": \"Adversarial Review\",\n  \"target\": {\n    \"mode\": \"working-tree\",\n    \"label\": \"working tree diff\",\n    \"explicit\": true\n  },\n  \"threadId\": \"01a03379-73a8-7e42-b3a4-f5247ca1de06\",\n  \"context\": {\n    \"repoRoot\": \"C:/Users/arcobaleno/AppData/Local/Temp/bench-path-and-input-IBEIiQ\",\n    \"branch\": \"main\",\n    \"summary\": \"Reviewing 0 staged, 1 unstaged, and 0 untracked file(s).\"\n  },\n  \"codex\": {\n    \"status\": 0,\n    \"stderr\": \"\",\n    \"stdout\": \"{\\\"verdict\\\":\\\"needs-attention\\\",\\\"summary\\\":\\\"Do not ship: attacker-controlled filenames enable arbitrary command execution and reads outside the upload directory.\\\",\\\"findings\\\":[{\\\"severity\\\":\\\"critical\\\",\\\"title\\\":\\\"Shell interpolation allows arbitrary command execution\\\",\\\"body\\\":\\\"`archive` inserts `name` directly into a shell command twice. A filename containing shell metacharacters such as `;`, `$()`, or redirection operators will be interpreted by the shell when `execSync` runs, allowing arbitrary commands with the application's privileges. Escaping only the path would remain fragile because the archive filename is independently injectable.\\\",\\\"file\\\":\\\"src/files.js\\\",\\\"line_start\\\":12,\\\"line_end\\\":14,\\\"confidence\\\":0.99,\\\"recommendation\\\":\\\"Replace `execSync` with `execFileSync(\\\\\\\"tar\\\\\\\", [\\\\\\\"-czf\\\\\\\", archivePath, \\\\\\\"--\\\\\\\", validatedTarget])`, validate `name` as a basename, and place the archive at an explicitly controlled path.\\\"},{\\\"severity\\\":\\\"high\\\",\\\"title\\\":\\\"Path traversal permits reading files outside the upload root\\\",\\\"body\\\":\\\"`path.join(ROOT, name)` normalizes `..` segments but does not enforce that the result remains beneath `/srv/uploads`. A value such as `../secrets.txt` resolves outside the upload directory and is read synchronously, exposing any readable file reachable through traversal.\\\",\\\"file\\\":\\\"src/files.js\\\",\\\"line_start\\\":7,\\\"line_end\\\":10,\\\"confidence\\\":0.99,\\\"recommendation\\\":\\\"Resolve the candidate against `ROOT`, reject absolute names and traversal, then verify the resolved path starts with `path.resolve(ROOT) + path.sep`; consider accepting only a basename or server-generated upload ID.\\\"}],\\\"next_steps\\\":[\\\"Remove shell evaluation from `archive` and add injection regression tests.\\\",\\\"Add traversal containment checks and tests for `..`, absolute paths, and encoded or mixed-separator inputs.\\\"]}\",\n    \"reasoning\": []\n  },\n  \"result\": {\n    \"verdict\": \"needs-attention\",\n    \"summary\": \"Do not ship: attacker-controlled filenames enable arbitrary command execution and reads outside the upload directory.\",\n    \"findings\": [\n      {\n        \"severity\": \"critical\",\n        \"title\": \"Shell interpolation allows arbitrary command execution\",\n        \"body\": \"`archive` inserts `name` directly into a shell command twice. A filename containing shell metacharacters such as `;`, `$()`, or redirection operators will be interpreted by the shell when `execSync` runs, allowing arbitrary commands with the application's privileges. Escaping only the path would remain fragile because the archive filename is independently injectable.\",\n        \"file\": \"src/files.js\",\n        \"line_start\": 12,\n        \"line_end\": 14,\n        \"confidence\": 0.99,\n        \"recommendation\": \"Replace `execSync` with `execFileSync(\\\"tar\\\", [\\\"-czf\\\", archivePath, \\\"--\\\", validatedTarget])`, validate `name` as a basename, and place the archive at an explicitly controlled path.\"\n      },\n      {\n        \"severity\": \"high\",\n        \"title\": \"Path traversal permits reading files outside the upload root\",\n        \"body\": \"`path.join(ROOT, name)` normalizes `..` segments but does not enforce that the result remains beneath `/srv/uploads`. A value such as `../secrets.txt` resolves outside the upload directory and is read synchronously, exposing any readable file reachable through traversal.\",\n        \"file\": \"src/files.js\",\n        \"line_start\": 7,\n        \"line_end\": 10,\n        \"confidence\": 0.99,\n        \"recommendation\": \"Resolve the candidate against `ROOT`, reject absolute names"
+}

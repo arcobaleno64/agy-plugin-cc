@@ -27,10 +27,29 @@ function aggregateByCell(rows) {
   return out;
 }
 
+// The first cassette's provenance used to stand for the whole cell, which is fine
+// only while every case in it was recorded against the same version. It stops being
+// fine the moment one case fails to re-record: `agy.model` came back four cases on
+// 1.1.19 and one still on 1.1.15, and the table printed `1.1.19` for all five. That
+// is the same failure the `gemini.deep` mix-up was — a column stating what it was
+// supposed to be rather than what it holds — so a cell whose cassettes disagree now
+// carries every version it actually has.
 function provenanceByCell(rows) {
   const out = {};
   for (const cell of CELL_IDS) {
-    out[cell] = rows.find((r) => r.cell === cell && r.provenance)?.provenance ?? null;
+    const own = rows.filter((r) => r.cell === cell && r.provenance);
+    if (own.length === 0) {
+      out[cell] = null;
+      continue;
+    }
+    const counts = new Map();
+    for (const r of own) {
+      const v = r.provenance.engineVersion ?? null;
+      counts.set(v, (counts.get(v) ?? 0) + 1);
+    }
+    out[cell] = counts.size > 1
+      ? { ...own[0].provenance, otherVersions: [...counts].slice(1).map(([version, cases]) => ({ version, cases })) }
+      : own[0].provenance;
   }
   return out;
 }
@@ -50,8 +69,14 @@ function spreadByCell(rows) {
   return out;
 }
 
+const AXIS_TRACKS = {
+  model: "model-isolated",
+  harness: "plugin-native",
+  adversarial: "plugin-adversarial"
+};
+
 function cellsOn(axis) {
-  const key = axis === "model" ? "model-isolated" : "plugin-native";
+  const key = AXIS_TRACKS[axis];
   return CELL_IDS.filter((c) => CELLS[c].track === key);
 }
 
@@ -63,7 +88,10 @@ function describeSource(p) {
   // composite averaged over five read identically without it, and on this corpus
   // they are not comparable.
   const n = Number.isFinite(p.samples) && p.samples > 1 ? ` ×${p.samples}` : "";
-  return p.engineVersion ? `live ${day} · ${p.engineVersion}${n}` : `live ${day}${n}`;
+  const mixed = Array.isArray(p.otherVersions) && p.otherVersions.length
+    ? ` · ${p.otherVersions.map((o) => `${o.cases} case${o.cases === 1 ? "" : "s"} on ${o.version ?? "unknown"}`).join(", ")}`
+    : "";
+  return p.engineVersion ? `live ${day} · ${p.engineVersion}${n}${mixed}` : `live ${day}${n}${mixed}`;
 }
 
 // A seeded cassette is an illustration, not a measurement, so it cannot win an
@@ -154,6 +182,7 @@ export function buildScorecard(rows, meta = {}) {
   const spreads = spreadByCell(rows);
   const modelAxis = axisVerdict(cellsOn("model"), agg, prov, spreads);
   const harnessAxis = axisVerdict(cellsOn("harness"), agg, prov, spreads);
+  const adversarialAxis = axisVerdict(cellsOn("adversarial"), agg, prov, spreads);
   const lifts = harnessLifts(agg, prov, spreads);
 
   const lines = [];
@@ -167,6 +196,7 @@ export function buildScorecard(rows, meta = {}) {
   lines.push("|---|---|---|");
   lines.push(`| **Model** (single-shot, tools off) | **${modelAxis.name}** | ${modelAxis.note} |`);
   lines.push(`| **Harness** (agentic reviewers) | **${harnessAxis.name}** | ${harnessAxis.note} |`);
+  lines.push(`| **Adversarial** (agentic, adversarial prompt) | **${adversarialAxis.name}** | ${adversarialAxis.note} |`);
   for (const l of lifts) {
     if (l.lift == null) continue;
     const note = l.seeded

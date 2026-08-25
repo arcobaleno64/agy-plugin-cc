@@ -1,0 +1,186 @@
+{
+  "caseId": "async-lifecycle",
+  "cell": "agy.shallow",
+  "recordedAt": "2026-08-24T15:28:57.852Z",
+  "verdict": "needs-attention",
+  "summary": "Identified critical failure masking in runOne, file handle leak in openJob, unhandled promise rejections in startHeartbeat, and missing input sanitization for file paths.",
+  "findings": [
+    {
+      "severity": "critical",
+      "title": "Failure masking in runOne catch block",
+      "body": "In runOne, the catch block catches all errors and returns { id, ok: true }. This silently masks any failure during file opening or writing and falsely reports successful job execution to the caller.",
+      "file": "src/queue.js",
+      "line_start": 26,
+      "line_end": 28,
+      "confidence": 1,
+      "recommendation": "Update the catch block to return { id, ok: false, error: err.message } or rethrow the error so failures can be detected by callers."
+    },
+    {
+      "severity": "high",
+      "title": "File descriptor leak in openJob on size limit validation",
+      "body": "In openJob, if stat.size exceeds 1,000,000 bytes, an error is thrown without closing the opened file handle or removing it from the handles map, resulting in leaked file descriptors and retained references.",
+      "file": "src/queue.js",
+      "line_start": 6,
+      "line_end": 11,
+      "confidence": 1,
+      "recommendation": "Call await handle.close() and handles.delete(id) before throwing the error when the log file exceeds the maximum permitted size."
+    },
+    {
+      "severity": "high",
+      "title": "Unhandled promise rejection and unmanaged timer in startHeartbeat",
+      "body": "startHeartbeat calls asynchronous fs.appendFile inside setInterval without handling promise rejections. Any I/O error (such as permission errors or full disk) will trigger an unhandled promise rejection that can terminate the Node.js process. Additionally, the timer ID is not returned, preventing cleanup.",
+      "file": "src/queue.js",
+      "line_start": 15,
+      "line_end": 19,
+      "confidence": 0.95,
+      "recommendation": "Attach a .catch() handler to fs.appendFile to log or handle write errors, and return the interval timer ID so the caller can clear the interval."
+    },
+    {
+      "severity": "medium",
+      "title": "Path traversal vulnerability via unsanitized job ID",
+      "body": "The id parameter is interpolated directly into filesystem paths in openJob and startHeartbeat without validation or sanitization. If an untrusted ID containing path traversal characters (such as '../') is passed, operations may read or write outside /var/jobs/.",
+      "file": "src/queue.js",
+      "line_start": 6,
+      "line_end": 17,
+      "confidence": 0.9,
+      "recommendation": "Validate id against an expected format (such as /^[a-zA-Z0-9_-]+$/) or use path.basename before constructing file paths."
+    }
+  ],
+  "latencyMs": 18475,
+  "engineVersion": "1.1.19",
+  "engineObserved": "agy",
+  "samples": [
+    {
+      "verdict": "needs-attention",
+      "summary": "The queue implementation masks job failures as successes, leaks file descriptors when size limits are exceeded, and produces unhandled promise rejections in heartbeat timers.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Catch block reports false success on job failure",
+          "body": "In `runOne`, the catch block returns `{ id, ok: true }` when `openJob` or `handle.write` throws. This masks all failures and incorrectly informs callers that the job succeeded.",
+          "file": "src/queue.js",
+          "line_start": 26,
+          "line_end": 28,
+          "confidence": 1,
+          "recommendation": "Return `{ id, ok: false, error }` or propagate the error in the catch block."
+        },
+        {
+          "severity": "medium",
+          "title": "Unclosed file handle leak when log exceeds size limit",
+          "body": "In `openJob`, if `stat.size` exceeds 1,000,000 bytes, an Error is thrown without closing the opened `handle` or deleting it from `handles`, leaking file descriptors over time.",
+          "file": "src/queue.js",
+          "line_start": 8,
+          "line_end": 11,
+          "confidence": 0.95,
+          "recommendation": "Call `await handle.close()` and remove `id` from `handles` before throwing the error."
+        },
+        {
+          "severity": "medium",
+          "title": "Unhandled promise rejection in heartbeat interval",
+          "body": "In `startHeartbeat`, the promise returned by `fs.appendFile` is not awaited or caught inside `setInterval`. Any filesystem failure will cause an unhandled promise rejection.",
+          "file": "src/queue.js",
+          "line_start": 16,
+          "line_end": 18,
+          "confidence": 0.95,
+          "recommendation": "Attach a `.catch()` handler to `fs.appendFile` and return the interval ID so the heartbeat can be cleared."
+        }
+      ],
+      "latencyMs": 17784
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Identified error swallowing masking job failures, file descriptor leaks on oversized logs and completed jobs, and unhandled promise rejections in the heartbeat timer.",
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Error swallowed and falsely reported as success in runOne",
+          "body": "In `runOne`, the catch block catches failures from `openJob` or `handle.write` and returns `{ id, ok: true }`. This causes job failures (e.g., oversized logs or file access errors) to be silently reported as successful executions.",
+          "file": "src/queue.js",
+          "line_start": 26,
+          "line_end": 28,
+          "confidence": 1,
+          "recommendation": "Return `{ id, ok: false, error }` in the catch block or allow the error to propagate."
+        },
+        {
+          "severity": "high",
+          "title": "File descriptor leak when log size threshold is exceeded in openJob",
+          "body": "In `openJob`, `fs.open` creates a FileHandle and stores it in `handles`. When `stat.size > 1_000_000`, an Error is thrown without closing `handle` or removing it from the `handles` Map, causing an unclosed file descriptor leak.",
+          "file": "src/queue.js",
+          "line_start": 6,
+          "line_end": 11,
+          "confidence": 1,
+          "recommendation": "Ensure `await handle.close()` is called and the entry is deleted from `handles` before throwing the error."
+        },
+        {
+          "severity": "medium",
+          "title": "Unhandled promise rejection and untracked timer in startHeartbeat",
+          "body": "`startHeartbeat` invokes `fs.appendFile` (from `node:fs/promises`) inside `setInterval` without awaiting or attaching a `.catch()` handler. Any write failure (e.g., disk full or permission error) will trigger an unhandled promise rejection. Additionally, the timer ID is not returned, preventing the heartbeat from being stopped.",
+          "file": "src/queue.js",
+          "line_start": 15,
+          "line_end": 19,
+          "confidence": 0.95,
+          "recommendation": "Attach a `.catch()` error handler to `fs.appendFile` inside the interval callback, and return the timer handle from `startHeartbeat` so callers can clear it."
+        },
+        {
+          "severity": "medium",
+          "title": "Unclosed FileHandle across job execution lifecycle",
+          "body": "`runOne` opens a FileHandle via `openJob` and writes to it, but never closes the handle upon job completion or failure, leading to accumulating open file descriptors over time.",
+          "file": "src/queue.js",
+          "line_start": 21,
+          "line_end": 29,
+          "confidence": 0.95,
+          "recommendation": "Close the FileHandle in a `finally` block or provide an explicit cleanup/close lifecycle function."
+        }
+      ],
+      "latencyMs": 18798
+    },
+    {
+      "verdict": "needs-attention",
+      "summary": "Identified critical failure masking in runOne, file handle leak in openJob, unhandled promise rejections in startHeartbeat, and missing input sanitization for file paths.",
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Failure masking in runOne catch block",
+          "body": "In runOne, the catch block catches all errors and returns { id, ok: true }. This silently masks any failure during file opening or writing and falsely reports successful job execution to the caller.",
+          "file": "src/queue.js",
+          "line_start": 26,
+          "line_end": 28,
+          "confidence": 1,
+          "recommendation": "Update the catch block to return { id, ok: false, error: err.message } or rethrow the error so failures can be detected by callers."
+        },
+        {
+          "severity": "high",
+          "title": "File descriptor leak in openJob on size limit validation",
+          "body": "In openJob, if stat.size exceeds 1,000,000 bytes, an error is thrown without closing the opened file handle or removing it from the handles map, resulting in leaked file descriptors and retained references.",
+          "file": "src/queue.js",
+          "line_start": 6,
+          "line_end": 11,
+          "confidence": 1,
+          "recommendation": "Call await handle.close() and handles.delete(id) before throwing the error when the log file exceeds the maximum permitted size."
+        },
+        {
+          "severity": "high",
+          "title": "Unhandled promise rejection and unmanaged timer in startHeartbeat",
+          "body": "startHeartbeat calls asynchronous fs.appendFile inside setInterval without handling promise rejections. Any I/O error (such as permission errors or full disk) will trigger an unhandled promise rejection that can terminate the Node.js process. Additionally, the timer ID is not returned, preventing cleanup.",
+          "file": "src/queue.js",
+          "line_start": 15,
+          "line_end": 19,
+          "confidence": 0.95,
+          "recommendation": "Attach a .catch() handler to fs.appendFile to log or handle write errors, and return the interval timer ID so the caller can clear the interval."
+        },
+        {
+          "severity": "medium",
+          "title": "Path traversal vulnerability via unsanitized job ID",
+          "body": "The id parameter is interpolated directly into filesystem paths in openJob and startHeartbeat without validation or sanitization. If an untrusted ID containing path traversal characters (such as '../') is passed, operations may read or write outside /var/jobs/.",
+          "file": "src/queue.js",
+          "line_start": 6,
+          "line_end": 17,
+          "confidence": 0.9,
+          "recommendation": "Validate id against an expected format (such as /^[a-zA-Z0-9_-]+$/) or use path.basename before constructing file paths."
+        }
+      ],
+      "latencyMs": 18475
+    }
+  ],
+  "raw": "{\n  \"review\": \"Review\",\n  \"target\": {\n    \"mode\": \"working-tree\",\n    \"label\": \"working tree diff\",\n    \"explicit\": true\n  },\n  \"engine\": \"agy\",\n  \"gemini\": {\n    \"status\": 0,\n    \"stdout\": \"{\\n  \\\"verdict\\\": \\\"needs-attention\\\",\\n  \\\"summary\\\": \\\"Identified critical failure masking in runOne, file handle leak in openJob, unhandled promise rejections in startHeartbeat, and missing input sanitization for file paths.\\\",\\n  \\\"findings\\\": [\\n    {\\n      \\\"severity\\\": \\\"critical\\\",\\n      \\\"title\\\": \\\"Failure masking in runOne catch block\\\",\\n      \\\"body\\\": \\\"In runOne, the catch block catches all errors and returns { id, ok: true }. This silently masks any failure during file opening or writing and falsely reports successful job execution to the caller.\\\",\\n      \\\"file\\\": \\\"src/queue.js\\\",\\n      \\\"line_start\\\": 26,\\n      \\\"line_end\\\": 28,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Update the catch block to return { id, ok: false, error: err.message } or rethrow the error so failures can be detected by callers.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"high\\\",\\n      \\\"title\\\": \\\"File descriptor leak in openJob on size limit validation\\\",\\n      \\\"body\\\": \\\"In openJob, if stat.size exceeds 1,000,000 bytes, an error is thrown without closing the opened file handle or removing it from the handles map, resulting in leaked file descriptors and retained references.\\\",\\n      \\\"file\\\": \\\"src/queue.js\\\",\\n      \\\"line_start\\\": 6,\\n      \\\"line_end\\\": 11,\\n      \\\"confidence\\\": 1.0,\\n      \\\"recommendation\\\": \\\"Call await handle.close() and handles.delete(id) before throwing the error when the log file exceeds the maximum permitted size.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"high\\\",\\n      \\\"title\\\": \\\"Unhandled promise rejection and unmanaged timer in startHeartbeat\\\",\\n      \\\"body\\\": \\\"startHeartbeat calls asynchronous fs.appendFile inside setInterval without handling promise rejections. Any I/O error (such as permission errors or full disk) will trigger an unhandled promise rejection that can terminate the Node.js process. Additionally, the timer ID is not returned, preventing cleanup.\\\",\\n      \\\"file\\\": \\\"src/queue.js\\\",\\n      \\\"line_start\\\": 15,\\n      \\\"line_end\\\": 19,\\n      \\\"confidence\\\": 0.95,\\n      \\\"recommendation\\\": \\\"Attach a .catch() handler to fs.appendFile to log or handle write errors, and return the interval timer ID so the caller can clear the interval.\\\"\\n    },\\n    {\\n      \\\"severity\\\": \\\"medium\\\",\\n      \\\"title\\\": \\\"Path traversal vulnerability via unsanitized job ID\\\",\\n      \\\"body\\\": \\\"The id parameter is interpolated directly into filesystem paths in openJob and startHeartbeat without validation or sanitization. If an untrusted ID containing path traversal characters (such as '../') is passed, operations may read or write outside /var/jobs/.\\\",\\n      \\\"file\\\": \\\"src/queue.js\\\",\\n      \\\"line_start\\\": 6,\\n      \\\"line_end\\\": 17,\\n      \\\"confidence\\\": 0.9,\\n      \\\"recommendation\\\": \\\"Validate id against an expected format (such as /^[a-zA-Z0-9_-]+$/) or use path.basename before constructing file paths.\\\"\\n    }\\n  ],\\n  \\\"next_steps\\\": [\\n    \\\"Fix runOne to return ok: false or propagate errors on failure.\\\",\\n    \\\"Ensure file handles are closed and cleaned up from the handles map on errors in openJob.\\\",\\n    \\\"Add error handling to fs.appendFile in startHeartbeat and return the interval handle.\\\",\\n    \\\"Add path validation for the id parameter across queue operations.\\\"\\n  ]\\n}\",\n    \"stderr\": \"\"\n  },\n  \"result\": {\n    \"verdict\": \"needs-attention\",\n    \"summary\": \"Identified critical failure masking in runOne, file handle leak in openJob, unhandled promise rejections in startHeartbeat, and missing input sanitization for file paths.\",\n    \"findings\": [\n      {\n        \"severity\": \"critical\",\n        \"title\": \"Failure masking in runOne catch block\",\n        \"body\": \"In runOne, the catch block catches all errors and returns { id, ok: true }. This silently masks any failure during file "
+}
