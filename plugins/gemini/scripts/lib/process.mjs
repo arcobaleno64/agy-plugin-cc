@@ -67,15 +67,24 @@ function windowsSystemTool(name) {
 // from a directory the workspace cannot write to. System32 is already on PATH
 // and needs administrator rights to write, so naming it as the lookup's cwd
 // introduces no candidate that was not already trusted.
+// Taken from where.exe's own resolved location rather than re-derived from the
+// environment. That makes the invariant structural: if there is a tool to run,
+// there is a directory it lives in, and no branch exists where this returns
+// nothing while the lookup still goes ahead.
+//
+// The first attempt read %SystemRoot% a second time and fell back when it was
+// missing. That fallback was unreachable -- windowsSystemTool needs the same
+// variable, so a missing %SystemRoot% means there is no `where` to run either and
+// computeSpawnTarget has already returned null. A mutation replacing the fallback
+// survived the whole suite, which is what said so.
+//
+// `undefined` here now means only "no System32\\where.exe at all". Both callers
+// are safe in that state: computeSpawnTarget returns null and the shell branch
+// below sets NoDefaultCurrentDirectoryInExePath, and resolveBinaryPath's own
+// spawn takes the same branch.
 function lookupCwd() {
-  const root = process.env.SystemRoot || process.env.SYSTEMROOT;
-  if (!root) return undefined;
-  const dir = path.join(root, "System32");
-  try {
-    return fs.statSync(dir).isDirectory() ? dir : undefined;
-  } catch {
-    return undefined;
-  }
+  const where = windowsSystemTool("where");
+  return where ? path.dirname(where) : undefined;
 }
 
 // powershell.exe is the one tool here that does not live in System32 itself.
@@ -175,7 +184,7 @@ function entryFromPackageBin(shimDir, pkg, commandName) {
 // a different program under a different PATH.
 function resolveSpawnTarget(command, env) {
   const searchPath = String(env?.PATH ?? env?.Path ?? process.env.PATH ?? "");
-  const key = `${command} ${searchPath}`;
+  const key = `${command}\u001f${searchPath}`;
   if (spawnTargetCache.has(key)) return spawnTargetCache.get(key);
 
   const target = computeSpawnTarget(command, env);
@@ -255,13 +264,24 @@ export function runCommand(command, args = [], options = {}) {
   // `git.cmd` sitting in the working tree wins over the real git. Git Bash sets
   // that variable, which is why this stayed invisible here -- a plain PowerShell
   // or cmd session does not, and neither does a service. Setting it for the
-  // child is Microsoft's own switch for exactly this case, and all it withholds
-  // is launching an executable out of the working tree, which no command on this
-  // path intends to do. `spawnSync` with `shell:false` never searches the
-  // current directory, so the flag is only needed on the shell branch -- but it
-  // is harmless on the other and setting it unconditionally keeps the two
-  // branches from drifting apart.
-  const env = { ...(options.env ?? process.env), NoDefaultCurrentDirectoryInExePath: "1" };
+  // child is Microsoft's own switch for exactly this case.
+  //
+  // Set ONLY on the shell branch, and this is deliberate rather than tidy.
+  // `spawnSync` with `shell:false` never searches the current directory, so the
+  // flag buys nothing there -- and this same function spawns the engine CLI,
+  // which passes its environment on to every shell command the model runs. An
+  // unconditional flag would change command resolution inside the user's own
+  // workspace for those grandchildren, where a repo-local helper invoked by bare
+  // name would stop resolving. That is a behaviour change outside this plugin's
+  // own spawns, and not one to make as a side effect of keeping two branches
+  // symmetrical.
+  //
+  // Leaving `options.env` untouched on the other branch also preserves
+  // spawnSync's inherit-by-default, which is not the same thing as
+  // `{ ...process.env }`: Node's env proxy hides the `=C:` per-drive
+  // current-directory entries cmd.exe maintains, so rebuilding the block drops
+  // them.
+  const env = shell ? { ...(options.env ?? process.env), NoDefaultCurrentDirectoryInExePath: "1" } : options.env;
 
   const result = spawnSync(safeCommand, safeArgs, {
     cwd: options.cwd,

@@ -85,11 +85,38 @@ export const TOOLS = [
   tool(
     "gemini_review",
     "Review the current diff with Gemini or AGY",
-    "Queue a read-only code review through the existing companion runtime. Sends the workspace diff to the configured Gemini/AGY engine; secret-looking files are withheld by filename.",
-    // The review path runs the engine with write disabled, so the reviewed
-    // workspace is never modified. It does send the diff to Google, which is
-    // what openWorldHint is for.
-    { readOnlyHint: true, openWorldHint: true },
+    "Queue a code review through the existing companion runtime. Sends the workspace diff to the configured Gemini/AGY engine; secret-looking files are withheld by filename. The turn is dispatched read-only, but on AGY that is an intent rather than a boundary: nothing stops a review turn writing, and the run reports afterwards what it wrote.",
+    // Not read-only. This said "the review path runs the engine with write
+    // disabled, so the reviewed workspace is never modified", and the second half
+    // did not follow from the first: what the review path disables is `--write`,
+    // and on AGY whether that stops anything is decided by the user's own
+    // settings.json, not by the argv.
+    //
+    // Measured on AGY 1.1.20, both arms, with exactly the argv this path builds
+    // (no --write; --yolo is a gemini flag and never appears on an AGY spawn):
+    //
+    //   settings.json with `toolPermission: "always-proceed"` and the target
+    //   under `trustedWorkspaces` -- a review turn replaced a file inside the
+    //   workspace, replaced one outside it, and ran a shell command. Three for
+    //   three, exit 0, `status: "SUCCESS"`.
+    //
+    //   an isolated home holding a minimal settings.json and a target on a
+    //   volume no `trustedWorkspaces` entry covers -- all three were auto-denied
+    //   and nothing was written. Also exit 0 and `status: "SUCCESS"`, with the
+    //   denial only on stderr (antigravity-cli#794).
+    //
+    // So the workspace is safe on a default install and is not safe on a
+    // permissive one, and `toolPermission: "always-proceed"` is an ordinary
+    // convenience setting rather than an exotic one. An annotation is static per
+    // tool, cannot read the user's settings, and by this file's own rule three
+    // lines up describes the worst a call can do. The worst is the permissive
+    // configuration, so this cannot claim the workspace is untouched.
+    //
+    // The earlier reasoning here was also wrong for a second reason worth
+    // recording: it leaned on gemini's `--yolo` gate from docs/THREAT-MODEL.md
+    // 7.2, which is measured on gemini CLI and does not transfer -- that section
+    // says so in its own opening line.
+    { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     ["workspace"],
     {
       workspace: { type: "string", description: "Absolute path to the target workspace." },
@@ -114,8 +141,10 @@ export const TOOLS = [
   tool(
     "gemini_adversarial_review",
     "Adversarially review the current diff with Gemini or AGY",
-    "Queue a read-only adversarial code review through the existing companion runtime. Same transport as gemini_review, but runs the adversarial template: it argues against the change rather than summarizing it, and is the one to reach for on destructive or hard-to-reverse edits. Secret-looking files are withheld by filename.",
-    { readOnlyHint: true, openWorldHint: true },
+    "Queue an adversarial code review through the existing companion runtime. Same transport as gemini_review, and the same caveat: dispatched read-only, but on AGY nothing stops the turn writing. Runs the adversarial template -- it argues against the change rather than summarizing it, and is the one to reach for on destructive or hard-to-reverse edits. Secret-looking files are withheld by filename.",
+    // Same reasoning as gemini_review above: same transport, same engine, same
+    // absent boundary.
+    { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     ["workspace"],
     {
       workspace: { type: "string", description: "Absolute path to the target workspace." },

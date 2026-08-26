@@ -321,6 +321,37 @@ test("a planted executable in the process's own directory never wins", { skip: p
   assert.match(seen.stdout, /git version/, "expected the real git");
 });
 
+// %SystemRoot% missing takes out the whole resolution path at once: without it
+// there is no System32\where.exe to run, so computeSpawnTarget returns null and
+// every command falls to the shell. That is the state a stripped service
+// environment or a scrubbed parent leaves behind, and the workspace's own
+// `git.exe` must still lose there -- which it does only because the shell branch
+// sets NoDefaultCurrentDirectoryInExePath. This pins the two halves working
+// together, which neither test above does.
+test("a stripped environment falls to the shell without falling to the workspace", { skip: process.platform !== "win32" }, () => {
+  const workspace = makeTempDir("gemini-nosysroot-");
+  fs.writeFileSync(path.join(workspace, "git.exe"), "not a real executable", "utf8");
+
+  const moduleUrl = new URL("../plugins/gemini/scripts/lib/process.mjs", import.meta.url).href;
+  const probe = path.join(workspace, "probe.mjs");
+  // Deleted inside the child, before the module is imported, so the absence is
+  // real rather than simulated through a seam.
+  fs.writeFileSync(
+    probe,
+    `delete process.env.SystemRoot;\n` +
+      `delete process.env.SYSTEMROOT;\n` +
+      `const { runCommand } = await import(${JSON.stringify(moduleUrl)});\n` +
+      `const r = runCommand("git", ["--version"], { cwd: process.cwd() });\n` +
+      `process.stdout.write(JSON.stringify({ stdout: r.stdout, error: r.error?.message ?? null }));\n`,
+    "utf8"
+  );
+
+  const run = spawnSync(process.execPath, [probe], { cwd: workspace, encoding: "utf8" });
+  const seen = JSON.parse(run.stdout);
+  assert.equal(seen.error, null, "the planted git.exe was spawned once %SystemRoot% was gone");
+  assert.match(seen.stdout, /git version/, "expected the real git");
+});
+
 // Mechanism 2: the fallback shell is cmd.exe, which searches the current
 // directory too -- but only when NoDefaultCurrentDirectoryInExePath is unset.
 // Git Bash sets it, so a suite run from Git Bash cannot see this branch at all;

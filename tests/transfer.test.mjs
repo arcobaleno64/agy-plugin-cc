@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { isSecretFile, checkGitConflict, pruneOldTransfers, buildTransferSnapshot } from '../plugins/gemini/scripts/lib/transfer-context.mjs';
+import { isSecretFile, checkGitConflict, pruneOldTransfers, buildTransferSnapshot, assertContained } from '../plugins/gemini/scripts/lib/transfer-context.mjs';
 import { parseTransferArgs } from '../plugins/gemini/scripts/transfer.mjs';
 import { initGitRepo, run } from './helpers.mjs';
 
@@ -163,9 +163,23 @@ test('an existing .omc/.gitignore is left exactly as the user wrote it', (t) => 
 // the reported path did not say so.
 //
 // `symlinkSync(..., 'junction')` is the portable spelling: Windows makes a
-// junction, POSIX ignores the type and makes a directory symlink.
+// junction, POSIX ignores the type and makes a directory symlink. Creating one
+// still needs a privilege some Windows hosts withhold, and a test that cannot
+// build its own fixture has not found a defect -- it has found a host that
+// cannot run it, which must read as skipped rather than failed.
+const canLink = (() => {
+  const probe = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-linkcheck-'));
+  try {
+    fs.symlinkSync(probe, path.join(probe, 'link'), 'junction');
+    return true;
+  } catch {
+    return false;
+  } finally {
+    fs.rmSync(probe, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+})();
 for (const [label, linkAt] of [['.omc', '.omc'], ['.omc/transfers', path.join('.omc', 'transfers')]]) {
-  test(`a transfer refuses to follow a ${label} link out of the workspace`, (t) => {
+  test(`a transfer refuses to follow a ${label} link out of the workspace`, { skip: !canLink }, (t) => {
     const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-escape-repo-'));
     const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-escape-out-'));
     t.after(() => {
@@ -180,7 +194,7 @@ for (const [label, linkAt] of [['.omc', '.omc'], ['.omc/transfers', path.join('.
 
     assert.throws(
       () => buildTransferSnapshot({ cwd: repo, instructions: 'hand off' }),
-      /outside the workspace/,
+      /Refusing to write/,
       'the snapshot was written through the link'
     );
     // The message is not the point -- where the bytes went is. Nothing may have
@@ -189,3 +203,99 @@ for (const [label, linkAt] of [['.omc', '.omc'], ['.omc/transfers', path.join('.
     assert.deepEqual(fs.readdirSync(outside), [], 'something was written outside the workspace');
   });
 }
+
+// The same primitive one directory down, and the case the first version of the
+// guard missed: `.omc` and `.omc/transfers` are both real directories, so both
+// checks pass, and `.gitignore` inside them is a DANGLING link. `existsSync`
+// follows it, finds nothing, returns false -- and `writeFileSync` then follows it
+// too and creates the far-side file. Dangling is what makes it work: the guard
+// resolved its target with realpath, which fails ENOENT on a link to nothing, and
+// "cannot resolve" was being read as "not there yet".
+//
+// The content is fixed (`*\n`), so this creates or truncates rather than
+// exfiltrating. It is still a repository choosing a path outside itself and
+// getting a write there.
+test('a transfer refuses a dangling .omc/.gitignore link', { skip: !canLink }, (t) => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-ignore-link-'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-ignore-out-'));
+  t.after(() => {
+    for (const dir of [repo, outside]) {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    }
+  });
+
+  // Both directories real, so the two directory guards have nothing to say.
+  const omc = path.join(repo, '.omc');
+  fs.mkdirSync(path.join(omc, 'transfers'), { recursive: true });
+
+  const victim = path.join(outside, 'planted.txt');
+  fs.symlinkSync(victim, path.join(omc, '.gitignore'), 'file');
+  assert.equal(fs.existsSync(victim), false, 'the fixture must start dangling');
+
+  assert.throws(
+    () => buildTransferSnapshot({ cwd: repo, instructions: 'hand off' }),
+    /Refusing to write/,
+    'the link was followed'
+  );
+  assert.deepEqual(fs.readdirSync(outside), [], 'a file was created outside the workspace');
+});
+
+// The containment predicate, asserted directly. Every link fixture above is
+// caught by the lstat check before it gets here, so nothing was exercising this
+// branch -- making it always return left the whole suite green. It is the
+// invariant the function is named for and it backstops any relocation lstat does
+// not report as a link, so it is tested rather than trusted.
+test('assertContained refuses a real directory that resolves outside the workspace', (t) => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'contained-root-'));
+  const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'contained-out-'));
+  t.after(() => {
+    for (const dir of [repo, elsewhere]) {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    }
+  });
+
+  // No link anywhere: two real directories that are simply not nested.
+  assert.throws(
+    () => assertContained(repo, elsewhere, 'probe'),
+    /outside the workspace/,
+    'a directory outside the workspace was accepted'
+  );
+
+  // Inside is accepted, and so is the root itself -- an empty relative path means
+  // "this is the workspace", which is contained, and rejecting it would refuse a
+  // write directly into the root.
+  const inside = path.join(repo, 'nested');
+  fs.mkdirSync(inside);
+  assert.doesNotThrow(() => assertContained(repo, inside, 'probe'));
+  assert.doesNotThrow(() => assertContained(repo, repo, 'probe'));
+
+  // A path that does not exist yet is judged by its parent, not waved through.
+  assert.doesNotThrow(() => assertContained(repo, path.join(inside, 'new.json'), 'probe'));
+  assert.throws(() => assertContained(repo, path.join(elsewhere, 'new.json'), 'probe'), /outside the workspace/);
+});
+
+// The branch that decides whether this guard fails open or closed. ENOENT means
+// "not there", and only that is benign. EACCES, EPERM and ELOOP all mean the
+// guard could not answer -- on Windows a junction the process may traverse but
+// not open reports exactly that way, and answering "contained" there hands back
+// the original bug with a guard in front of it. None of these can be constructed
+// portably, which is why they arrive through a seam.
+test('assertContained fails closed when it cannot inspect the path', (t) => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'contained-errs-'));
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }));
+  const target = path.join(repo, '.omc');
+
+  for (const code of ['EACCES', 'EPERM', 'ELOOP']) {
+    assert.throws(
+      () => assertContained(repo, target, '.omc', { lstatImpl: () => { const e = new Error(code); e.code = code; throw e; } }),
+      new RegExp(`cannot be inspected \\(${code}\\)`),
+      `${code} was treated as contained`
+    );
+  }
+
+  // And ENOENT still is not an error: the path simply does not exist yet, and the
+  // parent it would be created in is the workspace itself.
+  assert.doesNotThrow(
+    () => assertContained(repo, target, '.omc', { lstatImpl: () => { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; } })
+  );
+});

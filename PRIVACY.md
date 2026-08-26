@@ -38,10 +38,20 @@ Transport is argv or stdin on a child process. A bare command name is first
 resolved to an absolute executable — or, for an npm shim, to the entry script its
 package names — and spawned with `shell: false`; on Windows a name that
 resolution cannot identify falls back to a shell command line, which is the only
-path where a shell is involved. Prompts themselves are never on that path: Gemini
-and AGY 1.1.2 or newer take them on stdin, and the older AGY positional form is
-protected by that same absolute-path resolution. See [`SECURITY.md`](SECURITY.md)
-for the process-boundary details.
+path where a shell is involved.
+
+Prompts are almost never on that path. Gemini and AGY 1.1.2 or newer take them on
+stdin, so on those the prompt is not in argv at all. What remains is AGY below
+1.1.2, which takes the prompt positionally: if resolution also fails for that
+spawn, the prompt reaches a `cmd.exe` command line. It is quoted for MSVCRT argv
+rules (`quoteForWindowsShell`, `scripts/lib/process.mjs`) and screened for NUL
+bytes and length (`assertAgyPromptSafe`, `scripts/lib/engine.mjs`) — but that
+function is not a `cmd.exe` escaper and does not claim to be, and the screen does
+not look for shell metacharacters. The combination is narrow: an AGY older than
+1.1.2, on Windows, with the command resolving through a shim that cannot be
+identified. Upgrading AGY to 1.1.2 or newer removes it entirely.
+
+See [`SECURITY.md`](SECURITY.md) for the process-boundary details.
 
 What gets assembled depends on the command:
 

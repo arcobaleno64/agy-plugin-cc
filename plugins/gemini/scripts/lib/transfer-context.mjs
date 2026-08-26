@@ -43,25 +43,85 @@ export function checkGitConflict(cwd = process.cwd()) {
 // snapshot landed outside the repo and `snapshotPath` still said `.omc/transfers`.
 //
 // realpath resolves links on both sides, so containment is decided by where the
-// write actually goes rather than by what it is called.
-function assertContained(root, target, label) {
-  let realTarget;
+// write actually goes rather than by what it is called. Two things this is
+// deliberately NOT:
+//
+//   * It is not a check that survives a live racer. This is check-then-use, and
+//     a process that swaps a directory for a link between the check and the
+//     write still wins. The threat it answers is a link committed into a
+//     repository, which is present before the check and stays put.
+//   * It is not a resolution of the target. A link is refused whether or not it
+//     resolves, because a DANGLING link fails realpath with ENOENT -- and
+//     reading "cannot resolve" as "not there yet" is exactly how `.gitignore`
+//     slipped past the first version of this guard: `existsSync` follows the
+//     link, finds nothing, and `writeFileSync` then creates the far-side file.
+// Exported for tests only. The link check above preempts every fixture a test
+// can build with symlinkSync, which left the containment predicate below with
+// no case exercising it -- a mutation that made it always return survived the
+// whole suite. It is still the invariant this function is named for, and it
+// backstops anything lstat does not classify as a link but realpath relocates,
+// so it is asserted directly rather than deleted for being hard to reach.
+// The `lstatImpl` seam mirrors runCommandImpl/spawnImpl elsewhere in this repo.
+// It exists for one branch: an lstat that fails with something other than ENOENT.
+// EACCES, EPERM and ELOOP are the cases that decide whether this guard fails open
+// or closed, and none of them can be constructed portably from a test -- a
+// mutation that swallowed them survived the entire suite until this seam existed.
+export function assertContained(root, target, label, { lstatImpl = fs.lstatSync } = {}) {
+  let realRoot;
   try {
-    realTarget = fs.realpathSync.native(target);
-  } catch {
-    return; // Not created yet: nothing to redirect, and the caller creates it below.
+    realRoot = fs.realpathSync.native(root);
+  } catch (error) {
+    throw new Error(`Refusing to write ${label}: the workspace ${root} cannot be resolved (${error?.code ?? error}).`);
   }
-  const realRoot = fs.realpathSync.native(root);
-  const relative = path.relative(realRoot, realTarget);
-  if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) return;
+
+  // lstat, not stat: the question is what the entry IS, not what it points at.
+  // Only ENOENT is benign here. EACCES, EPERM and ELOOP all mean the guard could
+  // not answer, and a guard that cannot answer must not say "contained" -- on
+  // Windows a junction the process may traverse but not open reports exactly
+  // that way, which would have let the original bug through unmitigated.
+  let entry = null;
+  try {
+    entry = lstatImpl(target);
+  } catch (error) {
+    if (error?.code !== 'ENOENT') {
+      throw new Error(`Refusing to write ${label}: ${target} cannot be inspected (${error.code}).`);
+    }
+  }
+
+  if (entry?.isSymbolicLink()) {
+    throw new Error(
+      `Refusing to write ${label}: ${target} is a link, so the write would land wherever it points. ` +
+        `Remove it if you did not put it there.`
+    );
+  }
+
+  // Nothing there yet: what has to be contained is the directory the create will
+  // happen inside, which is the parent.
+  const probe = entry ? target : path.dirname(target);
+  let real;
+  try {
+    real = fs.realpathSync.native(probe);
+  } catch (error) {
+    if (error?.code === 'ENOENT') return; // The parent is absent too; mkdir will build it under root.
+    throw new Error(`Refusing to write ${label}: ${probe} cannot be resolved (${error.code}).`);
+  }
+
+  const relative = path.relative(realRoot, real);
+  // An empty relative path means `real` IS the workspace root, which is contained.
+  if (!relative.startsWith('..') && !path.isAbsolute(relative)) return;
   throw new Error(
-    `Refusing to write ${label}: it resolves to ${realTarget}, outside the workspace ${realRoot}. ` +
+    `Refusing to write ${label}: it resolves to ${real}, outside the workspace ${realRoot}. ` +
       `Remove the link at ${target} if you did not put it there.`
   );
 }
 
-export function ensureOmcIgnored(omcDir) {
+// `root` is optional so the existing exported signature still works for callers
+// that only want the file created. buildTransferSnapshot passes it, because
+// `.gitignore` is reached by name inside a directory this module just checked --
+// and a name is what the whole guard exists to distrust.
+export function ensureOmcIgnored(omcDir, root = null) {
   const ignoreFile = path.join(omcDir, '.gitignore');
+  if (root) assertContained(root, ignoreFile, '.omc/.gitignore');
   if (fs.existsSync(ignoreFile)) return ignoreFile;
   fs.mkdirSync(omcDir, { recursive: true });
   fs.writeFileSync(ignoreFile, '*\n', 'utf8');
@@ -202,7 +262,7 @@ export function buildTransferSnapshot({ engine = 'auto', model = null, effort = 
   // And again once it exists: `transfers` can be the link instead of `.omc`, and
   // mkdirSync with recursive:true walks through an existing one without complaint.
   assertContained(cwd, transfersDir, '.omc/transfers');
-  ensureOmcIgnored(omcDir);
+  ensureOmcIgnored(omcDir, cwd);
 
   // LRU Pruning of old snapshots
   pruneOldTransfers(transfersDir, 20);

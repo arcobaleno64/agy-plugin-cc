@@ -32,8 +32,63 @@
   `.omc/transfers` are now resolved with realpath and checked for containment
   before anything is written, and the refusal names the link.
 
+- **`gemini_review` and `gemini_adversarial_review` no longer report
+  `readOnlyHint: true`.** The annotation claimed the reviewed workspace is never
+  modified, on the grounds that the review path dispatches the engine with
+  `--write` disabled. On AGY that disables nothing the user's own `settings.json`
+  has not already decided.
+
+  Measured on AGY 1.1.20, both arms, with exactly the argv the review path builds.
+  Under `toolPermission: "always-proceed"` with the target inside
+  `trustedWorkspaces`, a review turn replaced a file in the workspace, replaced
+  one outside it, and ran a shell command -- three for three. Under an isolated
+  home holding a minimal settings file, with the target on a volume no
+  `trustedWorkspaces` entry covers, all three were auto-denied. So the workspace is
+  safe on a default install and unsafe on a permissive one, and `always-proceed`
+  is an ordinary convenience setting rather than an exotic one. An annotation is
+  static per tool, cannot read the user's settings, and by this file's own rule
+  describes the worst a call can do.
+
+  The earlier reasoning was wrong twice over, and the second one is the one worth
+  recording: it leaned on gemini's `--yolo` gate from `docs/THREAT-MODEL.md` 7.2 as
+  though it covered both engines. `--yolo` is a gemini flag, AGY has no equivalent,
+  and that section opens by saying the two engines behave in opposite ways and
+  nothing transfers between them.
+
+  The same run also settles a caveat every AGY block in the threat model carried:
+  those measurements were taken on a machine with `always-proceed` set, which the
+  document flagged as uncontrolled. Controlled, the permissive arm reproduces them
+  all and the default arm reproduces none. Recorded there in full.
+
+- **Nine review findings on the changes above.** The exec-hijack guard's lookup
+  directory now comes from `where.exe`'s own resolved path instead of re-reading
+  `%SystemRoot%` -- the fallback that read was unreachable, since the same variable
+  is what finds `where` in the first place, and a mutation replacing it survived the
+  whole suite. `NoDefaultCurrentDirectoryInExePath` is now set only on the shell
+  branch: unconditionally, it reached the engine CLI and every shell command the
+  model ran through it, changing command resolution inside the user's workspace for
+  processes this plugin does not own.
+
+  The transfer containment guard now refuses a link whether or not it resolves,
+  covers `.omc/.gitignore` as well as the two directories, and fails closed when it
+  cannot inspect a path. Each was a real hole: a *dangling* `.gitignore` symlink
+  passed both directory checks and both the old guard's `realpath` (ENOENT read as
+  "not there yet") before `writeFileSync` followed it, and a junction that can be
+  traversed but not opened reports EACCES, which the guard was treating as
+  contained.
+
+  Also: the `--resume` refusal message said the flag accepts only `latest` when it
+  also accepts an index number, `PRIVACY.md` credited the wrong mechanism for
+  protecting an older AGY's positional prompt, and the spawn-target cache key's NUL
+  separator made git classify `scripts/lib/process.mjs` as binary -- so the diff of
+  a security change did not render at all in review. The separator is U+001F now,
+  equally impossible in a command name or a PATH and not a byte git treats as
+  binary.
+
 - **A resumed gemini turn may no longer also write.** `gemini --resume` accepts
-  only `latest` (0.53.1), so a resumed turn continues whatever gemini ran last --
+  only `latest` or an index number (`gemini --help`, 0.56.0), and an index is a
+  position rather than an identity -- it shifts as sessions are created. So a
+  resumed turn continues whatever gemini ran last --
   which need not be the thread the caller resolved -- and a resumed conversation
   carries its own workspace. Read-only that costs an answer about the wrong
   project, which the run detects afterwards and reports; write-capable it costs

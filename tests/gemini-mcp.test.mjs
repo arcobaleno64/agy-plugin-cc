@@ -190,9 +190,24 @@ test("MCP annotations match what each tool can actually do", async () => {
   assert.equal(byName.gemini_rescue.destructiveHint, true);
   assert.equal(byName.gemini_rescue.openWorldHint, true);
 
-  // The review path runs with write disabled but still sends the diff out.
-  assert.equal(byName.gemini_review.readOnlyHint, true);
-  assert.equal(byName.gemini_review.openWorldHint, true);
+  // Not read-only, and this test used to say it was. What the review path
+  // disables is `--write`, and on AGY whether that stops anything is decided by
+  // the user's settings.json rather than by the argv. Measured on 1.1.20, both
+  // arms, with exactly the argv this path builds: under `toolPermission:
+  // "always-proceed"` a review turn wrote inside the workspace, wrote outside it,
+  // and ran a shell command; under a minimal settings.json in an isolated home
+  // all three were auto-denied. Both arms returned exit 0 and `status:
+  // "SUCCESS"`.
+  //
+  // An annotation is static per tool and cannot read the user's settings, so the
+  // worst case governs -- the same rule gemini_rescue is pinned by two assertions
+  // up. The worst case is the permissive configuration, which is an ordinary
+  // convenience setting.
+  for (const name of ["gemini_review", "gemini_adversarial_review"]) {
+    assert.equal(byName[name].readOnlyHint, false, `${name} cannot promise the workspace is untouched on AGY`);
+    assert.equal(byName[name].destructiveHint, true, `${name} can write, so it needs a destructiveHint`);
+    assert.equal(byName[name].openWorldHint, true, `${name} sends the diff to Google`);
+  }
 
   // Reading job state touches neither the workspace nor the network.
   for (const name of ["gemini_job_status", "gemini_job_result"]) {
