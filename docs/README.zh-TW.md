@@ -19,7 +19,7 @@ English: [`README.md`](README.md)
 | [`version-sources.md`](version-sources.md) | 每個版本字串以哪個檔案為準，以及靠什麼維持一致。 |
 | [`verifying-without-credentials.md`](verifying-without-credentials.md) | 沒有 Gemini 或 AGY 帳號時，如何演練引擎路徑。 |
 | [`evidence.md`](evidence.md) | 本 repo 的調查規則：沒看過它紅過的東西，不算證據。附已經付過學費的陷阱清單。 |
-| [`HANDOVER_MARKETING_AND_RELEASE_PLAYBOOK.md`](HANDOVER_MARKETING_AND_RELEASE_PLAYBOOK.md) | 企業級交接手冊：增長推廣、MCP 上架、AI 時代 SEO/AEO/GEO 架構規格、自動化驗證與 v1.0.0 路線圖。 |
+| [`ROADMAP.md`](ROADMAP.md) | 交接手冊裡的每一項，對 HEAD 逐項分類：已經做掉、前提成立該做、前置條件不存在、內容有錯、不做。動手之前先讀這份。 |
 
 ## 有日期的記錄——永不重寫
 
@@ -29,5 +29,6 @@ English: [`README.md`](README.md)
 | [`PARITY_AUDIT_v0.6.1.md`](PARITY_AUDIT_v0.6.1.md) | 外掛 v0.6.1 重評 | `PARITY_AUDIT_v0.11.1.md` |
 | [`PARITY_AUDIT_v0.11.1.md`](PARITY_AUDIT_v0.11.1.md) | 外掛 v0.11.1 對上游 v1.0.6，2026-08-04 | 當前狀態見 [`parity.zh-TW.md`](parity.zh-TW.md) |
 | [`AGY_1.1.2_MACOS_LINUX_VALIDATION.md`](AGY_1.1.2_MACOS_LINUX_VALIDATION.md) | 外掛 v0.7.1 對 AGY **1.1.2**，macOS/Linux | 無人重跑；見該檔開頭的說明 |
+| [`HANDOVER_MARKETING_AND_RELEASE_PLAYBOOK.md`](HANDOVER_MARKETING_AND_RELEASE_PLAYBOOK.md) | 外掛 v0.22.2 / `22b93a7`，2026-08-21 | 狀態欄見 [`ROADMAP.md`](ROADMAP.md)；其規格與範本未被取代。 |
 
 比上述最新一份更晚量到的行為，記在 [CHANGELOG](../plugins/gemini/CHANGELOG.md) 與 `THREAT-MODEL.md` §7.2，兩者各自帶有量測日期。
