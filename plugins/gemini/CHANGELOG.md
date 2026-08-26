@@ -32,6 +32,21 @@
   `.omc/transfers` are now resolved with realpath and checked for containment
   before anything is written, and the refusal names the link.
 
+- **A resumed gemini turn may no longer also write.** `gemini --resume` accepts
+  only `latest` (0.53.1), so a resumed turn continues whatever gemini ran last --
+  which need not be the thread the caller resolved -- and a resumed conversation
+  carries its own workspace. Read-only that costs an answer about the wrong
+  project, which the run detects afterwards and reports; write-capable it costs
+  edits landing in that project's directory, and no after-the-fact notice undoes
+  those. The pair is now refused, naming three ways out: `--fresh`, resuming
+  without `--write`, or `--engine agy`, which pins the conversation by id.
+
+  This is the refusal AGY already made, narrowed rather than copied. AGY declines
+  any unpinned resume because it can always pin one; gemini can never pin one, so
+  declining every resume there would remove the feature instead of securing it.
+  The read-only path is untouched, and a test pins both directions -- the refusal
+  must fire on the pair and must not fire on a read-only resume.
+
 - **The rescue subagent no longer invites itself.** Its description opened with
   "Proactively use when" and its own guidance said "Do not wait for the user to
   explicitly ask for Gemini" -- an instruction to spawn an external CLI, ship the

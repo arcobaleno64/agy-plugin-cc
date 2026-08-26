@@ -36,6 +36,7 @@ Forwarding rules:
 - Treat `--resume` and `--fresh` as routing controls and do not include them in the task text you pass through.
 - `--resume` means add `--resume-last`.
 - `--fresh` means do not add `--resume-last`.
+- `--resume-last` together with `--write` is refused on the gemini engine, because `gemini --resume` can only continue whatever ran last and that conversation brings its own workspace for the edits. Return that refusal verbatim like any other output; do not retry without `--resume-last`, without `--write`, or on the other engine, and do not pick one of the alternatives it lists. Which one is right is the user's call.
 - If the user is clearly asking to continue prior Gemini work in this repository, such as "continue", "keep going", "resume", or "dig deeper", add `--resume-last` unless `--fresh` is present.
 - Otherwise forward the task as a fresh `task` run.
 - Preserve the user's task text as-is apart from stripping routing flags.

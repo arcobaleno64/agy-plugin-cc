@@ -264,6 +264,29 @@ test("agy refuses to resume without a conversation id", () => {
   );
 });
 
+// The same fail-closed choice on the engine that can never pin an id. gemini's
+// `--resume` accepts only "latest", so a resumed turn continues whatever gemini
+// ran last -- and a resumed conversation carries its own workspace. Read-only
+// that costs an answer about the wrong project, which the caller detects
+// afterwards and reports (resolveResumeMismatch). Write-capable it costs edits in
+// that project's directory, which no after-the-fact notice undoes, so the
+// refusal is narrowed to exactly there rather than removing resume entirely.
+test("gemini refuses to resume a write-capable turn, and only that", () => {
+  assert.throws(
+    () => buildCliArgs("gemini", { prompt: "hello", write: true, resumeLast: true }),
+    /Refusing to resume a write-capable gemini turn/
+  );
+
+  // Read-only resume still works: it is the shape the mismatch notice covers.
+  const readOnly = buildCliArgs("gemini", { prompt: "hello", write: false, resumeLast: true });
+  assert.deepEqual(readOnly.slice(-2), ["--resume", "latest"]);
+  assert.ok(!readOnly.includes("--yolo"), "a read-only resume must not carry the write gate");
+
+  // And a write turn that is not resuming is untouched -- the refusal is about
+  // the pair, not about writing.
+  assert.ok(buildCliArgs("gemini", { prompt: "hello", write: true }).includes("--yolo"));
+});
+
 test("agy read-only turn does not bind the session to cwd", () => {
   const args = buildCliArgs("agy", { prompt: "hello" });
   assert.ok(!args.includes("--new-project"));
