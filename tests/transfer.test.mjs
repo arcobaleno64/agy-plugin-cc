@@ -153,3 +153,39 @@ test('an existing .omc/.gitignore is left exactly as the user wrote it', (t) => 
 
   assert.equal(fs.readFileSync(path.join(omc, '.gitignore'), 'utf8'), '# mine\ntransfers/\n');
 });
+
+// A snapshot holds the whole uncommitted diff, and where it lands is decided by
+// what `.omc` resolves to, not by what it is named. A repository can ship a
+// junction called `.omc` -- Windows lets an unprivileged user create one, so
+// cloning a repository is enough -- and every snapshot then goes wherever that
+// link points, while the returned `snapshotPath` still reads as a path inside
+// the repository. Measured before the guard existed: the file landed outside and
+// the reported path did not say so.
+//
+// `symlinkSync(..., 'junction')` is the portable spelling: Windows makes a
+// junction, POSIX ignores the type and makes a directory symlink.
+for (const [label, linkAt] of [['.omc', '.omc'], ['.omc/transfers', path.join('.omc', 'transfers')]]) {
+  test(`a transfer refuses to follow a ${label} link out of the workspace`, (t) => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-escape-repo-'));
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-escape-out-'));
+    t.after(() => {
+      for (const dir of [repo, outside]) {
+        fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+      }
+    });
+
+    const link = path.join(repo, linkAt);
+    fs.mkdirSync(path.dirname(link), { recursive: true });
+    fs.symlinkSync(outside, link, 'junction');
+
+    assert.throws(
+      () => buildTransferSnapshot({ cwd: repo, instructions: 'hand off' }),
+      /outside the workspace/,
+      'the snapshot was written through the link'
+    );
+    // The message is not the point -- where the bytes went is. Nothing may have
+    // reached the far side, including an empty directory the guard created on
+    // its way to refusing.
+    assert.deepEqual(fs.readdirSync(outside), [], 'something was written outside the workspace');
+  });
+}

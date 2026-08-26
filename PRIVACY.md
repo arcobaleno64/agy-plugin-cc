@@ -5,7 +5,8 @@ sends it, and what it keeps. Every claim here is checkable against the source
 files cited beside it. If you find a statement that the code does not support,
 that is a bug — report it as described in [`SECURITY.md`](SECURITY.md).
 
-Applies to plugin version 0.16.x.
+Applies to plugin version 0.23.x. Every claim below was re-checked against
+the source at that version, not carried forward.
 
 ---
 
@@ -33,8 +34,14 @@ or Antigravity CLI (`agy`) binary you installed**, and that binary sends your
 prompt to Google. The plugin is the thing that assembles the prompt; Google's CLI
 is the thing that transmits it.
 
-Transport is argv or stdin on a `shell: false` child process — never a shell
-command line. See [`SECURITY.md`](SECURITY.md) for the process-boundary details.
+Transport is argv or stdin on a child process. A bare command name is first
+resolved to an absolute executable — or, for an npm shim, to the entry script its
+package names — and spawned with `shell: false`; on Windows a name that
+resolution cannot identify falls back to a shell command line, which is the only
+path where a shell is involved. Prompts themselves are never on that path: Gemini
+and AGY 1.1.2 or newer take them on stdin, and the older AGY positional form is
+protected by that same absolute-path resolution. See [`SECURITY.md`](SECURITY.md)
+for the process-boundary details.
 
 What gets assembled depends on the command:
 

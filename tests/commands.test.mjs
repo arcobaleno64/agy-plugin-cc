@@ -68,6 +68,42 @@ test("the rescue subagent does not default to a write-capable run", () => {
   );
 });
 
+// The Anthropic Software Directory Policy is explicit: instructional software
+// "must not intentionally call or coerce Claude into calling other external
+// software, tools, databases, or resources unless requested and intended by a
+// user". This agent's own text told Claude to do exactly that -- "Do not wait
+// for the user to explicitly ask for Gemini" -- and its description opened with
+// "Proactively use when". Both spawn an external CLI that ships the user's
+// prompt and repository context to Google and can spend their quota. Prose in a
+// Markdown file is the only place this lives, so nothing but a test stops it
+// drifting back.
+test("the rescue subagent does not invite itself", () => {
+  const source = fs.readFileSync(path.join(ROOT, "plugins", "gemini", "agents", "gemini-rescue.md"), "utf8");
+
+  assert.doesNotMatch(
+    source,
+    /proactive/i,
+    "no instruction may tell Claude to reach for the external engine on its own initiative"
+  );
+  assert.doesNotMatch(
+    source,
+    /do not wait for the user/i,
+    "the instruction to skip the user's request must not return"
+  );
+  // The gate has to be in `description` specifically. That field is what Claude
+  // Code matches on when it decides whether to reach for this agent at all, so a
+  // gate that lives only in the body arrives after the selection it was meant to
+  // govern. Asserting it against the whole file passed on the body alone --
+  // measured, by deleting the description's gate and watching the test hold.
+  const description = /^description:(.*)$/m.exec(source)?.[1] ?? "";
+  assert.match(
+    description,
+    /only when the user has asked for Gemini or AGY/i,
+    "the selection trigger itself must state the gate, not merely omit the invitation"
+  );
+  assert.doesNotMatch(description, /proactive/i, "and must not invite selection on Claude's own initiative");
+});
+
 test("rescue command references gemini-rescue subagent", () => {
   const source = readCommand("rescue.md");
   assert.match(source, /gemini-rescue/);

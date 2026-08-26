@@ -9,6 +9,8 @@
 
 Ported from [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) (Apache-2.0), retaining a familiar slash-command and background-job workflow while adapting behavior to Gemini/AGY capabilities and documenting intentional divergences.
 
+> **Independent project.** `gemini-plugin-cc` is community-maintained and is **not affiliated with, endorsed by, or sponsored by Google LLC or Anthropic**. "Gemini" and "Antigravity" are trademarks of Google LLC and "Claude" is a trademark of Anthropic; all are used here only to name the tools this plugin works with. You install and authenticate those tools yourself, and their terms govern what they do with what is sent to them.
+
 ---
 
 ## Why this plugin?
@@ -44,7 +46,7 @@ Compared with AGY-only, multi-host plugins, this project keeps the Gemini CLI pa
 - **`/gemini:result`** / **`/gemini:cancel`** — Retrieve or cancel a background job.
 - **Engine auto-detection** — Both engines are first-class; `auto` checks `gemini` first for its JSON/model contract, then `agy`.
 - **Version-aware stdin prompt delivery** — Gemini always uses stdin; AGY 1.1.2 or newer uses its auto-print stdin path, while older or unknown versions retain the compatible positional path.
-- **Session lifecycle hooks** — Automatically injects `GEMINI_COMPANION_SESSION_ID`; cleans up stale jobs on session end.
+- **Session lifecycle hooks** — Automatically injects `GEMINI_COMPANION_SESSION_ID`. On session end it **terminates this session's still-running background jobs** and removes their records; jobs from other sessions are left alone. Finished jobs' results are discarded with them, so retrieve anything you still need with `/gemini:result` before the session ends.
 
 ---
 

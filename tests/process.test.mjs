@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 
 import {
@@ -15,7 +15,8 @@ import {
   resolveBinaryPath,
   resolveNodeShimEntry,
   runCommand,
-  quoteForWindowsShell
+  quoteForWindowsShell,
+  resetSpawnTargetCacheForTesting
 } from "../plugins/gemini/scripts/lib/process.mjs";
 import { makeTempDir } from "./helpers.mjs";
 
@@ -278,6 +279,73 @@ test("a shadowing stand-in earlier on PATH wins over a real install behind it", 
     env: { ...process.env, PATH: `${shadowDir};${process.env.PATH}` }
   });
   assert.match(result.stdout, /SHADOWED/, "resolution walked past the shadowing directory");
+});
+
+// The mirror image of the test above, and the one that was missing: a stand-in
+// the USER put on PATH must win, but a stand-in merely sitting in the directory
+// being worked on must not. Opening a repository is not consent to run what is
+// inside it.
+//
+// Two separate mechanisms searched the current directory, and each hid the
+// other. They need separate tests because they are reached under opposite
+// conditions -- resolution succeeding, and resolution failing.
+
+// Mechanism 1: `where.exe` searches the current directory before PATH, and keeps
+// doing so even when NoDefaultCurrentDirectoryInExePath is set. Resolution
+// trusted its first hit, so a tree holding `git.exe` got that file spawned.
+//
+// The lookup runs from `process.cwd()`, not from the `cwd` passed to
+// runCommand -- which is the whole reason this needs a child process. In
+// deployment the two are the same thing: the companion script's process cwd IS
+// the workspace. An in-process version of this test asserts against a directory
+// the lookup never consults, and passes whether or not the fix is present.
+test("a planted executable in the process's own directory never wins", { skip: process.platform !== "win32" }, () => {
+  const workspace = makeTempDir("gemini-cwd-shadow-");
+  // Deliberately not a real executable: if resolution picks it, the spawn fails
+  // outright instead of quietly succeeding, so `error` catches what stdout cannot.
+  fs.writeFileSync(path.join(workspace, "git.exe"), "not a real executable", "utf8");
+
+  const moduleUrl = new URL("../plugins/gemini/scripts/lib/process.mjs", import.meta.url).href;
+  const probe = path.join(workspace, "probe.mjs");
+  fs.writeFileSync(
+    probe,
+    `import { runCommand } from ${JSON.stringify(moduleUrl)};\n` +
+      `const r = runCommand("git", ["--version"], { cwd: process.cwd() });\n` +
+      `process.stdout.write(JSON.stringify({ stdout: r.stdout, error: r.error?.message ?? null }));\n`,
+    "utf8"
+  );
+
+  const run = spawnSync(process.execPath, [probe], { cwd: workspace, encoding: "utf8" });
+  const seen = JSON.parse(run.stdout);
+  assert.equal(seen.error, null, "the planted git.exe was spawned");
+  assert.match(seen.stdout, /git version/, "expected the real git");
+});
+
+// Mechanism 2: the fallback shell is cmd.exe, which searches the current
+// directory too -- but only when NoDefaultCurrentDirectoryInExePath is unset.
+// Git Bash sets it, so a suite run from Git Bash cannot see this branch at all;
+// a plain PowerShell, cmd, or service environment does not set it. The env below
+// strips it, which is what those look like.
+//
+// Reaching the fallback at all takes a command resolution cannot identify: a
+// PATH entry that is a `.cmd` but not an npm node shim. That is the only way
+// computeSpawnTarget returns null and the shell runs.
+test("the fallback shell does not prefer the working directory", { skip: process.platform !== "win32" }, () => {
+  const pathDir = makeTempDir("gemini-fallback-path-");
+  const workspace = makeTempDir("gemini-fallback-ws-");
+  fs.writeFileSync(path.join(pathDir, "thing.cmd"), "@echo off\r\necho REAL-FROM-PATH\r\n", "utf8");
+  fs.writeFileSync(path.join(workspace, "thing.cmd"), "@echo off\r\necho HIJACKED-FROM-CWD\r\n", "utf8");
+
+  const env = { ...process.env, PATH: `${pathDir};${process.env.PATH}` };
+  delete env.NoDefaultCurrentDirectoryInExePath;
+
+  // The resolution cache is keyed by command and PATH, not by cwd -- correct
+  // only because the lookup no longer depends on cwd. Cleared anyway so a hit
+  // cached by an earlier test cannot stand in for the answer under test.
+  resetSpawnTargetCacheForTesting();
+  const result = runCommand("thing", [], { cwd: workspace, env });
+  assert.doesNotMatch(result.stdout, /HIJACKED/, "the working tree's stand-in answered");
+  assert.match(result.stdout, /REAL-FROM-PATH/, "expected the copy the user put on PATH");
 });
 
 test("formatCommandFailure formats exit-code and signal failures", () => {

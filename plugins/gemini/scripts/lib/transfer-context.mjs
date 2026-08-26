@@ -33,6 +33,33 @@ export function checkGitConflict(cwd = process.cwd()) {
 // file itself, which is why nothing has to be added to the host repository's
 // .gitignore. An existing file is left alone: it may say something deliberate,
 // and this is not the place to decide it was wrong.
+// `.omc` is created inside the workspace, but "inside" is a claim about names,
+// not about where the bytes land. A junction or symlink named `.omc` sends every
+// write and every delete somewhere else, and on Windows an unprivileged user can
+// create one -- so a repository can ship its own. A snapshot carries the entire
+// uncommitted diff, which makes that a way to publish the author's working tree
+// to a location the repository chose, while the path reported back still reads
+// as a directory inside the repository. Measured before this guard existed: the
+// snapshot landed outside the repo and `snapshotPath` still said `.omc/transfers`.
+//
+// realpath resolves links on both sides, so containment is decided by where the
+// write actually goes rather than by what it is called.
+function assertContained(root, target, label) {
+  let realTarget;
+  try {
+    realTarget = fs.realpathSync.native(target);
+  } catch {
+    return; // Not created yet: nothing to redirect, and the caller creates it below.
+  }
+  const realRoot = fs.realpathSync.native(root);
+  const relative = path.relative(realRoot, realTarget);
+  if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) return;
+  throw new Error(
+    `Refusing to write ${label}: it resolves to ${realTarget}, outside the workspace ${realRoot}. ` +
+      `Remove the link at ${target} if you did not put it there.`
+  );
+}
+
 export function ensureOmcIgnored(omcDir) {
   const ignoreFile = path.join(omcDir, '.gitignore');
   if (fs.existsSync(ignoreFile)) return ignoreFile;
@@ -166,9 +193,16 @@ export function buildTransferSnapshot({ engine = 'auto', model = null, effort = 
     gitDiff: gitContext.diff,
   };
 
-  const transfersDir = path.join(cwd, '.omc', 'transfers');
+  const omcDir = path.join(cwd, '.omc');
+  // Before anything is created -- a pre-existing `.omc` link has to be caught
+  // while it is still the only thing that has been touched.
+  assertContained(cwd, omcDir, '.omc');
+  const transfersDir = path.join(omcDir, 'transfers');
   fs.mkdirSync(transfersDir, { recursive: true });
-  ensureOmcIgnored(path.join(cwd, '.omc'));
+  // And again once it exists: `transfers` can be the link instead of `.omc`, and
+  // mkdirSync with recursive:true walks through an existing one without complaint.
+  assertContained(cwd, transfersDir, '.omc/transfers');
+  ensureOmcIgnored(omcDir);
 
   // LRU Pruning of old snapshots
   pruneOldTransfers(transfersDir, 20);

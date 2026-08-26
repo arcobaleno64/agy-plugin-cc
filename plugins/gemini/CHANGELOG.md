@@ -1,6 +1,60 @@
 # Changelog
 
-## Unreleased
+## 0.23.0 - 2026-08-26 - What a repository could make this plugin run, and what it never asked for
+
+- **A binary sitting in the repository could get itself spawned.** `where.exe`
+  searches the current directory before PATH, and unlike cmd.exe and
+  CreateProcess it keeps doing so when `NoDefaultCurrentDirectoryInExePath` is
+  set. Command resolution trusted its first hit, so `runCommand("git", ...)` in a
+  tree holding a `git.exe` resolved to that file and spawned it -- measured, not
+  reasoned about. Cloning a repository and opening it was the whole attack. The
+  lookup now runs from System32, which is already on PATH and needs administrator
+  rights to write, so it contributes no candidate that was not already trusted.
+
+  A second, independent path had the same shape and hid behind the first: when
+  resolution cannot identify a command it falls back to a shell, and cmd.exe
+  searches the current directory too -- but only where that variable is unset.
+  Git Bash sets it, which is why a suite run from Git Bash could not see this at
+  all; a plain PowerShell, cmd, or service environment does not. Child processes
+  now get the variable set. Both paths are pinned by tests, and the one for the
+  lookup runs in a child process on purpose: the lookup reads `process.cwd()`
+  rather than the `cwd` it is handed, so an in-process test asserts against a
+  directory the code never consults and passes either way. The first version of
+  that test did exactly that, and both mutations survived it.
+
+- **A `.omc` junction could send a transfer snapshot out of the workspace.**
+  `/gemini:transfer` writes under `<workspace>/.omc/transfers/`, but that is a
+  claim about names: a junction or symlink named `.omc` -- which an unprivileged
+  Windows user can create, so a repository can ship one -- redirected every write
+  and every prune, while the path reported back still read as a directory inside
+  the repository. A snapshot carries the entire uncommitted diff, which made this
+  a way for a repository to publish its author's working tree. Both `.omc` and
+  `.omc/transfers` are now resolved with realpath and checked for containment
+  before anything is written, and the refusal names the link.
+
+- **The rescue subagent no longer invites itself.** Its description opened with
+  "Proactively use when" and its own guidance said "Do not wait for the user to
+  explicitly ask for Gemini" -- an instruction to spawn an external CLI, ship the
+  user's prompt and repository context to Google, and spend their quota, without
+  their asking. The Anthropic Software Directory Policy is explicit that
+  instructional software must not call external tools "unless requested and
+  intended by a user". Both lines are gone and the gate is stated positively, in
+  the `description` field specifically: that is what the host matches on when it
+  decides whether to reach for the agent, so a gate living only in the body
+  arrives after the selection it was meant to govern.
+
+- **Three documentation claims the code did not support.** `PRIVACY.md` said it
+  applied to 0.16.x, six minors behind, in a document whose whole value is that
+  every claim can be checked against the source; its transport section said
+  "never a shell command line" while a Windows fallback shell existed; and both
+  READMEs described `SessionEnd` as cleaning up stale jobs when it terminates
+  this session's running ones and discards their results. The rest of `PRIVACY.md`
+  was re-checked line by line against 0.23.0 rather than carried forward -- the
+  caps, the retention counts, the keychain commands, and the never-read list all
+  hold.
+
+- **The plugin directory now carries its own README**, and both top-level READMEs
+  state plainly that this project is not affiliated with Google or Anthropic.
 
 - **`agy.adversarial` now covers all seven cases, and the two new ones changed the
   axis's claim rather than confirming it.** Recorded on `caller-contract` and

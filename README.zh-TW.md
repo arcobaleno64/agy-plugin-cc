@@ -7,6 +7,8 @@
 
 本外掛移植自 [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc)（Apache-2.0），在保留熟悉的斜線命令與背景工作模型之同時，將行為調適至 Gemini/AGY 能力並記錄刻意之差異。
 
+> **獨立專案。** `gemini-plugin-cc` 由社群維護，**與 Google LLC 及 Anthropic 均無隸屬、背書或贊助關係**。「Gemini」與「Antigravity」為 Google LLC 的商標，「Claude」為 Anthropic 的商標，此處僅用於指稱本外掛所驅動的工具。這些工具需由你自行安裝與認證，送交其處理的內容適用各該工具自身的條款。
+
 ---
 
 ## 為什麼選這個外掛？
@@ -42,7 +44,7 @@
 - **`/gemini:result`** / **`/gemini:cancel`** — 取得或取消背景工作。
 - **引擎自動偵測** — 兩個引擎皆為第一級支援；`auto` 因 JSON／model 合約先檢查 `gemini`，再檢查 `agy`。
 - **版本感知的 stdin 提示傳遞** — Gemini 固定走 stdin；AGY 1.1.2 以上走自動 print 的 stdin 路徑，舊版或版本不明時保留 positional 相容路徑。
-- **會話生命週期掛鉤** — 自動注入 `GEMINI_COMPANION_SESSION_ID`；會話結束時清理殘留工作。
+- **會話生命週期掛鉤** — 自動注入 `GEMINI_COMPANION_SESSION_ID`。會話結束時會**終止本會話仍在執行的背景工作**並移除其紀錄；其他會話的工作不受影響。已完成工作的結果會隨紀錄一併刪除，仍需要的請在會話結束前用 `/gemini:result` 取回。
 
 ---
 
