@@ -42,6 +42,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" task-resume-candidate 
 - If the user is clearly giving a follow-up instruction such as "continue", "keep going", "resume", "apply the top fix", or "dig deeper", put `Continue current Gemini thread (Recommended)` first.
 - Otherwise put `Start a new Gemini thread (Recommended)` first.
 - If the user chooses continue, add `--resume` before routing to the subagent.
+- A resumed turn that also edits files is refused on the gemini engine: `gemini --resume` accepts only `latest`, so it would continue whatever gemini ran last, and a resumed conversation carries its own workspace for the edits to land in. If that refusal comes back, report it as-is — the user chooses between `--fresh`, resuming read-only, and `--engine agy`, which pins the conversation by id. Do not silently drop `--resume` or `--write` and rerun.
 - If the user chooses a new thread, add `--fresh` before routing to the subagent.
 - If the helper reports `available: false`, do not ask. Route normally.
 

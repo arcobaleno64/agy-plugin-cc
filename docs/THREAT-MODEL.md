@@ -171,6 +171,20 @@ behaviour, not AGY's defaults. Controlling it needs a temporary home holding a m
 settings file beside a credential, which is the next thing to do here before any claim
 about defaults.
 
+**Re-measured on AGY 1.1.20, 2026-08-26 — and this time the settings variable is controlled.** Every AGY block above carries the same caveat: the machine's `settings.json` held `"toolPermission": "always-proceed"` and a `trustedWorkspaces` entry covering the probe paths, so those rows describe that machine rather than AGY's defaults. The note above says controlling it is the next thing to do here. This is that.
+
+Two arms, three probes each, identical argv — exactly what the review path builds (`--print`, `--disable-slash-commands`, `--output-format stream-json`; no `--write`, and no `--yolo`, which is a gemini flag that never appears on an AGY spawn).
+
+| Arm | edit inside cwd | edit outside cwd | shell command |
+|---|---|---|---|
+| this machine's settings (`always-proceed`, target under `trustedWorkspaces`) | **wrote** | **wrote** | **ran** |
+| isolated `HOME`, minimal `settings.json`, target on a volume no `trustedWorkspaces` entry covers | auto-denied | auto-denied | auto-denied |
+
+1. **The permissive arm reproduces every earlier AGY result, and the default arm reproduces none of them.** The variable was the settings file, not the AGY version and not the argv. Read every AGY table above as measuring `toolPermission: "always-proceed"`.
+2. **AGY's default headless posture denies, and the plugin cannot rely on it.** `toolPermission: "always-proceed"` is an ordinary convenience setting; a user who set it once for interactive work has removed the boundary for every delegated turn, and nothing the plugin passes restores it. This is why the MCP annotations on `gemini_review` and `gemini_adversarial_review` report `readOnlyHint: false` as of v0.23.0: an annotation is static per tool, cannot read the user's settings, and must describe the worst case.
+3. **Both arms return exit 0 and `status: "SUCCESS"`.** In the denied arm the response is empty and the denial appears only on stderr, as free text. The plugin does not read the envelope status alone — `classifyCliFailure` reaches `tool-permission-denied` from the empty output plus that stderr — but any caller trusting the two documented success signals would accept a run in which nothing happened. Reported upstream as [antigravity-cli#794](https://github.com/google-antigravity/antigravity-cli/issues/794), open, and still reproducing on 1.1.20.
+4. **What is still uncontrolled:** the credential. The isolated home holds a copy of this machine's credential, so both arms run as the same account on the same licence tier. A different tier is untested.
+
 **Measured on gemini CLI 0.53.1, 2026-08-05**, against the same disposable repository and the same stdin transport, on a temporary API key. The gemini engine behaves the *opposite* way to AGY, so nothing above transfers between them.
 
 | `--yolo` | other flags | Action | Outcome |

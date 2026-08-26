@@ -1,6 +1,130 @@
 # Changelog
 
-## Unreleased
+## 0.23.0 - 2026-08-26 - What a repository could make this plugin run, and what it never asked for
+
+- **A binary sitting in the repository could get itself spawned.** `where.exe`
+  searches the current directory before PATH, and unlike cmd.exe and
+  CreateProcess it keeps doing so when `NoDefaultCurrentDirectoryInExePath` is
+  set. Command resolution trusted its first hit, so `runCommand("git", ...)` in a
+  tree holding a `git.exe` resolved to that file and spawned it -- measured, not
+  reasoned about. Cloning a repository and opening it was the whole attack. The
+  lookup now runs from System32, which is already on PATH and needs administrator
+  rights to write, so it contributes no candidate that was not already trusted.
+
+  A second, independent path had the same shape and hid behind the first: when
+  resolution cannot identify a command it falls back to a shell, and cmd.exe
+  searches the current directory too -- but only where that variable is unset.
+  Git Bash sets it, which is why a suite run from Git Bash could not see this at
+  all; a plain PowerShell, cmd, or service environment does not. Child processes
+  now get the variable set. Both paths are pinned by tests, and the one for the
+  lookup runs in a child process on purpose: the lookup reads `process.cwd()`
+  rather than the `cwd` it is handed, so an in-process test asserts against a
+  directory the code never consults and passes either way. The first version of
+  that test did exactly that, and both mutations survived it.
+
+- **A `.omc` junction could send a transfer snapshot out of the workspace.**
+  `/gemini:transfer` writes under `<workspace>/.omc/transfers/`, but that is a
+  claim about names: a junction or symlink named `.omc` -- which an unprivileged
+  Windows user can create, so a repository can ship one -- redirected every write
+  and every prune, while the path reported back still read as a directory inside
+  the repository. A snapshot carries the entire uncommitted diff, which made this
+  a way for a repository to publish its author's working tree. Both `.omc` and
+  `.omc/transfers` are now resolved with realpath and checked for containment
+  before anything is written, and the refusal names the link.
+
+- **`gemini_review` and `gemini_adversarial_review` no longer report
+  `readOnlyHint: true`.** The annotation claimed the reviewed workspace is never
+  modified, on the grounds that the review path dispatches the engine with
+  `--write` disabled. On AGY that disables nothing the user's own `settings.json`
+  has not already decided.
+
+  Measured on AGY 1.1.20, both arms, with exactly the argv the review path builds.
+  Under `toolPermission: "always-proceed"` with the target inside
+  `trustedWorkspaces`, a review turn replaced a file in the workspace, replaced
+  one outside it, and ran a shell command -- three for three. Under an isolated
+  home holding a minimal settings file, with the target on a volume no
+  `trustedWorkspaces` entry covers, all three were auto-denied. So the workspace is
+  safe on a default install and unsafe on a permissive one, and `always-proceed`
+  is an ordinary convenience setting rather than an exotic one. An annotation is
+  static per tool, cannot read the user's settings, and by this file's own rule
+  describes the worst a call can do.
+
+  The earlier reasoning was wrong twice over, and the second one is the one worth
+  recording: it leaned on gemini's `--yolo` gate from `docs/THREAT-MODEL.md` 7.2 as
+  though it covered both engines. `--yolo` is a gemini flag, AGY has no equivalent,
+  and that section opens by saying the two engines behave in opposite ways and
+  nothing transfers between them.
+
+  The same run also settles a caveat every AGY block in the threat model carried:
+  those measurements were taken on a machine with `always-proceed` set, which the
+  document flagged as uncontrolled. Controlled, the permissive arm reproduces them
+  all and the default arm reproduces none. Recorded there in full.
+
+- **Nine review findings on the changes above.** The exec-hijack guard's lookup
+  directory now comes from `where.exe`'s own resolved path instead of re-reading
+  `%SystemRoot%` -- the fallback that read was unreachable, since the same variable
+  is what finds `where` in the first place, and a mutation replacing it survived the
+  whole suite. `NoDefaultCurrentDirectoryInExePath` is now set only on the shell
+  branch: unconditionally, it reached the engine CLI and every shell command the
+  model ran through it, changing command resolution inside the user's workspace for
+  processes this plugin does not own.
+
+  The transfer containment guard now refuses a link whether or not it resolves,
+  covers `.omc/.gitignore` as well as the two directories, and fails closed when it
+  cannot inspect a path. Each was a real hole: a *dangling* `.gitignore` symlink
+  passed both directory checks and both the old guard's `realpath` (ENOENT read as
+  "not there yet") before `writeFileSync` followed it, and a junction that can be
+  traversed but not opened reports EACCES, which the guard was treating as
+  contained.
+
+  Also: the `--resume` refusal message said the flag accepts only `latest` when it
+  also accepts an index number, `PRIVACY.md` credited the wrong mechanism for
+  protecting an older AGY's positional prompt, and the spawn-target cache key's NUL
+  separator made git classify `scripts/lib/process.mjs` as binary -- so the diff of
+  a security change did not render at all in review. The separator is U+001F now,
+  equally impossible in a command name or a PATH and not a byte git treats as
+  binary.
+
+- **A resumed gemini turn may no longer also write.** `gemini --resume` accepts
+  only `latest` or an index number (`gemini --help`, 0.56.0), and an index is a
+  position rather than an identity -- it shifts as sessions are created. So a
+  resumed turn continues whatever gemini ran last --
+  which need not be the thread the caller resolved -- and a resumed conversation
+  carries its own workspace. Read-only that costs an answer about the wrong
+  project, which the run detects afterwards and reports; write-capable it costs
+  edits landing in that project's directory, and no after-the-fact notice undoes
+  those. The pair is now refused, naming three ways out: `--fresh`, resuming
+  without `--write`, or `--engine agy`, which pins the conversation by id.
+
+  This is the refusal AGY already made, narrowed rather than copied. AGY declines
+  any unpinned resume because it can always pin one; gemini can never pin one, so
+  declining every resume there would remove the feature instead of securing it.
+  The read-only path is untouched, and a test pins both directions -- the refusal
+  must fire on the pair and must not fire on a read-only resume.
+
+- **The rescue subagent no longer invites itself.** Its description opened with
+  "Proactively use when" and its own guidance said "Do not wait for the user to
+  explicitly ask for Gemini" -- an instruction to spawn an external CLI, ship the
+  user's prompt and repository context to Google, and spend their quota, without
+  their asking. The Anthropic Software Directory Policy is explicit that
+  instructional software must not call external tools "unless requested and
+  intended by a user". Both lines are gone and the gate is stated positively, in
+  the `description` field specifically: that is what the host matches on when it
+  decides whether to reach for the agent, so a gate living only in the body
+  arrives after the selection it was meant to govern.
+
+- **Three documentation claims the code did not support.** `PRIVACY.md` said it
+  applied to 0.16.x, six minors behind, in a document whose whole value is that
+  every claim can be checked against the source; its transport section said
+  "never a shell command line" while a Windows fallback shell existed; and both
+  READMEs described `SessionEnd` as cleaning up stale jobs when it terminates
+  this session's running ones and discards their results. The rest of `PRIVACY.md`
+  was re-checked line by line against 0.23.0 rather than carried forward -- the
+  caps, the retention counts, the keychain commands, and the never-read list all
+  hold.
+
+- **The plugin directory now carries its own README**, and both top-level READMEs
+  state plainly that this project is not affiliated with Google or Anthropic.
 
 - **`agy.adversarial` now covers all seven cases, and the two new ones changed the
   axis's claim rather than confirming it.** Recorded on `caller-contract` and

@@ -387,13 +387,36 @@ export function buildCliArgs(engine, options = {}) {
   if (write) {
     args.push("--yolo");
   }
-  // gemini's `--resume` takes "latest" or a positional index, never a session id
-  // (`gemini --help`, 0.53.1), so the AGY pinning above has no equivalent here and
-  // this really does resume whatever gemini saw last. `--session-id` starts a new
-  // session rather than reopening one, so it is not a substitute. The caller
-  // therefore compares the returned session id against the thread it resolved and
-  // says so when they differ — see resolveResumeMismatch in gemini.mjs.
-  if (resumeLast) args.push("--resume", "latest");
+  // gemini's `--resume` takes "latest" or an index number, never a session id
+  // (`gemini --help`, re-checked on 0.56.0), so the AGY pinning above has no
+  // equivalent here and this really does resume whatever gemini saw last.
+  // `--session-id` starts a new session rather than reopening one, so it is not a
+  // substitute, and an index is a position rather than an identity: it shifts as
+  // sessions are created, so `--list-sessions` could name today's index for a
+  // thread and not tomorrow's. Nothing available pins a conversation.
+  //
+  // What that costs depends entirely on whether the turn can write. Read-only, a
+  // resume that lands on the wrong conversation costs an answer about the wrong
+  // project — the caller compares the returned session id against the thread it
+  // resolved and says so afterwards (resolveResumeMismatch in gemini.mjs), and a
+  // wrong answer the user is told about is recoverable. Write-capable, the same
+  // miss is not: a resumed conversation carries its own workspace, so the edits
+  // land in whatever directory that conversation belongs to, and being told after
+  // the fact does not bring them back. `--yolo` is already on the argv above.
+  //
+  // So the unpinnable shape is refused exactly where being wrong writes. This is
+  // the same refusal AGY makes forty lines up, narrowed: AGY declines any
+  // unpinned resume because it can always pin one, and gemini can never pin one,
+  // so declining every resume here would remove the feature instead of securing
+  // it.
+  if (resumeLast) {
+    if (write) {
+      throw new Error(
+        "Refusing to resume a write-capable gemini turn: `--resume` accepts only \"latest\" or an index number, neither of which identifies a conversation, so this would continue whatever gemini ran last — possibly another project's, which carries its own workspace and would receive the edits. Start a fresh task with `--fresh`, resume without `--write`, or use `--engine agy`, which pins the conversation by id."
+      );
+    }
+    args.push("--resume", "latest");
+  }
   if (outputJson) args.push("--output-format", "json");
   return args;
 }

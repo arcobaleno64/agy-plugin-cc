@@ -72,6 +72,23 @@ test("SECURITY.md declares support for the shipped minor line", () => {
   );
 });
 
+// The same guard SECURITY.md already had, on the document that needed it more.
+// PRIVACY.md announced itself as applying to 0.16.x for six minor releases --
+// and it is the one document whose entire value is that every claim in it can be
+// checked against the source. A reader who spot-checks one line and finds the
+// version six releases behind has no way to tell which of the remaining claims
+// were re-checked and which were carried forward. Nothing in `bump-version`
+// touches either file, so only a test keeps them honest.
+test("PRIVACY.md declares the minor line it was checked against", () => {
+  const version = JSON.parse(read("package.json")).version;
+  const minorLine = `${version.split(".").slice(0, 2).join(".")}.x`;
+  assert.match(
+    read("PRIVACY.md"),
+    new RegExp(`Applies to plugin version ${minorLine.replaceAll(".", "\\.")}\\.`),
+    `PRIVACY.md does not say it applies to ${minorLine} — re-check its claims against the source, then update the line`
+  );
+});
+
 // docs/AGY_1.1.2_MACOS_LINUX_VALIDATION.md sat at 249 lines — the largest file in
 // docs/ — with zero inbound links from anywhere in the repository, pinning AGY
 // 1.1.2 while the plugin was being run against 1.1.13. Nothing was wrong with

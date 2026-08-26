@@ -5,7 +5,8 @@ sends it, and what it keeps. Every claim here is checkable against the source
 files cited beside it. If you find a statement that the code does not support,
 that is a bug — report it as described in [`SECURITY.md`](SECURITY.md).
 
-Applies to plugin version 0.16.x.
+Applies to plugin version 0.23.x. Every claim below was re-checked against
+the source at that version, not carried forward.
 
 ---
 
@@ -33,8 +34,24 @@ or Antigravity CLI (`agy`) binary you installed**, and that binary sends your
 prompt to Google. The plugin is the thing that assembles the prompt; Google's CLI
 is the thing that transmits it.
 
-Transport is argv or stdin on a `shell: false` child process — never a shell
-command line. See [`SECURITY.md`](SECURITY.md) for the process-boundary details.
+Transport is argv or stdin on a child process. A bare command name is first
+resolved to an absolute executable — or, for an npm shim, to the entry script its
+package names — and spawned with `shell: false`; on Windows a name that
+resolution cannot identify falls back to a shell command line, which is the only
+path where a shell is involved.
+
+Prompts are almost never on that path. Gemini and AGY 1.1.2 or newer take them on
+stdin, so on those the prompt is not in argv at all. What remains is AGY below
+1.1.2, which takes the prompt positionally: if resolution also fails for that
+spawn, the prompt reaches a `cmd.exe` command line. It is quoted for MSVCRT argv
+rules (`quoteForWindowsShell`, `scripts/lib/process.mjs`) and screened for NUL
+bytes and length (`assertAgyPromptSafe`, `scripts/lib/engine.mjs`) — but that
+function is not a `cmd.exe` escaper and does not claim to be, and the screen does
+not look for shell metacharacters. The combination is narrow: an AGY older than
+1.1.2, on Windows, with the command resolving through a shim that cannot be
+identified. Upgrading AGY to 1.1.2 or newer removes it entirely.
+
+See [`SECURITY.md`](SECURITY.md) for the process-boundary details.
 
 What gets assembled depends on the command:
 
