@@ -2,6 +2,25 @@
 
 ## 0.23.0 - 2026-08-26 - What a repository could make this plugin run, and what it never asked for
 
+- **Documented what the hooks decline, and what 0.x promises.** Two additions,
+  no behavior change. `PRIVACY.md` 3 now names the hook payload: Claude Code
+  hands each hook a JSON object whose documented fields include a
+  `transcript_path`, and the two hook scripts read `session_id`, `cwd` and
+  `hook_event_name` between them and nothing else. The section already said
+  Claude memory and transcripts are never read; it did not say the pointer is
+  handed over and declined, which is the stronger and more checkable claim. It
+  also now accounts for `$CLAUDE_PLUGIN_DATA/state/`, the one Claude-Code-owned
+  path the plugin does open, rather than leaving a reader to find it in 4 and
+  wonder why 3 did not mention it.
+
+  The READMEs gain a **Versioning** section, because "0.23.0" on its own says
+  nothing and a reader is entitled to know whether that is caution or neglect.
+  It is caution: MINOR may break the command/MCP/hook surface and says so in the
+  CHANGELOG's first line, PATCH never does, and 1.0.0 waits on three consecutive
+  MINOR releases without a break plus an AGY integration that no longer needs
+  per-version gates -- `scripts/lib/engine.mjs` still carries seven `supportsAgy*`
+  gates, so neither condition holds.
+
 - **A binary sitting in the repository could get itself spawned.** `where.exe`
   searches the current directory before PATH, and unlike cmd.exe and
   CreateProcess it keeps doing so when `NoDefaultCurrentDirectoryInExePath` is
