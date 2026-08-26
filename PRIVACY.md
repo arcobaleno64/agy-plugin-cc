@@ -168,6 +168,22 @@ can override with `--engine gemini`.
   never enumerates.
 - Any other home-directory content. The paths in the table are the whole list.
 
+The hooks are the one place Claude Code hands the plugin more than it asks
+for: a JSON payload whose documented fields include a `transcript_path`
+pointing at the session's own conversation log. Whatever that payload holds,
+each hook parses it and takes only these fields:
+
+| Hook script | Fields read off the payload |
+|---|---|
+| `scripts/session-lifecycle-hook.mjs` | `session_id`, `cwd`, `hook_event_name` |
+| `scripts/stop-review-gate-hook.mjs` | `cwd` |
+
+Those four fields are the whole list, and `transcript_path` is never
+dereferenced. Claude Code does assign the plugin one directory it reads and
+writes — `$CLAUDE_PLUGIN_DATA/state/…`, holding this plugin's own job records
+and nothing else, itemised in §4 below. It contains no conversation data, and
+the plugin opens no other path Claude Code owns.
+
 ---
 
 ## 4. What is stored locally, and where

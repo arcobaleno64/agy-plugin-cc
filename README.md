@@ -413,6 +413,26 @@ Reviewing the plugin rather than using it? [`docs/verifying-without-credentials.
 
 ---
 
+## Versioning
+
+This plugin is 0.x by intent, not by neglect. Its surface — slash commands, MCP
+tool names and schemas, hook behavior, flags — tracks two upstream CLIs that are
+themselves shipping behavior changes every few weeks, and the plugin cannot be
+more stable than what it drives.
+
+While at 0.x:
+
+- **MINOR** (`0.23.0` → `0.24.0`) may carry a breaking change to that surface.
+  When it does, the CHANGELOG entry says so in its first line.
+- **PATCH** (`0.23.0` → `0.23.1`) never does.
+
+1.0.0 is reserved for the point where that surface has gone three consecutive
+MINOR releases without a breaking change, and the AGY integration no longer needs
+per-version gates. Neither is true yet: `scripts/lib/engine.mjs` still carries
+seven `supportsAgy*` gates, each branching on the AGY version it found.
+
+---
+
 ## Changelog
 
 See [CHANGELOG.md](plugins/gemini/CHANGELOG.md).
