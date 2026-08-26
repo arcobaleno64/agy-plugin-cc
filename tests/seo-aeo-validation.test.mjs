@@ -34,7 +34,12 @@ test("SEO Verification: robots.txt conforms to RFC 9309 and isolates sensitive p
     "User-agent: OAI-SearchBot",
     "User-agent: ChatGPT-User",
     "User-agent: ClaudeBot",
-    "User-agent: Claude-Web",
+    // Claude-Web is retired. Anthropic documents three agents, and the policy
+    // decision differs per agent: ClaudeBot is training crawl, Claude-User is
+    // user-directed retrieval, Claude-SearchBot is search indexing. A template
+    // that names only the retired one cannot express that split.
+    "User-agent: Claude-User",
+    "User-agent: Claude-SearchBot",
     "User-agent: PerplexityBot",
     "User-agent: Perplexity-User",
     "User-agent: Google-Extended",
@@ -67,12 +72,19 @@ test("SEO Verification: robots.txt conforms to RFC 9309 and isolates sensitive p
     "Disallow: /tests/"
   ];
 
-  // Verify that all non-Bytespider groups contain ALL 5 required Disallow rules
+  // Verify that every group states its own sensitive-path policy. RFC 9309
+  // groups do not inherit from `*`, so each one has to say it itself -- but a
+  // group that disallows the whole site has already said it, more strongly than
+  // the five lines would. `Disallow: /` is therefore accepted in their place,
+  // which is what lets a training-crawl group be blanket-denied.
+  const deniesEverything = (directives) => /^Disallow:\s*\/\s*$/m.test(directives);
+
   for (const group of groups) {
     if (group.agents.includes("Bytespider")) {
-      assert.ok(group.directives.includes("Disallow: /"), "Bytespider group must have Disallow: /");
+      assert.ok(deniesEverything(group.directives), "Bytespider group must have Disallow: /");
       continue;
     }
+    if (deniesEverything(group.directives)) continue;
     for (const disallow of requiredDisallows) {
       assert.ok(
         group.directives.includes(disallow),
@@ -183,7 +195,10 @@ test("E-E-A-T FAQ Verification: Answer-First structure with isolated scopes and 
   const faqKeys = ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7"];
 
   // Split FAQ section into individual question blocks to prevent cross-QA drift
-  const faqSectionMatch = playbookContent.match(/### 4\.8 E-E-A-T[\s\S]+?(?=### 4\.9|---|\n## )/);
+  // Stop on a real section boundary only. A bare `---` also matches the `|---|`
+  // of a markdown table, so any table added inside 4.8 used to truncate the
+  // section before Q1 and every block assertion below went unreached.
+  const faqSectionMatch = playbookContent.match(/### 4\.8 E-E-A-T[\s\S]+?(?=\n### 4\.9|\n---\n|\n## )/);
   assert.ok(faqSectionMatch, "Section 4.8 FAQ block must be found");
   const faqSection = faqSectionMatch[0];
 
@@ -193,8 +208,12 @@ test("E-E-A-T FAQ Verification: Answer-First structure with isolated scopes and 
     assert.ok(qBlockMatch, `FAQ block for ${qKey} must exist`);
     const qBlock = qBlockMatch[0];
 
-    // First paragraph under header must be Answer-First bold leading blockquote
-    const answerMatch = qBlock.match(/> \*\*([^*]+)\*\*/);
+    // First paragraph under header must be Answer-First bold leading blockquote.
+    // Inline code is blanked first: a glob like `.env*` or `*.pem` inside the
+    // answer carries real asterisks, and the character class below cannot span
+    // them, so an answer that named one used to read as having no bold at all.
+    const prose = qBlock.replace(/`[^`]*`/g, "CODE");
+    const answerMatch = prose.match(/> \*\*([^*]+)\*\*/);
     assert.ok(answerMatch, `FAQ ${qKey} must have leading bold answer in blockquote (> **...**)`);
     assert.ok(answerMatch[1].trim().length >= 30, `FAQ ${qKey} answer-first sentence must be >= 30 chars`);
 

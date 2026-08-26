@@ -2,6 +2,40 @@
 
 ## 0.23.0 - 2026-08-26 - What a repository could make this plugin run, and what it never asked for
 
+- **The handover playbook is now triaged, and filed as a dated record.** It sat
+  under "Reference -- kept current" while carrying a baseline three releases old,
+  which is precisely the mistake `docs/README.md` exists to prevent. It moves to
+  "Dated records", and `docs/ROADMAP.md` takes its place: every item in it sorted
+  into already-done, premise-verified-and-worth-doing, blocked-on-something-that-
+  does-not-exist, wrong-as-written, or non-goal -- each with the command that
+  re-checks it, because this classification will go stale too.
+
+  What the triage found, verified against HEAD rather than against the playbook:
+  `SAFE_MODEL_ID` really does still reject Vertex AI paths, the stop gate really
+  is fail-open, and `allocateBudget` really is unweighted -- three premises that
+  survived. Against that, the AEO benchmark it lists as missing already exists and
+  ships tests; the CI fail-closed switch exists only to serve an `action.yml` that
+  does not; `robots.txt` and JSON-LD need a site, and GitHub Pages is not enabled;
+  and its funding-application template describes the project as a multi-agent
+  consensus framework, which its own 2 explicitly says the project is not.
+
+  Also recorded: `scripts/aeo-benchmark.mjs` asks whether an answer mentions SARIF
+  export, and there is no SARIF export. That query can only pass on a hallucination.
+
+  Upgrading the playbook to v3.8.1 broke two assertions in
+  `tests/seo-aeo-validation.test.mjs`, and both were the test being wrong rather
+  than the document. It required `User-agent: Claude-Web`, which is retired --
+  Anthropic documents ClaudeBot, Claude-User and Claude-SearchBot, and they take
+  different policies, which a single retired name cannot express. It also demanded
+  five literal `Disallow:` lines from every group, failing a group that disallows
+  the entire site more strongly; and it extracted 4.8 by stopping at the first
+  `---`, which a markdown table's `|---|` satisfies, so the whole FAQ section came
+  back empty and every assertion under it silently went unreached. The
+  answer-first check then read `[^*]+` across an answer naming `.env*` and
+  `*.pem`. Each fix was mutation-tested: dropping an agent, unbolding an answer,
+  removing a group's blanket disallow, and stripping one `Disallow:` line all
+  still fail the suite.
+
 - **Documented what the hooks decline, and what 0.x promises.** Two additions,
   no behavior change. `PRIVACY.md` 3 now names the hook payload: Claude Code
   hands each hook a JSON object whose documented fields include a

@@ -19,7 +19,7 @@ Start with the [README](../README.md). Nothing here is required reading to use t
 | [`version-sources.md`](version-sources.md) | Which file is authoritative for each version string, and what keeps them in lockstep. |
 | [`verifying-without-credentials.md`](verifying-without-credentials.md) | How to exercise the engine paths without a Gemini or AGY account. |
 | [`evidence.md`](evidence.md) | The rule this repository investigates by: nothing counts as evidence until it has been seen to fail. Includes the traps already paid for. |
-| [`HANDOVER_MARKETING_AND_RELEASE_PLAYBOOK.md`](HANDOVER_MARKETING_AND_RELEASE_PLAYBOOK.md) | Master handover playbook: Enterprise growth, MCP registry setup, AI-era SEO/AEO/GEO architecture, automated validation metrics, and v1.0.0 roadmap. |
+| [`ROADMAP.md`](ROADMAP.md) | Every item in the handover playbook, triaged against HEAD: already done, premise verified and worth doing, blocked on something that does not exist, wrong as written, or a non-goal. Read this before acting on the playbook. Traditional Chinese. |
 
 ## Dated records — never rewritten
 
@@ -29,5 +29,6 @@ Start with the [README](../README.md). Nothing here is required reading to use t
 | [`PARITY_AUDIT_v0.6.1.md`](PARITY_AUDIT_v0.6.1.md) | plugin v0.6.1 re-score | `PARITY_AUDIT_v0.11.1.md` |
 | [`PARITY_AUDIT_v0.11.1.md`](PARITY_AUDIT_v0.11.1.md) | plugin v0.11.1 vs upstream v1.0.6, 2026-08-04 | current state: [`parity.md`](parity.md) |
 | [`AGY_1.1.2_MACOS_LINUX_VALIDATION.md`](AGY_1.1.2_MACOS_LINUX_VALIDATION.md) | plugin v0.7.1 against AGY **1.1.2**, macOS/Linux | nothing re-ran it; see the banner in the file |
+| [`HANDOVER_MARKETING_AND_RELEASE_PLAYBOOK.md`](HANDOVER_MARKETING_AND_RELEASE_PLAYBOOK.md) | plugin v0.22.2 / `22b93a7`, 2026-08-21 | Its status columns: [`ROADMAP.md`](ROADMAP.md). Its specs and templates are not superseded. |
 
 Behaviour measured after the newest of these lives in the [CHANGELOG](../plugins/gemini/CHANGELOG.md) and in `THREAT-MODEL.md` §7.2, both of which carry their own measurement dates.
