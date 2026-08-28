@@ -4,15 +4,15 @@ Run **Gemini CLI** or **Antigravity CLI (`agy`)** from inside Claude Code: deleg
 
 > **Independent project.** Community-maintained, and **not affiliated with, endorsed by, or sponsored by Google LLC or Anthropic**. "Gemini" and "Antigravity" are trademarks of Google LLC and "Claude" is a trademark of Anthropic; all are used here only to name the tools this plugin works with.
 
-Full documentation, comparison tables, and measurements: **[repository README](https://github.com/arcobaleno64/gemini-plugin-cc#readme)**.
+Full documentation, comparison tables, and measurements: **[repository README](https://github.com/arcobaleno64/agy-plugin-cc#readme)**.
 
 ---
 
 ## Install
 
 ```
-/plugin marketplace add arcobaleno64/gemini-plugin-cc
-/plugin install gemini@gemini-plugin-cc
+/plugin marketplace add arcobaleno64/agy-plugin-cc
+/plugin install gemini@agy-plugin-cc
 /reload-plugins
 ```
 
@@ -74,7 +74,7 @@ Data leaves your machine on exactly one path: the plugin spawns **the Gemini CLI
 
 **Two limits stated plainly.** Redaction is by *filename* — a credential pasted into ordinary source is not caught. And the engine is agentic: once running, it can read files on its own initiative that no rule here ever saw. Neither CLI offers a path boundary the plugin could impose.
 
-Full detail, every claim cited to its source file: **[PRIVACY.md](https://github.com/arcobaleno64/gemini-plugin-cc/blob/main/PRIVACY.md)** · **[THREAT-MODEL.md](https://github.com/arcobaleno64/gemini-plugin-cc/blob/main/docs/THREAT-MODEL.md)**.
+Full detail, every claim cited to its source file: **[PRIVACY.md](https://github.com/arcobaleno64/agy-plugin-cc/blob/main/PRIVACY.md)** · **[THREAT-MODEL.md](https://github.com/arcobaleno64/agy-plugin-cc/blob/main/docs/THREAT-MODEL.md)**.
 
 ---
 
@@ -96,8 +96,8 @@ Nothing here reads `~/.claude/`, `CLAUDE.md`, your conversation history, or file
 
 ## Support
 
-- **Issues and questions**: <https://github.com/arcobaleno64/gemini-plugin-cc/issues>
-- **Security reports**: [GitHub Security Advisories](https://github.com/arcobaleno64/gemini-plugin-cc/security/advisories/new), or <arcobaleno830623@gmail.com>. See [SECURITY.md](https://github.com/arcobaleno64/gemini-plugin-cc/blob/main/SECURITY.md) — read the threat model first, as the highest-rated item there is known and documented rather than undisclosed.
+- **Issues and questions**: <https://github.com/arcobaleno64/agy-plugin-cc/issues>
+- **Security reports**: [GitHub Security Advisories](https://github.com/arcobaleno64/agy-plugin-cc/security/advisories/new), or <arcobaleno830623@gmail.com>. See [SECURITY.md](https://github.com/arcobaleno64/agy-plugin-cc/blob/main/SECURITY.md) — read the threat model first, as the highest-rated item there is known and documented rather than undisclosed.
 - **A claim in PRIVACY.md the code does not support** is a documentation defect worth reporting as one.
 
-Licensed MIT. Derived from [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) (Apache-2.0) — see [NOTICE](https://github.com/arcobaleno64/gemini-plugin-cc/blob/main/NOTICE).
+Licensed MIT. Derived from [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) (Apache-2.0) — see [NOTICE](https://github.com/arcobaleno64/agy-plugin-cc/blob/main/NOTICE).

@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         **Do not report a security vulnerability here.** Use
-        [private disclosure](https://github.com/arcobaleno64/gemini-plugin-cc/security/advisories/new)
+        [private disclosure](https://github.com/arcobaleno64/agy-plugin-cc/security/advisories/new)
         instead — see `SECURITY.md`.
 
         Paste no credentials, tokens, or `.env` contents. Redact repository paths

@@ -3,19 +3,19 @@
 > Use Gemini CLI or Antigravity CLI (`agy`) inside Claude Code for task delegation, pragmatic code review, and adversarial review.
 
 **Transition-ready for Google's Gemini CLI to Antigravity CLI migration.**
-`gemini-plugin-cc` keeps the familiar Claude Code slash-command workflow while letting you route work to Gemini CLI where available, or to Antigravity CLI (`agy`) during the post-June-2026 transition.
+`agy-plugin-cc` keeps the familiar Claude Code slash-command workflow while letting you route work to Gemini CLI where available, or to Antigravity CLI (`agy`) during the post-June-2026 transition.
 
 [繁體中文說明 →](README.zh-TW.md)
 
 Ported from [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) (Apache-2.0), retaining a familiar slash-command and background-job workflow while adapting behavior to Gemini/AGY capabilities and documenting intentional divergences.
 
-> **Independent project.** `gemini-plugin-cc` is community-maintained and is **not affiliated with, endorsed by, or sponsored by Google LLC or Anthropic**. "Gemini" and "Antigravity" are trademarks of Google LLC and "Claude" is a trademark of Anthropic; all are used here only to name the tools this plugin works with. You install and authenticate those tools yourself, and their terms govern what they do with what is sent to them.
+> **Independent project.** `agy-plugin-cc` is community-maintained and is **not affiliated with, endorsed by, or sponsored by Google LLC or Anthropic**. "Gemini" and "Antigravity" are trademarks of Google LLC and "Claude" is a trademark of Anthropic; all are used here only to name the tools this plugin works with. You install and authenticate those tools yourself, and their terms govern what they do with what is sent to them.
 
 ---
 
 ## Why this plugin?
 
-`gemini-plugin-cc` is a Claude Code-native companion bridge for users who want both Gemini CLI and Antigravity CLI (`agy`) support during Google's Gemini CLI transition.
+`agy-plugin-cc` is a Claude Code-native companion bridge for users who want both Gemini CLI and Antigravity CLI (`agy`) support during Google's Gemini CLI transition.
 
 Compared with AGY-only, multi-host plugins, this project keeps the Gemini CLI path where available while providing an explicit `--engine agy` route for users migrating to Antigravity CLI.
 
@@ -77,10 +77,10 @@ Compared with AGY-only, multi-host plugins, this project keeps the Gemini CLI pa
 
 ```
 # 1. Add the marketplace
-/plugin marketplace add arcobaleno64/gemini-plugin-cc
+/plugin marketplace add arcobaleno64/agy-plugin-cc
 
 # 2. Install the plugin
-/plugin install gemini@gemini-plugin-cc
+/plugin install gemini@agy-plugin-cc
 
 # 3. Reload plugins
 /reload-plugins
@@ -89,28 +89,28 @@ Compared with AGY-only, multi-host plugins, this project keeps the Gemini CLI pa
 This marketplace source follows the repository's `main` branch, but that does **not** mean every Claude Code launch automatically installs and activates new code:
 
 - Claude Code identifies this plugin by its explicit manifest version. Existing installations update only after that version is bumped (normally as part of a release); unversioned commits on `main` with the same manifest version are not delivered as plugin updates.
-- Auto-update is disabled by default for third-party marketplaces. To opt in, open `/plugin`, select **Marketplaces** → **gemini-plugin-cc**, and choose **Enable auto-update**. When enabled, Claude Code checks the marketplace at startup and updates installed plugins whose resolved version changed.
+- Auto-update is disabled by default for third-party marketplaces. To opt in, open `/plugin`, select **Marketplaces** → **agy-plugin-cc**, and choose **Enable auto-update**. When enabled, Claude Code checks the marketplace at startup and updates installed plugins whose resolved version changed.
 - If Claude Code reports that the plugin was updated, run `/reload-plugins` before using it in the current session. Opening Claude Code by itself is therefore not a reliable guarantee that a newly published version is already active.
 
 For an explicit update without enabling auto-update, run:
 
 ```
-/plugin marketplace update gemini-plugin-cc
-/plugin update gemini@gemini-plugin-cc
+/plugin marketplace update agy-plugin-cc
+/plugin update gemini@agy-plugin-cc
 /reload-plugins
 ```
 
 ### Pinned release (a specific published version)
 
-Pin the marketplace to a release tag — e.g. `v0.9.1`:
+Pin the marketplace to a release tag — e.g. `v0.24.0`:
 
 ```
-/plugin marketplace add arcobaleno64/gemini-plugin-cc@v0.9.1
-/plugin install gemini@gemini-plugin-cc
+/plugin marketplace add arcobaleno64/agy-plugin-cc@v0.24.0
+/plugin install gemini@agy-plugin-cc
 /reload-plugins
 ```
 
-> Claude Code installs plugins from the git tree, not from GitHub Release tarballs — `@<tag>` selects the git tag behind a [Release](https://github.com/arcobaleno64/gemini-plugin-cc/releases). A pinned marketplace stays on that tag even if marketplace auto-update is enabled. To move it to another release, remove the existing marketplace (which also uninstalls plugins installed from it), add the repository again with the new tag, reinstall the plugin, and run `/reload-plugins`.
+> Claude Code installs plugins from the git tree, not from GitHub Release tarballs — `@<tag>` selects the git tag behind a [Release](https://github.com/arcobaleno64/agy-plugin-cc/releases). A pinned marketplace stays on that tag even if marketplace auto-update is enabled. To move it to another release, remove the existing marketplace (which also uninstalls plugins installed from it), add the repository again with the new tag, reinstall the plugin, and run `/reload-plugins`.
 
 Then run `/gemini:setup` for `auto`/Gemini, or `/gemini:setup --engine agy` for AGY. The selected engine is the only engine dependency that must be installed; setup offers the matching installer when it is missing.
 
@@ -400,9 +400,9 @@ Documented, non-blocking constraints — see the linked sections for detail:
 
 - **Setup or auth failing** — check [Setup & Auth Troubleshooting](#setup--auth-troubleshooting) first; most install and OAuth symptoms are in that table.
 - **A feature behaves differently from `codex-plugin-cc`** — check [docs/known-diffs.md](docs/known-diffs.md) before filing. Several differences are deliberate and documented.
-- **A bug** — open a [bug report](https://github.com/arcobaleno64/gemini-plugin-cc/issues/new?template=bug_report.yml). Include the exact command and your `/gemini:setup` output; those two answer most questions on their own.
-- **An engine version or platform we have not verified** — open a [compatibility report](https://github.com/arcobaleno64/gemini-plugin-cc/issues/new?template=compatibility_report.yml). "It works on X" is as useful as "it breaks on X", because the docs only claim what has actually been run.
-- **A security vulnerability** — do not open an issue. Use [private disclosure](https://github.com/arcobaleno64/gemini-plugin-cc/security/advisories/new); see [`SECURITY.md`](SECURITY.md).
+- **A bug** — open a [bug report](https://github.com/arcobaleno64/agy-plugin-cc/issues/new?template=bug_report.yml). Include the exact command and your `/gemini:setup` output; those two answer most questions on their own.
+- **An engine version or platform we have not verified** — open a [compatibility report](https://github.com/arcobaleno64/agy-plugin-cc/issues/new?template=compatibility_report.yml). "It works on X" is as useful as "it breaks on X", because the docs only claim what has actually been run.
+- **A security vulnerability** — do not open an issue. Use [private disclosure](https://github.com/arcobaleno64/agy-plugin-cc/security/advisories/new); see [`SECURITY.md`](SECURITY.md).
 - **Anything else, or you cannot use GitHub** — email <arcobaleno830623@gmail.com>. GitHub is the faster route for anything that belongs in public, because the answer stays where the next person will find it.
 
 This is a single-maintainer project, not a staffed support desk. Everything above reaches one person.

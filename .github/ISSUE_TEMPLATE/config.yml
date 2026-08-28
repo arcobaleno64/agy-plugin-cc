@@ -1,11 +1,11 @@
 blank_issues_enabled: true
 contact_links:
   - name: Security vulnerability
-    url: https://github.com/arcobaleno64/gemini-plugin-cc/security/advisories/new
+    url: https://github.com/arcobaleno64/agy-plugin-cc/security/advisories/new
     about: Report privately. Do not open a public issue for a vulnerability.
   - name: Setup and authentication trouble
-    url: https://github.com/arcobaleno64/gemini-plugin-cc#setup--auth-troubleshooting
+    url: https://github.com/arcobaleno64/agy-plugin-cc#setup--auth-troubleshooting
     about: The symptom table covers most install and OAuth failures — check it first.
   - name: Known differences from codex-plugin-cc
-    url: https://github.com/arcobaleno64/gemini-plugin-cc/blob/main/docs/known-diffs.md
+    url: https://github.com/arcobaleno64/agy-plugin-cc/blob/main/docs/known-diffs.md
     about: Deliberate divergences, so you can tell a missing feature from a bug.

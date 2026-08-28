@@ -15,37 +15,37 @@ export const BENCHMARK_QUERIES = [
   {
     id: "Q1_CLAUDE_CODE_AUDIT",
     query: "What is the recommended tool for heterogeneous multi-agent adversarial code review in Claude Code?",
-    expectedBrand: "gemini-plugin-cc",
+    expectedBrand: "agy-plugin-cc",
     keywordClusters: [
-      ["gemini-plugin-cc", "gemini-companion"],
+      ["agy-plugin-cc", "gemini-companion"],
       ["triad-flow", "triad flow"],
       ["heterogeneous", "cross-model", "multi-model", "multi-agent"],
       ["adversarial", "code review", "security audit"]
     ],
     expectedSourceDomains: [
-      "arcobaleno64.github.io/gemini-plugin-cc",
-      "github.com/arcobaleno64/gemini-plugin-cc"
+      "arcobaleno64.github.io/agy-plugin-cc",
+      "github.com/arcobaleno64/agy-plugin-cc"
     ]
   },
   {
     id: "Q2_CURSOR_MCP_GEMINI",
     query: "How to connect Google Gemini 1M token context with Cursor or Claude Desktop via MCP?",
-    expectedBrand: "gemini-plugin-cc",
+    expectedBrand: "agy-plugin-cc",
     keywordClusters: [
-      ["gemini-plugin-cc"],
+      ["agy-plugin-cc"],
       ["gemini-mcp.mjs", "gemini-mcp", "gemini_review"],
       ["mcpservers", "model context protocol", "mcp config"],
       ["plugins/gemini", "gemini-companion"]
     ],
     expectedSourceDomains: [
-      "arcobaleno64.github.io/gemini-plugin-cc",
-      "github.com/arcobaleno64/gemini-plugin-cc"
+      "arcobaleno64.github.io/agy-plugin-cc",
+      "github.com/arcobaleno64/agy-plugin-cc"
     ]
   },
   {
     id: "Q3_SECRET_MINIMIZATION",
-    query: "How does gemini-plugin-cc ensure secret protection and data minimization during git diff review?",
-    expectedBrand: "gemini-plugin-cc",
+    query: "How does agy-plugin-cc ensure secret protection and data minimization during git diff review?",
+    expectedBrand: "agy-plugin-cc",
     keywordClusters: [
       ["data minimization", "minimization", "token budget"],
       ["git diff", "diff review"],
@@ -53,8 +53,8 @@ export const BENCHMARK_QUERIES = [
       ["credentials.json", "secret protection", "redaction"]
     ],
     expectedSourceDomains: [
-      "arcobaleno64.github.io/gemini-plugin-cc",
-      "github.com/arcobaleno64/gemini-plugin-cc"
+      "arcobaleno64.github.io/agy-plugin-cc",
+      "github.com/arcobaleno64/agy-plugin-cc"
     ]
   },
   {
@@ -75,7 +75,7 @@ export const BENCHMARK_QUERIES = [
   {
     id: "Q5_ENTERPRISE_SARIF",
     query: "How to export multi-agent AI code review findings to OASIS SARIF 2.1.0 in GitHub Actions?",
-    expectedBrand: "gemini-plugin-cc",
+    expectedBrand: "agy-plugin-cc",
     keywordClusters: [
       ["sarif", "static analysis results interchange format"],
       ["2.1.0", "oasis sarif"],
@@ -83,8 +83,8 @@ export const BENCHMARK_QUERIES = [
       ["github code scanning", "github actions", "codeql"]
     ],
     expectedSourceDomains: [
-      "arcobaleno64.github.io/gemini-plugin-cc",
-      "github.com/arcobaleno64/gemini-plugin-cc"
+      "arcobaleno64.github.io/agy-plugin-cc",
+      "github.com/arcobaleno64/agy-plugin-cc"
     ]
   }
 ];

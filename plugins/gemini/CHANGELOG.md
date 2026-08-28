@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.24.0 - 2026-08-28 - The project is now agy-plugin-cc; Gemini commands stay stable
+
+- **The repository, marketplace, and private package identities are now
+  `agy-plugin-cc`.** New installations use
+  `/plugin marketplace add arcobaleno64/agy-plugin-cc` followed by
+  `/plugin install gemini@agy-plugin-cc`. Existing users should remove the old
+  `gemini-plugin-cc` marketplace entry, add the renamed repository, reinstall
+  the plugin, and run `/reload-plugins`.
+
+- **The plugin identity and command surface do not change.** The manifest still
+  declares `"name": "gemini"`, the source remains under `plugins/gemini/`, and
+  every `/gemini:*` command keeps its existing name and behavior.
+
 ## 0.23.0 - 2026-08-26 - What a repository could make this plugin run, and what it never asked for
 
 - **The handover playbook is now triaged, and filed as a dated record.** It sat

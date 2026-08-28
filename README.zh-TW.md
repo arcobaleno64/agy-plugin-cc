@@ -3,17 +3,17 @@
 > 在 Claude Code 內使用 Gemini CLI 或 Antigravity CLI (`agy`) 進行 task delegation、pragmatic code review 與 adversarial review。
 
 **為 Google Gemini CLI 到 Antigravity CLI 的遷移期而準備。**
-`gemini-plugin-cc` 保留熟悉的 Claude Code slash-command workflow；Gemini CLI 可用時可走 Gemini CLI，遷移到 Antigravity CLI (`agy`) 的使用者則可改走 AGY engine。
+`agy-plugin-cc` 保留熟悉的 Claude Code slash-command workflow；Gemini CLI 可用時可走 Gemini CLI，遷移到 Antigravity CLI (`agy`) 的使用者則可改走 AGY engine。
 
 本外掛移植自 [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc)（Apache-2.0），在保留熟悉的斜線命令與背景工作模型之同時，將行為調適至 Gemini/AGY 能力並記錄刻意之差異。
 
-> **獨立專案。** `gemini-plugin-cc` 由社群維護，**與 Google LLC 及 Anthropic 均無隸屬、背書或贊助關係**。「Gemini」與「Antigravity」為 Google LLC 的商標，「Claude」為 Anthropic 的商標，此處僅用於指稱本外掛所驅動的工具。這些工具需由你自行安裝與認證，送交其處理的內容適用各該工具自身的條款。
+> **獨立專案。** `agy-plugin-cc` 由社群維護，**與 Google LLC 及 Anthropic 均無隸屬、背書或贊助關係**。「Gemini」與「Antigravity」為 Google LLC 的商標，「Claude」為 Anthropic 的商標，此處僅用於指稱本外掛所驅動的工具。這些工具需由你自行安裝與認證，送交其處理的內容適用各該工具自身的條款。
 
 ---
 
 ## 為什麼選這個外掛？
 
-`gemini-plugin-cc` 是 Claude Code-native 的 companion bridge，適合在 Google Gemini CLI transition 期間同時保留 Gemini CLI 與 Antigravity CLI (`agy`) 路徑的使用者。
+`agy-plugin-cc` 是 Claude Code-native 的 companion bridge，適合在 Google Gemini CLI transition 期間同時保留 Gemini CLI 與 Antigravity CLI (`agy`) 路徑的使用者。
 
 相較於 AGY-only、多宿主外掛，本專案保留 Gemini CLI 可用時的路徑，同時提供明確的 `--engine agy` 給正在遷移到 Antigravity CLI 的使用者。
 
@@ -75,10 +75,10 @@
 
 ```
 # 1. 加入 marketplace
-/plugin marketplace add arcobaleno64/gemini-plugin-cc
+/plugin marketplace add arcobaleno64/agy-plugin-cc
 
 # 2. 安裝外掛
-/plugin install gemini@gemini-plugin-cc
+/plugin install gemini@agy-plugin-cc
 
 # 3. 重新載入外掛
 /reload-plugins
@@ -87,28 +87,28 @@
 此 marketplace 的來源追蹤 repository 的 `main` 分支，但這**不表示**每次啟動 Claude Code 都一定會自動安裝並啟用新程式碼：
 
 - Claude Code 依本外掛 manifest 中的明確版本號辨識更新。既有安裝只會在該版本號提高時更新（通常隨正式發布進行）；若 `main` 只有新 commit、manifest 版本號不變，該 commit 不會被當成外掛更新交付。
-- 第三方 marketplace 預設關閉自動更新。如要啟用，請開啟 `/plugin`，選擇 **Marketplaces** → **gemini-plugin-cc** → **Enable auto-update**。啟用後，Claude Code 會在啟動時檢查 marketplace，並更新 resolved version 已變更的已安裝外掛。
+- 第三方 marketplace 預設關閉自動更新。如要啟用，請開啟 `/plugin`，選擇 **Marketplaces** → **agy-plugin-cc** → **Enable auto-update**。啟用後，Claude Code 會在啟動時檢查 marketplace，並更新 resolved version 已變更的已安裝外掛。
 - 若 Claude Code 顯示外掛已更新，請先執行 `/reload-plugins`，再於目前 session 使用。因此，僅打開 Claude Code 不能保證剛發布的版本已經生效。
 
 若不啟用自動更新，可明確執行：
 
 ```
-/plugin marketplace update gemini-plugin-cc
-/plugin update gemini@gemini-plugin-cc
+/plugin marketplace update agy-plugin-cc
+/plugin update gemini@agy-plugin-cc
 /reload-plugins
 ```
 
 ### 釘選發布版（指定某個已發布版本）
 
-將 marketplace 釘到某個 release 標籤——例如 `v0.9.1`：
+將 marketplace 釘到某個 release 標籤——例如 `v0.24.0`：
 
 ```
-/plugin marketplace add arcobaleno64/gemini-plugin-cc@v0.9.1
-/plugin install gemini@gemini-plugin-cc
+/plugin marketplace add arcobaleno64/agy-plugin-cc@v0.24.0
+/plugin install gemini@agy-plugin-cc
 /reload-plugins
 ```
 
-> Claude Code 從 git tree 安裝外掛，**並非**從 GitHub Releases 的 tarball——`@<tag>` 選的是 [Release](https://github.com/arcobaleno64/gemini-plugin-cc/releases) 背後的 git 標籤。即使啟用 marketplace 自動更新，釘選的 marketplace 仍會停在該標籤。若要移至另一個 release，請先移除既有 marketplace（這也會解除安裝由它安裝的外掛），再以新標籤加入 repository、重新安裝外掛，最後執行 `/reload-plugins`。
+> Claude Code 從 git tree 安裝外掛，**並非**從 GitHub Releases 的 tarball——`@<tag>` 選的是 [Release](https://github.com/arcobaleno64/agy-plugin-cc/releases) 背後的 git 標籤。即使啟用 marketplace 自動更新，釘選的 marketplace 仍會停在該標籤。若要移至另一個 release，請先移除既有 marketplace（這也會解除安裝由它安裝的外掛），再以新標籤加入 repository、重新安裝外掛，最後執行 `/reload-plugins`。
 
 接著對 `auto`／Gemini 執行 `/gemini:setup`，或對 AGY 執行 `/gemini:setup --engine agy`。只需安裝所選引擎的 dependency；若缺少，setup 會提供對應安裝選項。
 
@@ -398,9 +398,9 @@ Claude Code
 
 - **安裝或認證失敗**——先查 [安裝與認證疑難排解](#安裝與認證疑難排解)，多數安裝與 OAuth 症狀都在該表內。
 - **行為與 `codex-plugin-cc` 不同**——回報前請先看 [docs/known-diffs.md](docs/known-diffs.md)；部分差異是刻意為之且已記錄。
-- **臭蟲**——開一則 [bug report](https://github.com/arcobaleno64/gemini-plugin-cc/issues/new?template=bug_report.yml)。請附完整命令與 `/gemini:setup` 輸出，這兩項通常就足以定位問題。
-- **尚未驗證的引擎版本或平台**——開一則 [compatibility report](https://github.com/arcobaleno64/gemini-plugin-cc/issues/new?template=compatibility_report.yml)。「在 X 上可用」與「在 X 上壞掉」同樣有價值，因為文件只聲稱實際跑過的部分。
-- **安全性漏洞**——請勿開 issue，改用 [私密回報](https://github.com/arcobaleno64/gemini-plugin-cc/security/advisories/new)；詳見 [`SECURITY.md`](SECURITY.md)。
+- **臭蟲**——開一則 [bug report](https://github.com/arcobaleno64/agy-plugin-cc/issues/new?template=bug_report.yml)。請附完整命令與 `/gemini:setup` 輸出，這兩項通常就足以定位問題。
+- **尚未驗證的引擎版本或平台**——開一則 [compatibility report](https://github.com/arcobaleno64/agy-plugin-cc/issues/new?template=compatibility_report.yml)。「在 X 上可用」與「在 X 上壞掉」同樣有價值，因為文件只聲稱實際跑過的部分。
+- **安全性漏洞**——請勿開 issue，改用 [私密回報](https://github.com/arcobaleno64/agy-plugin-cc/security/advisories/new)；詳見 [`SECURITY.md`](SECURITY.md)。
 - **其他事項，或你無法使用 GitHub**——來信 <arcobaleno830623@gmail.com>。凡是適合公開的內容，走 GitHub 較快，因為答案會留在下一個人找得到的地方。
 
 本專案由單一維護者經營，並非有專職人力的支援窗口；以上管道都是同一個人在收。

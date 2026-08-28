@@ -1,16 +1,16 @@
 {
-  "name": "@arcobaleno64/gemini-plugin-cc",
-  "version": "0.23.0",
+  "name": "@arcobaleno64/agy-plugin-cc",
+  "version": "0.24.0",
   "private": true,
   "type": "module",
   "description": "Use Gemini CLI or Antigravity CLI (agy) inside Claude Code for task delegation, code review, and adversarial review.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/arcobaleno64/gemini-plugin-cc.git"
+    "url": "git+https://github.com/arcobaleno64/agy-plugin-cc.git"
   },
-  "homepage": "https://github.com/arcobaleno64/gemini-plugin-cc#readme",
+  "homepage": "https://github.com/arcobaleno64/agy-plugin-cc#readme",
   "bugs": {
-    "url": "https://github.com/arcobaleno64/gemini-plugin-cc/issues"
+    "url": "https://github.com/arcobaleno64/agy-plugin-cc/issues"
   },
   "keywords": [
     "claude-code",

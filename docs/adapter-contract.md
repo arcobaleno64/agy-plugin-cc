@@ -10,7 +10,7 @@ parseOutput(rawText, exitCode) → { ok, error?, raw, ... }
 cancel(pid) → { signaled, confirmedTerminated?, reason? }
 ```
 
-## gemini-plugin-cc 對應表
+## agy-plugin-cc 對應表
 
 - `binaryAvailable`／`resolveBinaryPath`（`process.mjs`）對應契約 `detect()` 的組成件。
 - `terminateProcessTree` 對應契約 `cancel(pid)`：語意等價為樹殺與結果物件。

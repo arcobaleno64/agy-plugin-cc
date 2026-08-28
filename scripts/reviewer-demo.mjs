@@ -313,7 +313,7 @@ function main() {
   const repo = buildWorkspace(root);
   const env = buildEnv(binDir, dataDir);
 
-  process.stdout.write(`${c(BOLD, "gemini-plugin-cc — credential-free functional walkthrough")}\n`);
+  process.stdout.write(`${c(BOLD, "agy-plugin-cc — credential-free functional walkthrough")}\n`);
   process.stdout.write(`${c(DIM, `workspace: ${root}`)}\n`);
   process.stdout.write(
     `${c(YELLOW, "Every model reply below comes from tests/fixtures/fake-gemini.cjs, a stand-in engine.")}\n` +

@@ -6,12 +6,12 @@ Only the current MINOR line is supported. Update this table with every MINOR bum
 
 | Version | Supported |
 |---|---|
-| 0.23.x | :white_check_mark: |
-| < 0.23.0 | :x: |
+| 0.24.x | :white_check_mark: |
+| < 0.24.0 | :x: |
 
 ## Security Model & Trust Boundaries
 
-`gemini-plugin-cc` acts as a local CLI bridge between Anthropic's Claude Code environment and local Gemini/AGY binaries.
+`agy-plugin-cc` acts as a local CLI bridge between Anthropic's Claude Code environment and local Gemini/AGY binaries.
 
 ### In-Scope Components
 - Stdin transport and prompt escaping logic (`plugins/gemini/scripts/lib/gemini.mjs`, `plugins/gemini/scripts/transfer.mjs`).
@@ -32,10 +32,10 @@ What the plugin sends, keeps, and reads — and the single path that transmits w
 
 ## Reporting a Vulnerability
 
-If you discover a potential security vulnerability within `gemini-plugin-cc`, please **do not** open a public GitHub issue.
+If you discover a potential security vulnerability within `agy-plugin-cc`, please **do not** open a public GitHub issue.
 
 Instead, report it responsibly via either of:
-- **Private Security Disclosure** (preferred): Submit via [GitHub Security Advisories](https://github.com/arcobaleno64/gemini-plugin-cc/security/advisories/new). It keeps the report, the discussion, and the eventual advisory in one place.
+- **Private Security Disclosure** (preferred): Submit via [GitHub Security Advisories](https://github.com/arcobaleno64/agy-plugin-cc/security/advisories/new). It keeps the report, the discussion, and the eventual advisory in one place.
 - **Email**: <arcobaleno830623@gmail.com>, for anyone who cannot or would rather not use GitHub. This address is monitored by the maintainer; it is not a team inbox, so expect one person's response times.
 
 ### Response Expectations

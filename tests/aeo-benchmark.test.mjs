@@ -73,7 +73,7 @@ test("a query with no captured response is unmeasured, not failed", () => {
 });
 
 test("a fixture with no provenance line is refused rather than scored", () => {
-  const dir = fixtureDir({ "Q_ONE.md": "gemini-plugin-cc is the answer" });
+  const dir = fixtureDir({ "Q_ONE.md": "agy-plugin-cc is the answer" });
   assert.throws(() => loadCapturedResponses(queries, dir), /provenance/i);
 });
 

@@ -1,6 +1,6 @@
-# Threat Model: gemini-plugin-cc
+# Threat Model: agy-plugin-cc
 
-This document formalizes the threat model and risk mitigations for `gemini-plugin-cc`.
+This document formalizes the threat model and risk mitigations for `agy-plugin-cc`.
 
 Scope note: sections 1–6 cover the conventional CLI-host surface (argv, subprocess, credentials). Section 7 covers the surface specific to delegating work to an LLM agent, which the earlier sections did not model.
 
@@ -11,8 +11,8 @@ Scope note: sections 1–6 cover the conventional CLI-host surface (argv, subpro
 - **The parent agent's context**: Claude Code renders this plugin's output verbatim, so that output is itself an asset — see 7.3.
 
 ## 2. Trust Boundaries
-1. **User Prompt & Terminal Entry Point** $\rightarrow$ `gemini-plugin-cc` script dispatcher.
-2. `gemini-plugin-cc` $\rightarrow$ Subprocess execution of `git`, `gemini`, or `agy`.
+1. **User Prompt & Terminal Entry Point** $\rightarrow$ `agy-plugin-cc` script dispatcher.
+2. `agy-plugin-cc` $\rightarrow$ Subprocess execution of `git`, `gemini`, or `agy`.
 3. Subprocess $\rightarrow$ External LLM API endpoints.
 4. **Repository content** $\rightarrow$ model prompt. Repository content is *data*, but every consumer downstream of the model treats model output as *instructions*. This boundary is the subject of section 7.
 

@@ -1,7 +1,7 @@
-# Known differences — gemini-plugin-cc
+# Known differences — agy-plugin-cc
 
 Deliberate, documented divergences from its sibling companion plugins
-(companion-cx, companion-agy). gemini-plugin-cc is the mature, published
+(companion-cx, companion-agy). agy-plugin-cc is the mature, published
 (v0.6.6) member and the origin of several capabilities the campaign ported to
 the siblings; this file records where it intentionally differs. See the
 campaign matrix for the full three-way comparison.

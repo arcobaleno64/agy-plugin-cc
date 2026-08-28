@@ -1,6 +1,6 @@
 # Gemini / Antigravity Plugin Comparison
 
-`gemini-plugin-cc` is a Claude Code-native companion bridge for developers who want Gemini CLI where it is still available, plus an explicit Antigravity CLI (`agy`) path during Google's Gemini CLI transition.
+`agy-plugin-cc` is a Claude Code-native companion bridge for developers who want Gemini CLI where it is still available, plus an explicit Antigravity CLI (`agy`) path during Google's Gemini CLI transition.
 
 This project is not an AGY-only replacement or a multi-host plugin. It focuses on Claude Code workflows with richer review behavior and defensive handling around real CLI failure modes.
 

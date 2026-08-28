@@ -23,20 +23,20 @@ function readJson(filePath) {
 
 function makeFixture(version = "0.5.0") {
   const root = makeTempDir();
-  writeJson(path.join(root, "package.json"), { name: "@arcobaleno64/gemini-plugin-cc", version });
+  writeJson(path.join(root, "package.json"), { name: "@arcobaleno64/agy-plugin-cc", version });
   writeJson(path.join(root, "package-lock.json"), {
-    name: "@arcobaleno64/gemini-plugin-cc",
+    name: "@arcobaleno64/agy-plugin-cc",
     version,
     lockfileVersion: 3,
-    packages: { "": { name: "@arcobaleno64/gemini-plugin-cc", version } }
+    packages: { "": { name: "@arcobaleno64/agy-plugin-cc", version } }
   });
   writeJson(path.join(root, "plugins", "gemini", ".claude-plugin", "plugin.json"), { name: "gemini", version });
   writeJson(path.join(root, ".claude-plugin", "marketplace.json"), {
-    name: "gemini-plugin-cc",
+    name: "agy-plugin-cc",
     metadata: { version },
     plugins: [{ name: "gemini", version, source: "./plugins/gemini" }]
   });
-  fs.writeFileSync(path.join(root, "README.md"), "# gemini-plugin-cc\n\n/plugin install gemini@gemini-plugin-cc\n");
+  fs.writeFileSync(path.join(root, "README.md"), "# agy-plugin-cc\n\n/plugin install gemini@agy-plugin-cc\n");
   for (const command of COMMANDS) {
     const file = path.join(root, "plugins", "gemini", "commands", `${command}.md`);
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -174,7 +174,7 @@ test("bump-version updates every manifest and --check detects drift", () => {
   assert.equal(readJson(path.join(root, ".claude-plugin", "marketplace.json")).plugins[0].version, "1.2.3");
 
   // Desync package.json and confirm --check reports the mismatch.
-  writeJson(path.join(root, "package.json"), { name: "@arcobaleno64/gemini-plugin-cc", version: "1.2.4" });
+  writeJson(path.join(root, "package.json"), { name: "@arcobaleno64/agy-plugin-cc", version: "1.2.4" });
   const checked = run("node", [BUMP, "--root", root, "--check"], { cwd: ROOT });
   assert.notEqual(checked.status, 0);
   assert.match(checked.stderr, /out of sync/i);
