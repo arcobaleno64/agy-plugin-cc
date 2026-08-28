@@ -5,13 +5,25 @@ import path from "node:path";
 import test from "node:test";
 
 import { describeReadOnlyWrites, detectWrites, snapshotWorkspace } from "../plugins/gemini/scripts/lib/readonly-guard.mjs";
-import { initGitRepo } from "./helpers.mjs";
+import { initGitRepo, run } from "./helpers.mjs";
 
 function tempRepo() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "readonly-guard-"));
   initGitRepo(dir);
   return dir;
 }
+
+const canCreateFileSymlink = (() => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "readonly-link-probe-"));
+  try {
+    fs.symlinkSync(path.join(dir, "missing"), path.join(dir, "link"), "file");
+    return true;
+  } catch {
+    return false;
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+})();
 
 // The promise being kept: a turn the user asked to be read-only cannot write
 // without saying so. It is not a permission check — AGY has no read-only mode —
@@ -43,9 +55,20 @@ test("a file that was already dirty beforehand is not blamed on the turn", () =>
   assert.equal(describeReadOnlyWrites(detectWrites(before, repo)), null);
 });
 
-test("a file that stopped being dirty is not reported as a write", () => {
-  // Committing mid-run, or a build cleaning a stray artifact, removes an entry.
-  // Only additions are evidence.
+test("a file that was already dirty and changed again during the turn is named", () => {
+  const repo = tempRepo();
+  const file = path.join(repo, "the-user-was-editing-this.txt");
+  fs.writeFileSync(file, "mine", "utf8");
+  const before = snapshotWorkspace(repo);
+
+  fs.writeFileSync(file, "changed by the delegated turn", "utf8");
+
+  const detection = detectWrites(before, repo);
+  assert.deepEqual(detection.written, ["the-user-was-editing-this.txt"]);
+  assert.match(describeReadOnlyWrites(detection), /the-user-was-editing-this\.txt/);
+});
+
+test("a dirty file removed during the turn is named", () => {
   const repo = tempRepo();
   const stray = path.join(repo, "stray.txt");
   fs.writeFileSync(stray, "x", "utf8");
@@ -53,7 +76,64 @@ test("a file that stopped being dirty is not reported as a write", () => {
   fs.rmSync(stray);
 
   const detection = detectWrites(before, repo);
-  assert.deepEqual(detection.written, []);
+  assert.deepEqual(detection.written, ["stray.txt"]);
+});
+
+test("a dirty Unicode path changed again during the turn is named literally", () => {
+  const repo = tempRepo();
+  const file = path.join(repo, "café.txt");
+  fs.writeFileSync(file, "mine", "utf8");
+  const before = snapshotWorkspace(repo);
+
+  fs.writeFileSync(file, "changed", "utf8");
+
+  assert.deepEqual(detectWrites(before, repo).written, ["café.txt"]);
+});
+
+test("a dirty submodule changed again during the turn is named", () => {
+  const repo = tempRepo();
+  const source = tempRepo();
+  fs.writeFileSync(path.join(source, "nested.txt"), "initial", "utf8");
+  run("git", ["add", "nested.txt"], { cwd: source });
+  run("git", ["commit", "-m", "fixture"], { cwd: source });
+  run("git", ["-c", "protocol.file.allow=always", "submodule", "add", source, "nested"], { cwd: repo });
+  run("git", ["commit", "-am", "add submodule"], { cwd: repo });
+
+  const nestedFile = path.join(repo, "nested", "nested.txt");
+  fs.writeFileSync(nestedFile, "dirty before", "utf8");
+  const before = snapshotWorkspace(repo);
+  fs.writeFileSync(nestedFile, "changed again", "utf8");
+
+  assert.deepEqual(detectWrites(before, repo).written, ["nested"]);
+});
+
+test("untracked submodule content changed again during the turn is named", () => {
+  const repo = tempRepo();
+  const source = tempRepo();
+  fs.writeFileSync(path.join(source, "tracked.txt"), "fixture", "utf8");
+  run("git", ["add", "tracked.txt"], { cwd: source });
+  run("git", ["commit", "-m", "fixture"], { cwd: source });
+  run("git", ["-c", "protocol.file.allow=always", "submodule", "add", source, "nested"], { cwd: repo });
+  run("git", ["commit", "-am", "add submodule"], { cwd: repo });
+
+  const untracked = path.join(repo, "nested", "untracked.txt");
+  fs.writeFileSync(untracked, "dirty before", "utf8");
+  const before = snapshotWorkspace(repo);
+  fs.writeFileSync(untracked, "changed again", "utf8");
+
+  assert.deepEqual(detectWrites(before, repo).written, ["nested"]);
+});
+
+test("a dangling symlink retargeted during the turn is named", { skip: !canCreateFileSymlink }, () => {
+  const repo = tempRepo();
+  const link = path.join(repo, "dangling-link");
+  fs.symlinkSync(path.join(repo, "missing-a"), link, "file");
+  const before = snapshotWorkspace(repo);
+
+  fs.unlinkSync(link);
+  fs.symlinkSync(path.join(repo, "missing-b"), link, "file");
+
+  assert.deepEqual(detectWrites(before, repo).written, ["dangling-link"]);
 });
 
 test("a workspace that cannot be compared says so instead of passing", () => {

@@ -37,6 +37,21 @@ test('parseTransferArgs rejects an unknown engine', () => {
   assert.throws(() => parseTransferArgs(['--engine copilot']), /Unknown engine "copilot"/);
 });
 
+test('parseTransferArgs rejects shell metacharacters in generated command flags', () => {
+  assert.throws(
+    () => parseTransferArgs(['--model', 'gemini-pro;calc', 'handoff']),
+    /Invalid model id/
+  );
+  assert.throws(
+    () => parseTransferArgs(['--effort', 'high;calc', 'handoff']),
+    /Invalid --effort/
+  );
+  assert.throws(
+    () => parseTransferArgs(['--effort', 'minimal', 'handoff']),
+    /Invalid --effort/
+  );
+});
+
 test('parseTransferArgs treats an empty $ARGUMENTS as no arguments', () => {
   const parsed = parseTransferArgs(['']);
 

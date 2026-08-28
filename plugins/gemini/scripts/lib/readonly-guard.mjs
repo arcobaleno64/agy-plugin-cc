@@ -19,23 +19,99 @@
 // repository cannot be compared, and that is reported rather than passed over:
 // "not checked" and "checked, nothing changed" must never look alike.
 
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+
 import { getWorkingTreeState } from "./git.mjs";
+import { runCommandChecked } from "./process.mjs";
+
+function readIndex(cwd) {
+  const output = runCommandChecked("git", ["ls-files", "--stage", "-z"], { cwd, shell: false, maxBuffer: 64 * 1024 * 1024 }).stdout;
+  return new Map(output.split("\0").filter(Boolean).map((record) => {
+    const separator = record.indexOf("\t");
+    return [record.slice(separator + 1), record.slice(0, separator)];
+  }));
+}
+
+function fingerprintWorktreePath(cwd, entry) {
+  const absolute = path.join(cwd, entry);
+  let descriptor;
+  try {
+    descriptor = fs.openSync(absolute, "r");
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      try {
+        const current = fs.lstatSync(absolute);
+        if (current.isSymbolicLink()) return `link:${current.mode}:${fs.readlinkSync(absolute)}`;
+      } catch (inspectError) {
+        if (inspectError?.code !== "ENOENT") throw inspectError;
+      }
+      return "missing";
+    }
+    if (error?.code === "EISDIR") {
+      const current = fs.lstatSync(absolute);
+      if (!current.isDirectory()) throw error;
+      return fingerprintSubmodule(absolute);
+    }
+    throw error;
+  }
+  try {
+    const opened = fs.fstatSync(descriptor);
+    const current = fs.lstatSync(absolute);
+    if (current.isSymbolicLink()) return `link:${current.mode}:${fs.readlinkSync(absolute)}`;
+    if (opened.dev !== current.dev || opened.ino !== current.ino) {
+      throw new Error(`Workspace path changed while it was being inspected: ${entry}`);
+    }
+    if (opened.isDirectory()) return fingerprintSubmodule(absolute);
+    if (!opened.isFile()) return `other:${opened.mode}:${opened.size}`;
+
+    const hash = crypto.createHash("sha256");
+    const buffer = Buffer.allocUnsafe(64 * 1024);
+    for (let bytesRead; (bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, null)) > 0;) {
+      hash.update(buffer.subarray(0, bytesRead));
+    }
+    return `file:${opened.mode}:${hash.digest("hex")}`;
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
+function fingerprintSubmodule(cwd) {
+  const head = runCommandChecked("git", ["rev-parse", "HEAD"], { cwd, shell: false }).stdout.trim();
+  const state = snapshotWorkspace(cwd);
+  if (!state.comparable) throw new Error(state.reason);
+  return `directory:${crypto.createHash("sha256").update(JSON.stringify({ head, entries: state.entries, fingerprints: state.fingerprints })).digest("hex")}`;
+}
+
+function fingerprintEntry(cwd, entry, state, index) {
+  const categories = [state.staged.includes(entry), state.unstaged.includes(entry), state.untracked.includes(entry)];
+  return crypto.createHash("sha256")
+    .update(JSON.stringify(categories)).update("\0")
+    .update(index.get(entry) ?? "untracked").update("\0")
+    .update(fingerprintWorktreePath(cwd, entry))
+    .digest("hex");
+}
 
 /**
- * @returns {{ comparable: boolean, entries: string[], reason: string | null }}
+ * @returns {{ comparable: boolean, entries: string[], fingerprints: Record<string, string>, reason: string | null }}
  */
 export function snapshotWorkspace(cwd) {
   try {
     const state = getWorkingTreeState(cwd);
+    const entries = [...new Set([...state.staged, ...state.unstaged, ...state.untracked])].sort();
+    const index = readIndex(cwd);
     return {
       comparable: true,
-      entries: [...state.staged, ...state.unstaged, ...state.untracked].sort(),
+      entries,
+      fingerprints: Object.fromEntries(entries.map((entry) => [entry, fingerprintEntry(cwd, entry, state, index)])),
       reason: null
     };
   } catch (error) {
     return {
       comparable: false,
       entries: [],
+      fingerprints: {},
       reason: error instanceof Error ? error.message : String(error)
     };
   }
@@ -44,9 +120,9 @@ export function snapshotWorkspace(cwd) {
 /**
  * Compare a later state against a snapshot.
  *
- * Only additions count. A file that stopped being dirty (the user committed
- * mid-run, or a build removed a stray artifact) is not evidence that the
- * delegated turn wrote anything.
+ * New dirty paths, changed fingerprints, and paths that disappeared from the
+ * dirty set count. The comparison cannot attribute concurrent user actions, so
+ * it reports every final-state change while the delegated turn was running.
  *
  * @returns {{ checked: boolean, written: string[], reason: string | null }}
  */
@@ -58,8 +134,12 @@ export function detectWrites(before, cwd) {
   if (!after.comparable) {
     return { checked: false, written: [], reason: after.reason };
   }
-  const seen = new Set(before.entries);
-  return { checked: true, written: after.entries.filter((entry) => !seen.has(entry)), reason: null };
+  const entries = new Set([...before.entries, ...after.entries]);
+  return {
+    checked: true,
+    written: [...entries].filter((entry) => before.fingerprints?.[entry] !== after.fingerprints?.[entry]).sort(),
+    reason: null
+  };
 }
 
 /**

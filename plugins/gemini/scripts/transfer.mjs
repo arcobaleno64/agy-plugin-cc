@@ -2,10 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs, normalizeArgv } from './lib/args.mjs';
+import { normalizeRequestedModel } from './lib/engine.mjs';
 import { buildTransferSnapshot } from './lib/transfer-context.mjs';
 
 const SELF_PATH = fileURLToPath(import.meta.url);
 const VALID_ENGINES = new Set(['auto', 'gemini', 'agy']);
+const VALID_TRANSFER_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh']);
 
 // Instructions are free text, which is exactly what must not travel through a
 // shell: a slash command that interpolated them into its command string had
@@ -34,6 +36,14 @@ export function parseTransferArgs(argv) {
     throw new Error(`Unknown engine "${options.engine}". Valid values: auto, gemini, agy.`);
   }
 
+  const model = options.model == null ? null : String(options.model).trim();
+  if (model) normalizeRequestedModel(model);
+
+  const effort = options.effort == null ? null : String(options.effort).trim().toLowerCase();
+  if (effort && !VALID_TRANSFER_EFFORTS.has(effort)) {
+    throw new Error(`Invalid --effort "${options.effort}". Valid values: ${[...VALID_TRANSFER_EFFORTS].join(', ')}.`);
+  }
+
   const instructionsFile = options['instructions-file'] ?? null;
   if (instructionsFile && positionals.length > 0) {
     throw new Error('Pass instructions either as --instructions-file or as positional text, not both.');
@@ -42,8 +52,8 @@ export function parseTransferArgs(argv) {
   // `json` stays in booleanOptions so it never leaks into the instructions text.
   return {
     engine,
-    model: options.model ?? null,
-    effort: options.effort ?? null,
+    model: model || null,
+    effort: effort || null,
     instructions: instructionsFile ? readInstructionsFile(instructionsFile) : positionals.join(' '),
   };
 }
