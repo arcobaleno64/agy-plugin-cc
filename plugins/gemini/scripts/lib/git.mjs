@@ -103,8 +103,8 @@ export function getCurrentBranch(cwd) {
 
 export function getWorkingTreeState(cwd) {
   const splitPaths = (output) => output.split("\0").filter(Boolean);
-  const staged = splitPaths(gitChecked(cwd, ["diff", "--cached", "--name-only", "-z"]).stdout);
-  const unstaged = splitPaths(gitChecked(cwd, ["diff", "--name-only", "-z"]).stdout);
+  const staged = splitPaths(gitChecked(cwd, ["diff", "--cached", "--ignore-submodules=none", "--name-only", "-z"]).stdout);
+  const unstaged = splitPaths(gitChecked(cwd, ["diff", "--ignore-submodules=none", "--name-only", "-z"]).stdout);
   const untracked = splitPaths(gitChecked(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]).stdout);
 
   return {

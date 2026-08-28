@@ -102,10 +102,10 @@ For an explicit update without enabling auto-update, run:
 
 ### Pinned release (a specific published version)
 
-Pin the marketplace to a release tag — e.g. `v0.24.0`:
+Pin the marketplace to a release tag — e.g. `v0.24.1`:
 
 ```
-/plugin marketplace add arcobaleno64/agy-plugin-cc@v0.24.0
+/plugin marketplace add arcobaleno64/agy-plugin-cc@v0.24.1
 /plugin install gemini@agy-plugin-cc
 /reload-plugins
 ```

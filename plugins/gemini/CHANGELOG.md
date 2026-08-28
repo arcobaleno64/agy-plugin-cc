@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.24.1 - 2026-08-28 - Readonly guard now detects untracked submodule writes on Linux
+
+- **Readonly review jobs now fail when a submodule's untracked content changes.**
+  Git is explicitly asked not to ignore submodule modifications, removing a
+  platform-dependent gap that let the same regression test pass on Windows but
+  fail on Linux.
+
 ## 0.24.0 - 2026-08-28 - The project is now agy-plugin-cc; Gemini commands stay stable
 
 - **The repository, marketplace, and private package identities are now
