@@ -17,6 +17,15 @@ const REPO_ROOT = path.resolve(__dirname, "..");
 export const BENCHMARK_SCHEMA_VERSION = 2;
 export const CAPTURE_MANIFEST_SCHEMA_VERSION = 1;
 export const CANONICAL_REPOSITORY_URL = "https://github.com/arcobaleno64/agy-plugin-cc";
+const MAX_MANIFEST_BYTES = 256 * 1024;
+const MAX_CAPTURE_BYTES = 1024 * 1024;
+const MANUAL_ADJUDICATION_SCHEMA_VERSION = 1;
+const MANUAL_ADJUDICATION_STATUSES = new Set([
+  "supported",
+  "not-detected",
+  "inaccurate",
+  "inconclusive"
+]);
 export const DEFAULT_CAPTURE_MANIFEST = path.join(
   REPO_ROOT,
   "bench",
@@ -245,35 +254,127 @@ function normalizeText(text) {
   return String(text || "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isNegatedAt(text, index) {
+  const prefix = text.slice(Math.max(0, index - 96), index);
+  return /\b(?:not|never|no|without|cannot|can't|doesn't|does not|do not|don't|isn't|is not|aren't|are not|won't|will not)\b(?!\s+(?:only|just|merely)\b)(?:\s+[a-z0-9_-]+){0,8}\s*(?:\(\s*)?$/i.test(prefix);
+}
+
+function signalMatch(signal, text) {
+  const normalizedSignal = normalizeText(signal);
+  const regex = new RegExp(`(?<![a-z0-9_-])${escapeRegex(normalizedSignal)}(?![a-z0-9_-])`, "giu");
+  const matches = [...text.matchAll(regex)];
+  return {
+    detected: matches.some(match => !isNegatedAt(text, match.index)),
+    negated: matches.length > 0 && matches.every(match => isNegatedAt(text, match.index))
+  };
+}
+
+function forbiddenPatternMatch(pattern, text) {
+  const regex = new RegExp(pattern, "ig");
+  const matches = [...text.matchAll(regex)];
+  return {
+    detected: matches.some(match => !isNegatedAt(text, match.index)),
+    negated: matches.length > 0 && matches.every(match => isNegatedAt(text, match.index))
+  };
+}
+
+function extractHttpUrls(responseBody) {
+  const urls = [];
+  let remaining = String(responseBody || "");
+  remaining = remaining.replace(
+    /!?\[[^\]]*\]\(\s*(?:<([^>\s]+)>|(https?:\/\/[^\s)]+))(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/gi,
+    (_match, angleDestination, plainDestination) => {
+      urls.push(angleDestination || plainDestination);
+      return " ";
+    }
+  );
+  remaining = remaining.replace(/<(https?:\/\/[^>\s]+)>/gi, (_match, destination) => {
+    urls.push(destination);
+    return " ";
+  });
+  const bareUrl = /(^|[^a-z0-9+.-])(https?:\/\/[^\s<>)\]"']+)/gi;
+  for (const match of remaining.matchAll(bareUrl)) urls.push(match[2]);
+  return urls.map(url => url.replace(/[.,!;:]+$/, ""));
+}
+
+function isCanonicalRepositoryRoot(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    const pathname = parsed.pathname.replace(/\/+$/, "").toLowerCase();
+    return parsed.protocol === "https:"
+      && parsed.hostname.toLowerCase() === "github.com"
+      && !parsed.port
+      && !parsed.username
+      && !parsed.password
+      && pathname === "/arcobaleno64/agy-plugin-cc"
+      && !parsed.search
+      && !parsed.hash;
+  } catch {
+    return false;
+  }
+}
+
 function containsCanonicalRootUrl(responseBody) {
-  const escaped = CANONICAL_REPOSITORY_URL.replace(/[.*+?^$\{\}()|[\]\\]/g, "\\$&");
-  return new RegExp(`${escaped}(?=$|[\\s)\\],.!;:])`, "i").test(responseBody);
+  return extractHttpUrls(responseBody).some(isCanonicalRepositoryRoot);
+}
+
+function containsConflictingRepositoryIdentity(responseBody) {
+  return extractHttpUrls(responseBody).some(rawUrl => {
+    try {
+      const parsed = new URL(rawUrl);
+      const parts = parsed.pathname.replace(/\/+$/, "").split("/").filter(Boolean);
+      return parsed.hostname.toLowerCase() === "github.com"
+        && parts.length >= 2
+        && parts[1].replace(/\.git$/i, "").toLowerCase() === "agy-plugin-cc"
+        && parts[0].toLowerCase() !== "arcobaleno64";
+    } catch {
+      return false;
+    }
+  });
 }
 
 export function evaluateResponseSynthesis(responseBody = "", benchmarkQuery = {}) {
   const text = normalizeText(responseBody);
   const requiredGroups = benchmarkQuery.requiredClaimGroups || [];
-  const requiredSignals = requiredGroups.map(group => ({
-    alternatives: group,
-    detected: group.some(signal => text.includes(normalizeText(signal)))
+  const requiredSignals = requiredGroups.map(group => {
+    const results = group.map(signal => signalMatch(signal, text));
+    return {
+      alternatives: group,
+      detected: results.some(result => result.detected),
+      ambiguous: !results.some(result => result.detected) && results.some(result => result.negated)
+    };
+  });
+  const forbiddenSignals = (benchmarkQuery.forbiddenClaimPatterns || []).map(({ id, pattern }) => ({
+    id,
+    ...forbiddenPatternMatch(pattern, text)
   }));
-  const candidateViolations = (benchmarkQuery.forbiddenClaimPatterns || [])
-    .filter(({ pattern }) => new RegExp(pattern, "i").test(text))
-    .map(({ id }) => id);
-  const brandMentioned = text.includes("agy-plugin-cc");
+  const candidateViolations = forbiddenSignals.filter(item => item.detected).map(item => item.id);
+  const negatedForbiddenSignals = forbiddenSignals.filter(item => item.negated).map(item => item.id);
+  const nameMentioned = signalMatch("agy-plugin-cc", text).detected;
   const canonicalCitation = containsCanonicalRootUrl(responseBody);
+  const canonicalProjectMentioned = canonicalCitation;
+  const identityCollisionCandidate = nameMentioned && containsConflictingRepositoryIdentity(responseBody);
   const missingRequiredSignals = requiredSignals
-    .filter(signal => !signal.detected)
+    .filter(signal => !signal.detected && !signal.ambiguous)
+    .map(signal => signal.alternatives);
+  const ambiguousRequiredSignals = requiredSignals
+    .filter(signal => signal.ambiguous)
     .map(signal => signal.alternatives);
 
   let automaticStatus = "candidate-supported";
   if (!responseBody.trim()) automaticStatus = "not-detected";
+  else if (identityCollisionCandidate) automaticStatus = "not-detected";
   else if (candidateViolations.length > 0) automaticStatus = "candidate-violation";
+  else if (ambiguousRequiredSignals.length > 0) automaticStatus = "candidate-ambiguous";
   else if (missingRequiredSignals.length > 0) automaticStatus = "not-detected";
 
   let visibility = null;
   if (benchmarkQuery.type === "discovery") {
-    visibility = brandMentioned
+    visibility = nameMentioned && !identityCollisionCandidate
       ? candidateViolations.length > 0
         ? "candidate-inaccurate-mention"
         : "candidate-mention"
@@ -285,14 +386,18 @@ export function evaluateResponseSynthesis(responseBody = "", benchmarkQuery = {}
     queryType: benchmarkQuery.type || "unknown",
     automaticStatus,
     visibility,
-    brandMentioned,
+    nameMentioned,
+    canonicalProjectMentioned,
+    identityCollisionCandidate,
     canonicalCitation,
     detectedRequiredSignals: requiredSignals
       .filter(signal => signal.detected)
       .map(signal => signal.alternatives),
     missingRequiredSignals,
+    ambiguousRequiredSignals,
     candidateViolations,
-    adjudicationRequired: Boolean(benchmarkQuery.manualAdjudication)
+    negatedForbiddenSignals,
+    adjudicationRequired: Boolean(benchmarkQuery.manualAdjudication) || automaticStatus === "candidate-ambiguous"
   };
 }
 
@@ -300,21 +405,26 @@ export function runAeoBenchmark(evaluations = [], metadata = {}) {
   const safeEvaluations = Array.isArray(evaluations) ? evaluations.filter(Boolean) : [];
   const counts = {
     measured: safeEvaluations.length,
-    brandMentions: safeEvaluations.filter(item => item.brandMentioned).length,
+    nameMentions: safeEvaluations.filter(item => item.nameMentioned).length,
+    canonicalProjectMentions: safeEvaluations.filter(item => item.canonicalProjectMentioned).length,
+    identityCollisionCandidates: safeEvaluations.filter(item => item.identityCollisionCandidate).length,
     canonicalCitations: safeEvaluations.filter(item => item.canonicalCitation).length,
     candidateSupported: safeEvaluations.filter(item => item.automaticStatus === "candidate-supported").length,
     candidateViolations: safeEvaluations.filter(item => item.automaticStatus === "candidate-violation").length,
+    candidateAmbiguous: safeEvaluations.filter(item => item.automaticStatus === "candidate-ambiguous").length,
     notDetected: safeEvaluations.filter(item => item.automaticStatus === "not-detected").length,
-    needsManualReview: safeEvaluations.filter(item => item.adjudicationRequired).length,
+    manuallyAdjudicated: safeEvaluations.filter(item => item.manualAdjudication).length,
+    needsManualReview: safeEvaluations.filter(item => item.adjudicationRequired && !item.manualAdjudication).length,
     notVisible: safeEvaluations.filter(item => item.visibility === "not-visible").length
   };
   const byType = {};
   for (const evaluation of safeEvaluations) {
     const type = evaluation.queryType || "unknown";
-    byType[type] ||= { measured: 0, candidateSupported: 0, candidateViolations: 0, notDetected: 0 };
+    byType[type] ||= { measured: 0, candidateSupported: 0, candidateViolations: 0, candidateAmbiguous: 0, notDetected: 0 };
     byType[type].measured += 1;
     if (evaluation.automaticStatus === "candidate-supported") byType[type].candidateSupported += 1;
     if (evaluation.automaticStatus === "candidate-violation") byType[type].candidateViolations += 1;
+    if (evaluation.automaticStatus === "candidate-ambiguous") byType[type].candidateAmbiguous += 1;
     if (evaluation.automaticStatus === "not-detected") byType[type].notDetected += 1;
   }
 
@@ -337,6 +447,52 @@ function assertFullSha(value, field) {
   if (!/^[0-9a-f]{40}$/i.test(value || "")) throw new Error(`${field} must be a full 40-character Git commit SHA`);
 }
 
+function assertUtcTimestamp(value, field) {
+  const validShape = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(value || "");
+  const parsed = validShape ? new Date(value) : null;
+  const normalized = parsed && Number.isFinite(parsed.getTime())
+    ? parsed.toISOString().replace(".000Z", "Z")
+    : null;
+  if (!validShape || normalized !== value) {
+    throw new Error(`${field} must be an ISO-8601 UTC timestamp`);
+  }
+}
+
+function assertNonEmptyString(value, field) {
+  if (typeof value !== "string" || !value.trim()) throw new Error(`${field} is required`);
+}
+
+function assertValidHttpsUrl(value, field) {
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`${field} must be a valid HTTPS sourceUrl`);
+  }
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password) {
+    throw new Error(`${field} must be a valid HTTPS sourceUrl`);
+  }
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  const ipv4 = hostname.split(".").map(part => Number(part));
+  const isIpv4 = ipv4.length === 4 && ipv4.every(part => Number.isInteger(part) && part >= 0 && part <= 255);
+  const privateIpv4 = isIpv4 && (
+    ipv4[0] === 0
+    || ipv4[0] === 10
+    || ipv4[0] === 127
+    || (ipv4[0] === 100 && ipv4[1] >= 64 && ipv4[1] <= 127)
+    || (ipv4[0] === 169 && ipv4[1] === 254)
+    || (ipv4[0] === 172 && ipv4[1] >= 16 && ipv4[1] <= 31)
+    || (ipv4[0] === 192 && ipv4[1] === 168)
+    || (ipv4[0] === 198 && (ipv4[1] === 18 || ipv4[1] === 19))
+    || ipv4[0] >= 224
+  );
+  const privateIpv6 = hostname === "::" || hostname === "::1" || hostname.startsWith("::ffff:")
+    || /^(?:fc|fd|fe8|fe9|fea|feb)/i.test(hostname);
+  if (hostname === "localhost" || hostname.endsWith(".localhost") || hostname.endsWith(".local") || privateIpv4 || privateIpv6) {
+    throw new Error(`${field} must be a public HTTPS sourceUrl`);
+  }
+}
+
 function resolveCapturePath(manifestPath, relativePath) {
   if (!relativePath || path.isAbsolute(relativePath)) throw new Error(`unsafe capture path: ${relativePath}`);
   const base = path.dirname(path.resolve(manifestPath));
@@ -345,6 +501,92 @@ function resolveCapturePath(manifestPath, relativePath) {
     throw new Error(`capture path escapes manifest directory: ${relativePath}`);
   }
   return resolved;
+}
+
+function readBoundedRegularFile(filePath, label, maxBytes) {
+  let stat;
+  try {
+    stat = fs.lstatSync(filePath);
+  } catch {
+    throw new Error(`missing ${label}: ${filePath}`);
+  }
+  if (stat.isSymbolicLink() || !stat.isFile()) throw new Error(`${label} must be a regular file`);
+  if (stat.size > maxBytes) throw new Error(`${label} exceeds ${maxBytes} bytes`);
+  return {
+    body: fs.readFileSync(filePath, "utf8"),
+    realPath: fs.realpathSync(filePath),
+    fileIdentity: `${stat.dev}:${stat.ino}`
+  };
+}
+
+function readCaptureFile(manifestPath, relativePath, label) {
+  const resolved = resolveCapturePath(manifestPath, relativePath);
+  const loaded = readBoundedRegularFile(resolved, label, MAX_CAPTURE_BYTES);
+  const realBase = fs.realpathSync(path.dirname(path.resolve(manifestPath)));
+  if (loaded.realPath !== realBase && !loaded.realPath.startsWith(`${realBase}${path.sep}`)) {
+    throw new Error(`capture path escapes manifest directory: ${relativePath}`);
+  }
+  return loaded;
+}
+
+function parseManualAdjudications(manifest, manifestPath, measured, responsePaths, responseIdentities) {
+  const manualCaptures = measured.filter(capture => capture.query.manualAdjudication);
+  if (manualCaptures.length === 0) return new Map();
+  if (!manifest.manualAdjudicationFile) {
+    throw new Error("manualAdjudicationFile is required when safety or capability captures are present");
+  }
+
+  const loaded = readCaptureFile(manifestPath, manifest.manualAdjudicationFile, "manual adjudication file");
+  if (responsePaths.has(loaded.realPath) || responseIdentities.has(loaded.fileIdentity)) {
+    throw new Error("manual adjudication file reuses a capture file");
+  }
+  const adjudicationSha256 = sha256(loaded.body);
+  if (!/^[0-9a-f]{64}$/i.test(manifest.manualAdjudicationSha256 || "")) {
+    throw new Error("manualAdjudicationSha256 must be a SHA-256 digest");
+  }
+  if (adjudicationSha256 !== manifest.manualAdjudicationSha256.toLowerCase()) {
+    throw new Error("manualAdjudicationSha256 does not match the adjudication file");
+  }
+
+  let document;
+  try {
+    document = JSON.parse(loaded.body);
+  } catch {
+    throw new Error("manual adjudication file must contain valid JSON");
+  }
+  if (!document || typeof document !== "object" || Array.isArray(document)) {
+    throw new Error("manual adjudication file must contain a JSON object");
+  }
+  if (document.schemaVersion !== MANUAL_ADJUDICATION_SCHEMA_VERSION) {
+    throw new Error(`unsupported manual adjudication schemaVersion: ${document.schemaVersion}`);
+  }
+  if (document.subjectCommit !== manifest.subjectCommit) {
+    throw new Error("manual adjudication subjectCommit does not match the capture manifest");
+  }
+  assertUtcTimestamp(document.reviewedAt, "manual adjudication reviewedAt");
+  if (!Array.isArray(document.adjudications)) {
+    throw new Error("manual adjudication entries must be an array");
+  }
+
+  const expected = new Map(manualCaptures.map(capture => [capture.query.id, capture.query]));
+  const adjudications = new Map();
+  for (const entry of document.adjudications) {
+    if (!expected.has(entry.queryId)) throw new Error(`unknown manual adjudication query: ${entry.queryId}`);
+    if (adjudications.has(entry.queryId)) throw new Error(`duplicate manual adjudication query: ${entry.queryId}`);
+    if (!MANUAL_ADJUDICATION_STATUSES.has(entry.status)) {
+      throw new Error(`${entry.queryId}: invalid manual adjudication status`);
+    }
+    assertNonEmptyString(entry.rationale, `${entry.queryId}: manual adjudication rationale`);
+    const expectedPaths = expected.get(entry.queryId).evidencePaths;
+    if (JSON.stringify(entry.evidencePaths) !== JSON.stringify(expectedPaths)) {
+      throw new Error(`${entry.queryId}: manual adjudication evidencePaths do not match the active rubric`);
+    }
+    adjudications.set(entry.queryId, entry);
+  }
+  for (const queryId of expected.keys()) {
+    if (!adjudications.has(queryId)) throw new Error(`missing adjudication for ${queryId}`);
+  }
+  return adjudications;
 }
 
 export function loadCaptureSet(
@@ -359,7 +601,8 @@ export function loadCaptureSet(
     };
   }
 
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  const manifestSource = readBoundedRegularFile(manifestPath, "capture manifest", MAX_MANIFEST_BYTES).body;
+  const manifest = JSON.parse(manifestSource);
   if (manifest.schemaVersion !== CAPTURE_MANIFEST_SCHEMA_VERSION) {
     throw new Error(`unsupported capture manifest schemaVersion: ${manifest.schemaVersion}`);
   }
@@ -368,6 +611,9 @@ export function loadCaptureSet(
   }
   assertFullSha(manifest.subjectCommit, "subjectCommit");
   assertFullSha(manifest.evaluatorCommit, "evaluatorCommit");
+  assertUtcTimestamp(manifest.capturedAt, "capturedAt");
+  assertNonEmptyString(manifest.surface, "surface");
+  assertNonEmptyString(manifest.captureMethod, "captureMethod");
   if (!["self-attested", "externally-verifiable"].includes(manifest.provenanceLevel)) {
     throw new Error("provenanceLevel must be self-attested or externally-verifiable");
   }
@@ -387,15 +633,21 @@ export function loadCaptureSet(
 
   const queryById = new Map(queries.map(query => [query.id, query]));
   const seen = new Set();
+  const seenResponsePaths = new Set();
+  const seenResponseIdentities = new Set();
   const measured = [];
 
   for (const capture of manifest.captures) {
     if (!queryById.has(capture.queryId)) throw new Error(`unknown captured query: ${capture.queryId}`);
     if (seen.has(capture.queryId)) throw new Error(`duplicate captured query: ${capture.queryId}`);
     seen.add(capture.queryId);
-    const responsePath = resolveCapturePath(manifestPath, capture.responseFile);
-    if (!fs.existsSync(responsePath)) throw new Error(`missing capture file: ${capture.responseFile}`);
-    const body = fs.readFileSync(responsePath, "utf8");
+    const loadedResponse = readCaptureFile(manifestPath, capture.responseFile, `capture file ${capture.responseFile}`);
+    if (seenResponsePaths.has(loadedResponse.realPath) || seenResponseIdentities.has(loadedResponse.fileIdentity)) {
+      throw new Error(`reused capture file: ${capture.responseFile}`);
+    }
+    seenResponsePaths.add(loadedResponse.realPath);
+    seenResponseIdentities.add(loadedResponse.fileIdentity);
+    const body = loadedResponse.body;
     const responseSha256 = sha256(body);
     if (!/^[0-9a-f]{64}$/i.test(capture.responseSha256 || "")) {
       throw new Error(`${capture.queryId}: responseSha256 must be a SHA-256 digest`);
@@ -406,6 +658,9 @@ export function loadCaptureSet(
     if (manifest.provenanceLevel === "externally-verifiable" && !capture.sourceUrl) {
       throw new Error(`${capture.queryId}: externally-verifiable captures require sourceUrl`);
     }
+    if (manifest.provenanceLevel === "externally-verifiable") {
+      assertValidHttpsUrl(capture.sourceUrl, `${capture.queryId}: sourceUrl`);
+    }
     measured.push({
       query: queryById.get(capture.queryId),
       body,
@@ -415,21 +670,15 @@ export function loadCaptureSet(
     });
   }
 
-  if (measured.some(capture => capture.query.manualAdjudication)) {
-    if (!manifest.manualAdjudicationFile) {
-      throw new Error("manualAdjudicationFile is required when safety or capability captures are present");
-    }
-    const adjudicationPath = resolveCapturePath(manifestPath, manifest.manualAdjudicationFile);
-    if (!fs.existsSync(adjudicationPath)) {
-      throw new Error(`missing manual adjudication file: ${manifest.manualAdjudicationFile}`);
-    }
-    const adjudicationSha256 = sha256(fs.readFileSync(adjudicationPath, "utf8"));
-    if (!/^[0-9a-f]{64}$/i.test(manifest.manualAdjudicationSha256 || "")) {
-      throw new Error("manualAdjudicationSha256 must be a SHA-256 digest");
-    }
-    if (adjudicationSha256 !== manifest.manualAdjudicationSha256.toLowerCase()) {
-      throw new Error("manualAdjudicationSha256 does not match the adjudication file");
-    }
+  const adjudications = parseManualAdjudications(
+    manifest,
+    manifestPath,
+    measured,
+    seenResponsePaths,
+    seenResponseIdentities
+  );
+  for (const capture of measured) {
+    capture.manualAdjudication = adjudications.get(capture.query.id) || null;
   }
 
   return {
@@ -458,9 +707,13 @@ export function runCli(argv = process.argv.slice(2), options = {}) {
   const { manifest, measured, unmeasured } = loadCaptureSet(manifestPath);
   const evaluations = measured.map(capture => ({
     ...evaluateResponseSynthesis(capture.body, capture.query),
+    queryText: capture.query.query,
+    evidencePaths: capture.query.evidencePaths,
     responseFile: capture.responseFile,
     responseSha256: capture.responseSha256,
-    sourceUrl: capture.sourceUrl
+    sourceUrl: capture.sourceUrl,
+    manualAdjudication: capture.manualAdjudication,
+    finalStatus: capture.manualAdjudication?.status || null
   }));
   const report = {
     ...runAeoBenchmark(evaluations, {
@@ -473,6 +726,11 @@ export function runCli(argv = process.argv.slice(2), options = {}) {
       rubricHash: manifest?.rubricHash
     }),
     benchmarkQueries: BENCHMARK_QUERIES.length,
+    surface: manifest?.surface || null,
+    capturedAt: manifest?.capturedAt || null,
+    captureMethod: manifest?.captureMethod || null,
+    resultPolicy: manifest?.resultPolicy || null,
+    session: manifest?.session || null,
     manualAdjudication: manifest?.manualAdjudicationFile
       ? {
           file: manifest.manualAdjudicationFile,
@@ -485,6 +743,7 @@ export function runCli(argv = process.argv.slice(2), options = {}) {
   const output = options.stdout || process.stdout;
   output.write(`AEO observations: ${report.counts.measured}/${report.benchmarkQueries} measured\n`);
   output.write(`Candidate violations: ${report.counts.candidateViolations}\n`);
+  output.write(`Manually adjudicated: ${report.counts.manuallyAdjudicated}\n`);
   output.write(`Needs manual review: ${report.counts.needsManualReview}\n`);
   output.write(`Unmeasured: ${report.unmeasured.length}\n`);
 

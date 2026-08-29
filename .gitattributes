@@ -3,3 +3,7 @@
 # Windows-side clone — does not produce a CRLF shebang that fails to exec on
 # Linux/macOS ("/usr/bin/env: 'node\r': No such file or directory").
 *.cjs text eol=lf
+
+# Capture digests are computed from checkout bytes. Keep the complete evidence tree
+# byte-stable on Windows clients that enable core.autocrlf.
+bench/aeo-responses/** text eol=lf
