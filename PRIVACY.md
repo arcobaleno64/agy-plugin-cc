@@ -61,8 +61,9 @@ What gets assembled depends on the command:
 | `/gemini:review`, `/gemini:adversarial-review` | `git status`, staged and unstaged diffs or a branch diff, and the contents of untracked files (`scripts/lib/git.mjs`) | Secret-file contents withheld; 400,000-character total cap; untracked files skipped above 24 KB, and skipped entirely if binary, a directory, or a broken symlink |
 | `/gemini:transfer` | `git status -s` plus a per-file diff (`scripts/lib/transfer-context.mjs`) | Secret-file contents withheld; 5,000 characters per file; 25,000 characters total |
 
-Truncation is announced **inside** the content that is sent, so the model reports
-that it saw a partial diff rather than reviewing half a change silently.
+Truncation is announced **inside** the content that is sent and returned to the
+caller as structured state. A truncated review is never recorded as an approval,
+so correctness does not depend on the model relaying the notice.
 
 **The table describes what the plugin assembles, not the ceiling on what Google
 receives.** Gemini CLI and AGY are agentic: they run in your workspace directory
@@ -70,10 +71,10 @@ and can read files on their own initiative while working on the prompt. For
 `/gemini:rescue` in particular, the plugin sends your instruction and nothing
 else, but the CLI may then read whatever it judges relevant — including files no
 redaction rule here ever saw. The limits and redaction above bound the plugin's
-contribution; they do not sandbox the engine, and neither AGY nor Gemini CLI
-offers a path-boundary mode the plugin could impose — AGY's `--sandbox` is not
-one, and Gemini CLI's is a container sandbox that will not start without Docker
-or Podman, both measured in
+contribution; they do not sandbox the engine. AGY offers no path boundary the
+plugin can enforce. Gemini CLI has a container sandbox, but the plugin neither
+enables it nor requires its Docker/Podman dependency, so no dispatched path has
+an enforced filesystem boundary. Both behaviors are measured in
 [`docs/THREAT-MODEL.md` §7.2](docs/THREAT-MODEL.md), which also records this as a
 known, unmitigated gap. If a workspace contains material that must not reach
 Google, do not run a delegated task in it.
@@ -102,7 +103,8 @@ fires only when **both** conditions hold:
 
 1. you enabled it explicitly (`stopReviewGateEnabled`, set through
    `/gemini:setup`; it defaults to off), **and**
-2. a `--write` task has completed in this workspace.
+2. a `--write` task has completed or returned partial output in this workspace
+   (a partial task may already have edited files).
 
 Disable it the same way you enabled it. Nothing else in the plugin transmits
 anything without a command you typed.

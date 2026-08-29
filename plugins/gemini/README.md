@@ -72,7 +72,7 @@ Data leaves your machine on exactly one path: the plugin spawns **the Gemini CLI
 | `rescue` | Your instruction text only | — |
 | `transfer` | `git status -s` and a per-file diff | Secret-looking files withheld; 25,000-character cap |
 
-**Two limits stated plainly.** Redaction is by *filename* — a credential pasted into ordinary source is not caught. And the engine is agentic: once running, it can read files on its own initiative that no rule here ever saw. Neither CLI offers a path boundary the plugin could impose.
+**Two limits stated plainly.** Redaction is by *filename* — a credential pasted into ordinary source is not caught. And the engine is agentic: once running, it can read files on its own initiative that no rule here ever saw. AGY offers no enforceable path boundary; Gemini CLI has a container sandbox, but this plugin does not enable it or require its Docker/Podman dependency. No dispatched path is therefore filesystem-confined by the plugin.
 
 Full detail, every claim cited to its source file: **[PRIVACY.md](https://github.com/arcobaleno64/agy-plugin-cc/blob/main/PRIVACY.md)** · **[THREAT-MODEL.md](https://github.com/arcobaleno64/agy-plugin-cc/blob/main/docs/THREAT-MODEL.md)**.
 
@@ -88,7 +88,7 @@ The plugin spawns child processes (`git`, and the engine CLI you installed) and 
 | `SessionEnd` | Terminates **this session's** still-running background jobs and removes their records. Other sessions' jobs are untouched. | Always on |
 | `Stop` | Optional review gate: runs an adversarial review before the session ends, and can block the stop. | **Off** |
 
-The Stop gate is the only thing that reaches the engine without a command you typed, and it is **off unless you turn it on** (`/gemini:setup --enable-review-gate`). It fires only after a `--write` task has completed in that workspace, and it fails **open** — if the review cannot run, the stop proceeds with a visible notice rather than trapping you.
+The Stop gate is the only thing that reaches the engine without a command you typed, and it is **off unless you turn it on** (`/gemini:setup --enable-review-gate`). It fires only after a `--write` task has completed or returned partial output in that workspace; partial counts because edits may already exist. It fails **open** when the review cannot run — the stop proceeds with a visible notice rather than trapping you.
 
 Nothing here reads `~/.claude/`, `CLAUDE.md`, your conversation history, or files you uploaded to Claude.
 

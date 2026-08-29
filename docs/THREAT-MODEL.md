@@ -7,7 +7,7 @@ Scope note: sections 1–6 cover the conventional CLI-host surface (argv, subpro
 ## 1. Assets
 - **Local Credentials**: OAuth tokens stored in user home directories (`~/.gemini/oauth_creds.json`).
 - **Workspace Source Code**: Repository files, uncommitted diffs, and developer environment states.
-- **Background Job State**: Job output logs and resume IDs stored in `.omc/`.
+- **Background Job State**: Job output logs and resume IDs stored under `GEMINI_COMPANION_DATA`, Claude Code's per-plugin `CLAUDE_PLUGIN_DATA`, or the system-temp fallback. Workspace-local `.omc/` holds transfer snapshots only.
 - **The parent agent's context**: Claude Code renders this plugin's output verbatim, so that output is itself an asset — see 7.3.
 
 ## 2. Trust Boundaries
@@ -33,16 +33,16 @@ Scope note: sections 1–6 cover the conventional CLI-host surface (argv, subpro
 | Argv re-parsing by cmd.exe (Windows) | A bare command name is resolved to an absolute executable — or, for an npm shim, to the entry script its package's `bin` field names — and spawned with `shell: false`. The shell remains only as a fallback for commands resolution cannot identify | `resolveSpawnTarget`, `plugins/gemini/scripts/lib/process.mjs` |
 | Argument Injection | Strict regex validation of flags (`--model`) | `plugins/gemini/scripts/lib/engine.mjs` |
 | Argv smuggling on Windows | AGY must resolve to an absolute `.exe`; `.cmd` shims are refused (CVE-2024-27980) | `resolveAgyExecutablePath`, `plugins/gemini/scripts/lib/engine.mjs` |
-| Credential Leakage (transfer only) | Secret **filename** redaction (`.env*`, `.pem`, `.npmrc`, `id_rsa`) plus per-file and total size caps | `isSecretFile`, `plugins/gemini/scripts/lib/transfer-context.mjs` |
+| Credential Leakage (review and transfer inputs) | Shared secret **filename** redaction (`.env*`, `.pem`, `.npmrc`, `id_rsa`) plus per-file and total size caps | `isSecretFile`, `plugins/gemini/scripts/lib/secrets.mjs`, `plugins/gemini/scripts/lib/git.mjs`, `plugins/gemini/scripts/lib/transfer-context.mjs` |
 | Prompt Transport / Argv Risk | Gemini and AGY 1.1.2+ use stdin; older, prerelease, or unparseable AGY versions use a validated positional fallback with NUL and 24,000-character preflight limits | `plugins/gemini/scripts/lib/gemini.mjs`, `plugins/gemini/scripts/lib/engine.mjs` |
 | Slash-command hijack of the prompt | `--disable-slash-commands` on AGY 1.1.9+, which otherwise expands a task beginning with `/` as its own command | `buildCliArgs`, `plugins/gemini/scripts/lib/engine.mjs` |
-| File Mutation | `--write` selects the write-capable run | `plugins/gemini/scripts/lib/job-control.mjs` |
+| File Mutation | `--write` is explicit edit intent. On Gemini it enables write and shell tools; on AGY it changes workspace orientation but neither mode enforces read-only. A turn dispatched without `--write` is compared before and after and reports detected writes | `plugins/gemini/scripts/lib/engine.mjs`, `plugins/gemini/scripts/lib/readonly-guard.mjs` |
 
-> **Correction (2026-08-04), resolved in v0.16.0.** This table previously described file mutation as "gated behind explicit `--write`", and that gate did not hold on the default path: the rescue subagent was instructed to *add* `--write` unless the user asked for read-only, so `/gemini:rescue` was write-capable by default. It no longer is. What `--write` gates is also narrower than the table implied — it selects the workspace the engine operates on, not whether the engine may write at all. See 7.2 for the measurements.
+> **Correction (2026-08-04), resolved in v0.16.0.** Before the current row was corrected, this table described file mutation as "gated behind explicit `--write`", and that gate did not hold on the default path: the rescue subagent was instructed to *add* `--write` unless the user asked for read-only, so `/gemini:rescue` was write-capable by default. It no longer is. What `--write` controls is engine-specific and, on AGY, narrower than a permission boundary. See 7.2 for the measurements.
 
 ## 6. Residual Risks (conventional surface)
 - **Malicious Repository Content Boundary**: Audit edge cases where malformed git diffs or file paths might evade regex filters.
-- **State Corruption**: Audit concurrency and state file handling in `.omc/` during multi-job execution.
+- **State Corruption**: Audit concurrency in the per-plugin job store during multi-job execution. Workspace-local `.omc/` is a separate transfer-snapshot store.
 
 ---
 
@@ -52,13 +52,13 @@ The plugin's function is to take content it did not author and hand it to an age
 
 ### 7.1 Data flows carrying untrusted content
 
-| # | Flow | Write-capable | Bound |
+| # | Flow | Enforceable write boundary | Other bounds |
 |---|---|---|---|
-| A | repo diff → review prompt → model → rendered output → **Claude Code's context** | no (`write: false`, `lib/gemini.mjs`) | filename redaction + size cap on the input (7.4); parent-agent rule on the output (7.3) |
-| A′ | task prompt → model → rendered output → **Claude Code's context** | no unless `--write` (7.2) | parent-agent rule **and** the positional marker, which only `renderTaskResult` emits (7.3) |
-| B | repo content → rescue agent → **filesystem and shell** | only with `--write` (7.2) | `--write` decides *where* the engine works, not *whether* it may write; no path boundary exists |
+| A | repo diff → review prompt → model → rendered output → **Claude Code's context** | Gemini: write and shell tools absent. AGY: no enforced read-only boundary, regardless of the read-only intent (7.2) | filename redaction + size cap on the input (7.4); parent-agent rule on the output (7.3) |
+| A′ | task prompt → model → rendered output → **Claude Code's context** | Gemini: write and shell tools appear only with `--write`. AGY: no enforced boundary in either mode (7.2) | parent-agent rule **and** the positional marker, which only `renderTaskResult` emits (7.3) |
+| B | repo content → rescue agent → **filesystem and shell** | Gemini: only with `--write`. AGY: possible with or without it; `--write` is edit intent and workspace orientation, not a permission boundary (7.2) | no path boundary; a no-`--write` turn is compared before and after and reports detected writes |
 | C | repo diff → `.omc/transfers/*.json` → an interactive AGY session started with `--add-dir .` | inherits that session's mode | filename redaction + size caps |
-| D | repo diff → stop-review-gate hook → model, with no explicit user action | no | same as A |
+| D | repo diff → stop-review-gate hook → model, with no fresh user command | same engine-dependent boundary as A | same input bounds as A; opt-in; fires only after a completed or partial `--write` task |
 
 ### 7.2 PI-1 — Write-capable delegation without a sandbox (High)
 
@@ -240,7 +240,7 @@ Calibrate that result honestly: it shows one model refusing one obvious payload.
 
 `LLM01 Prompt Injection`
 
-`stop-review-gate-hook.mjs` runs a review when a Claude Code turn stops, so repository content reaches a model without any explicit user action. Impact is limited: the gate is read-only and fails open, so a manipulated verdict cannot block work — but it widens the window in which untrusted content is sent automatically.
+`stop-review-gate-hook.mjs` runs a review when a Claude Code turn stops, so repository content can reach a model without a fresh command. The gate is opt-in and is dispatched with read-only intent, but AGY has no enforced read-only boundary. It fails open only when the review cannot run; a successful review containing findings can block the stop, and a permissively configured AGY review can write before the after-the-fact guard reports it. The gate therefore widens both the automatic-send window and the delegated-agency surface.
 
 ### 7.6 OWASP Top 10 for LLM Applications (2025) coverage
 
@@ -255,7 +255,7 @@ Calibrate that result honestly: it shows one model refusing one obvious payload.
 | LLM07 System Prompt Leakage | Low | Prompt templates ship in `prompts/` and are public by design |
 | LLM08 Vector and Embedding Weaknesses | No | No retrieval or embedding store |
 | LLM09 Misinformation | Accepted | A review may be wrong; output is advisory and always shown to a human |
-| LLM10 Unbounded Consumption | Partial | AGY spawn timeout and `--print-timeout` bound a run; the review diff itself is unbounded (7.4) |
+| LLM10 Unbounded Consumption | Partial | Engine timeouts bound a run, and the assembled review input has a 400,000-character fair-share cap. An agentic engine may still read additional workspace files after dispatch (7.4) |
 
 ### 7.7 Priority
 

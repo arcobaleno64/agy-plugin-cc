@@ -230,11 +230,11 @@ Cancels a running or queued background job.
 
 The plugin also ships an MCP server (`.mcp.json` → `scripts/gemini-mcp.mjs`), so an agent can drive it without a human typing a slash command. This surface is **not** a mirror of the commands above — read the two tables together before assuming a feature is reachable.
 
-| Tool | Required | Optional | Read-only | Reaches Google |
+| Tool | Required | Optional | Guaranteed read-only | Reaches Google |
 |---|---|---|---|---|
-| `gemini_rescue` | `workspace`, `prompt` | `write`, `model`, `effort`, `engine` | no | yes |
-| `gemini_review` | `workspace` | `base`, `scope`, `model`, `engine`, `deep` | yes | yes |
-| `gemini_adversarial_review` | `workspace` | `base`, `scope`, `model`, `engine`, `deep`, `focus` | yes | yes |
+| `gemini_rescue` | `workspace`, `prompt` | `write`, `model`, `effort`, `engine`, `timeout` | no | yes |
+| `gemini_review` | `workspace` | `base`, `scope`, `model`, `engine`, `deep`, `timeout` | no | yes |
+| `gemini_adversarial_review` | `workspace` | `base`, `scope`, `model`, `engine`, `deep`, `focus`, `timeout` | no | yes |
 | `gemini_job_status` | `workspace`, `jobId` | — | yes | no |
 | `gemini_job_result` | `workspace`, `jobId` | — | yes | no |
 | `gemini_job_cancel` | `workspace`, `jobId` | — | no | no |
@@ -243,7 +243,7 @@ The plugin also ships an MCP server (`.mcp.json` → `scripts/gemini-mcp.mjs`), 
 
 **The first three queue a background job and return immediately** with a `jobId`. Nothing arrives with that response — poll `gemini_job_status`, then collect with `gemini_job_result`. A job started and never collected is quota spent for nothing, which is this plugin's most expensive failure mode.
 
-**`write: false` is an intent, not a sandbox.** AGY has no read-only mode, so a delegated turn can still edit files; the run compares the workspace before and after and reports what it wrote. `gemini_rescue` is annotated `destructiveHint: true` for that reason even though `write` defaults to false — annotations describe the worst a tool can do and cannot vary with arguments. See [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) §7.2.
+**A no-write dispatch is an intent, not a sandbox.** `gemini_rescue` defaults `write` to false, and the two review tools expose no write option, but AGY has no enforced read-only mode, so any of the three turns can still edit files. The run compares the workspace before and after and reports what it wrote. All three therefore advertise `readOnlyHint: false` and `destructiveHint: true`: annotations describe the worst a tool can do and cannot vary with arguments. See [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) §7.2.
 
 **The three job tools are addressed by job id and deliberately cross sessions.** A caller holding an id has already identified the job, so the session filter that keeps the *discovery* paths honest cannot do any work for them — and applying it broke them outright, because this server never receives a session id (see below).
 
@@ -251,13 +251,13 @@ The plugin also ships an MCP server (`.mcp.json` → `scripts/gemini-mcp.mjs`), 
 
 ### Slash-only, by omission
 
-Listed so the gap is visible rather than discovered: `/gemini:setup` and its probe flags (interactive by design), `/gemini:transfer` (it writes a workspace-local snapshot and needs the model to author the instructions file), `--timeout`, `--resume-last`, and `--engines gemini,agy` are not on this surface — use the slash command or the CLI. MCP jobs take the per-engine default timeout, and every `gemini_rescue` starts a fresh turn. The [Review Gate](#review-gate-optional) is configured through `/gemini:setup` and then applies to the whole session, whichever surface queued the job.
+Listed so the gap is visible rather than discovered: `/gemini:setup` and its probe flags (interactive by design), `/gemini:transfer` (it writes a workspace-local snapshot and needs the model to author the instructions file), `--resume-last`, and `--engines gemini,agy` are not on this surface — use the slash command or the CLI. Each of the three turn-spending MCP tools accepts an integer `timeout`; when omitted, the per-engine default applies. Every `gemini_rescue` starts a fresh turn. The [Review Gate](#review-gate-optional) is configured through `/gemini:setup` and then applies to the whole session, whichever surface queued the job.
 
 ---
 
 ## Review Gate (Optional)
 
-An optional stop-time gate that runs an adversarial review before Claude Code can stop, whenever a `--write` task completed in the session. Disabled by default.
+An optional stop-time gate that runs an adversarial review before Claude Code can stop, whenever a `--write` task completed or returned partial output in the session. Disabled by default; partial counts because edits may already exist.
 
 Enable or disable via `/gemini:setup`:
 
@@ -321,7 +321,7 @@ Override via `--engine` flag or the `GEMINI_ENGINE` environment variable.
 - **Git process boundary**: Repository-derived refs are always passed to Git as literal argv with `shell:false`, including on Windows; Git helpers never inherit the `.cmd` wrapper fallback. This aligns with the upstream Codex plugin's [v1.0.6 Git shell-expansion removal](https://github.com/openai/codex-plugin-cc/releases/tag/v1.0.6).
 - **DEP0190 warning is benign**: On Windows you may see `(node:NNN) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.` This is **safe to ignore here** — the deprecation is about *prompt content* placed in argv under `shell: true`, but this plugin never does that for the gemini engine: the prompt travels on stdin, and only controlled flags reach argv (each validated, e.g. model ids must match `^[A-Za-z0-9][A-Za-z0-9._-]*$`). The warning is Node flagging the general pattern, not an actual injection vector in this code path.
 - **AGY transport fallback**: Only a stable parsed version of 1.1.2 or newer enables stdin. Unknown and prerelease version strings fail closed to the existing positional path, preserving compatibility rather than assuming an upstream capability.
-- **AGY 1.1.10+ `.git` sandbox rule**: AGY 1.1.10 implements read-only `.git` sandbox rules during sandboxed execution, protecting git repository metadata and commit history against accidental modification during review and subagent tasks.
+- **AGY sandbox is not enabled**: AGY 1.1.10 added a `.git` rule under `--sandbox`, but that flag is not a filesystem path boundary and this plugin deliberately never passes it. Reviews and delegated tasks therefore receive no `.git` protection from that mode.
 - **Credential handling**: OAuth credentials in `~/.gemini/oauth_creds.json` are read only to check token expiry via `getGeminiLoginStatus()`; they are never logged, copied elsewhere, or transmitted by this plugin.
 - **`.gitignore`**: A transfer snapshot's `gitDiff` field holds the entire uncommitted diff, so `/gemini:transfer` writes `.omc/.gitignore` containing `*` when it creates the directory — the snapshots are excluded from version control in **your** repository, not only in this one. Before v0.19.0 the exclusion existed only in this repository's own `.gitignore`, so elsewhere the snapshots were untracked rather than ignored and `git add -A` committed them. An existing `.omc/.gitignore` is never overwritten. Job state and logs live outside the repository entirely — see [How It Works](#how-it-works).
 

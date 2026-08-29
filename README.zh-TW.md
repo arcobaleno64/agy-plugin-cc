@@ -228,11 +228,11 @@
 
 本外掛同時提供一個 MCP server（`.mcp.json` → `scripts/gemini-mcp.mjs`），讓 agent 不必等人手打斜線命令就能驅動它。**這個介面並非上面命令表的鏡像**——判斷某個功能是否構得到之前，兩張表要一起看。
 
-| 工具 | 必填 | 選填 | 唯讀 | 連外 |
+| 工具 | 必填 | 選填 | 保證唯讀 | 連外 |
 |---|---|---|---|---|
-| `gemini_rescue` | `workspace`、`prompt` | `write`、`model`、`effort`、`engine` | 否 | 是 |
-| `gemini_review` | `workspace` | `base`、`scope`、`model`、`engine`、`deep` | 是 | 是 |
-| `gemini_adversarial_review` | `workspace` | `base`、`scope`、`model`、`engine`、`deep`、`focus` | 是 | 是 |
+| `gemini_rescue` | `workspace`、`prompt` | `write`、`model`、`effort`、`engine`、`timeout` | 否 | 是 |
+| `gemini_review` | `workspace` | `base`、`scope`、`model`、`engine`、`deep`、`timeout` | 否 | 是 |
+| `gemini_adversarial_review` | `workspace` | `base`、`scope`、`model`、`engine`、`deep`、`focus`、`timeout` | 否 | 是 |
 | `gemini_job_status` | `workspace`、`jobId` | — | 是 | 否 |
 | `gemini_job_result` | `workspace`、`jobId` | — | 是 | 否 |
 | `gemini_job_cancel` | `workspace`、`jobId` | — | 否 | 否 |
@@ -241,7 +241,7 @@
 
 **前三個會排入背景工作並立即回傳** `jobId`。那個回應裡沒有結果——要以 `gemini_job_status` 輪詢，再用 `gemini_job_result` 取回。**起了不收等於白花錢**，這是本外掛最貴的失敗模式。
 
-**`write: false` 是意圖，不是沙箱。** AGY 沒有唯讀模式，被委派的 turn 仍可能改檔案；執行前後會比對工作區並回報實際寫入了什麼。`gemini_rescue` 標註 `destructiveHint: true` 正是因此——即使 `write` 預設為 false，annotation 描述的是該工具**最壞**能做到什麼，且無法隨參數變動。詳見 [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) §7.2。
+**未要求寫入只是意圖，不是沙箱。** `gemini_rescue` 的 `write` 預設為 false，兩個 review 工具也沒有 write 選項；但 AGY 沒有強制唯讀模式，三種 turn 都仍可能改檔案。執行前後會比對工作區並回報實際寫入了什麼。因此三者皆標註 `readOnlyHint: false` 與 `destructiveHint: true`：annotation 描述的是工具**最壞**能做到什麼，且無法隨參數變動。詳見 [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) §7.2。
 
 **三個 job 工具以 job id 定址，且刻意跨 session。** 持有 id 的呼叫者已經指明了是哪個 job，那道用來讓**發現**路徑保持誠實的 session 過濾對他們毫無作用——而套上去反而直接弄壞它們，因為這個 server 從來收不到 session id（見下）。
 
@@ -249,13 +249,13 @@
 
 ### 僅限斜線命令（明列缺口）
 
-列出來是為了讓缺口可見，而不是等人踩到：`/gemini:setup` 與其 probe 旗標（本質上是互動式的）、`/gemini:transfer`（會寫入工作區內的快照，且需要模型自行撰寫 instructions 檔）、`--timeout`、`--resume-last`、`--engines gemini,agy` 都不在這個介面上——請改用斜線命令或 CLI。MCP 工作採各引擎的預設 timeout，且每次 `gemini_rescue` 都是全新的 turn。[Review Gate](#review-gate可選) 由 `/gemini:setup` 設定，之後對整個 session 生效，與工作由哪個介面排入無關。
+列出來是為了讓缺口可見，而不是等人踩到：`/gemini:setup` 與其 probe 旗標（本質上是互動式的）、`/gemini:transfer`（會寫入工作區內的快照，且需要模型自行撰寫 instructions 檔）、`--resume-last`、`--engines gemini,agy` 都不在這個介面上——請改用斜線命令或 CLI。三個會花費 turn 的 MCP 工具都接受整數 `timeout`；省略時採各引擎預設值。每次 `gemini_rescue` 都是全新的 turn。[Review Gate](#review-gate可選) 由 `/gemini:setup` 設定，之後對整個 session 生效，與工作由哪個介面排入無關。
 
 ---
 
 ## Review Gate（可選）
 
-可選的停止時審查閘門，當本次 session 有 `--write` 工作完成時，在 Claude Code 停止前自動執行對抗性審查。預設停用。
+可選的停止時審查閘門，當本次 session 有 `--write` 工作完成或帶著 partial output 返回時，在 Claude Code 停止前自動執行對抗性審查。預設停用；partial 也計入，因為檔案可能已被修改。
 
 透過 `/gemini:setup` 啟用或停用：
 
@@ -319,7 +319,7 @@
 - **Git process 邊界**：repository-derived ref 一律以 literal argv 與 `shell:false` 傳給 Git（Windows 亦同）；Git helper 不繼承 `.cmd` wrapper fallback。此處與上游 Codex 外掛 [v1.0.6 移除 Git shell expansion](https://github.com/openai/codex-plugin-cc/releases/tag/v1.0.6) 的 hardening 方向一致。
 - **DEP0190 警告屬無害**：於 Windows 上可能見到 `(node:NNN) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.`。此處**可安心忽略**——該 deprecation 針對的是在 `shell: true` 下把*提示內容*放入 argv，但本外掛的 gemini 引擎從不如此：提示走 stdin，僅受控旗標進入 argv（且各自驗證，如 model id 須符合 `^[A-Za-z0-9][A-Za-z0-9._-]*$`）。此警告是 Node 對該通用模式的提醒，並非本程式路徑中的實際注入點。
 - **AGY transport 回退**：只有可穩定解析為 1.1.2 以上的版本才啟用 stdin；未知版與 prerelease 字串一律 fail closed 至既有 positional 路徑，不假設上游能力。
-- **AGY 1.1.10+ `.git` 沙箱規則**：AGY 1.1.10 在沙箱模式下實作 `.git` 目錄唯讀防護規則，保護版本庫 metadata 與 commit 歷史在審查及子代理人任務期間不被意外修改。
+- **未啟用 AGY sandbox**：AGY 1.1.10 在 `--sandbox` 下加入 `.git` 規則，但該旗標不是 filesystem path boundary，本外掛刻意從不傳入。因此 review 與委派任務不會從該模式取得 `.git` 保護。
 - **憑證處理**：`~/.gemini/oauth_creds.json` 之 OAuth 憑證僅用於 `getGeminiLoginStatus()` 檢查 token 是否過期；本外掛從不記錄、複製或傳輸之。
 - **`.gitignore`**：transfer 快照的 `gitDiff` 欄位裝的是完整未提交 diff，因此 `/gemini:transfer` 在建立目錄時會寫入內容為 `*` 的 `.omc/.gitignore`——快照在**你的**版本庫裡就被排除，不只在本專案內。v0.19.0 之前該排除僅存在於本專案自己的 `.gitignore`，在其他版本庫只是「未追蹤」而非「已忽略」，`git add -A` 會一併提交。已存在的 `.omc/.gitignore` 不會被覆寫。工作狀態與日誌則完全不在版本庫內——詳見 [運作原理](#運作原理)。
 

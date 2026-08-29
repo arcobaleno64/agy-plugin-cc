@@ -134,6 +134,26 @@ function parseReadmeToolNames(readme, heading) {
   return names;
 }
 
+function parseReadmeToolRows(readme, heading) {
+  const afterHeading = readme.split(new RegExp(`^##\\s+${heading}\\s*$`, "m"))[1];
+  assert.ok(afterHeading, `README must have a \`## ${heading}\` section`);
+  const body = afterHeading.split(/^---\s*$/m)[0];
+  const rows = new Map();
+  const backticked = (cell) => [...cell.matchAll(/`([^`]+)`/g)].map((match) => match[1]);
+
+  for (const line of body.split(/\r?\n/)) {
+    if (!/^\|\s*`gemini_/.test(line)) continue;
+    const cells = line.split("|").slice(1, -1).map((cell) => cell.trim());
+    const [name] = backticked(cells[0]);
+    rows.set(name, {
+      required: backticked(cells[1]),
+      optional: backticked(cells[2]),
+      readOnly: /^(yes|是)$/i.test(cells[3])
+    });
+  }
+  return rows;
+}
+
 test("both READMEs list exactly the MCP tools the server serves", () => {
   const served = new Set(TOOLS.map((tool) => tool.name));
   for (const [file, heading] of [["README.md", "MCP Tools"], ["README.zh-TW.md", "MCP 工具"]]) {
@@ -144,6 +164,23 @@ test("both READMEs list exactly the MCP tools the server serves", () => {
     }
     for (const name of documented) {
       assert.ok(served.has(name), `${file} documents \`${name}\`, which the server does not serve`);
+    }
+  }
+});
+
+test("both README MCP tables match the served schemas and read-only annotations", () => {
+  for (const [file, heading] of [["README.md", "MCP Tools"], ["README.zh-TW.md", "MCP 工具"]]) {
+    const readme = fs.readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+    const rows = parseReadmeToolRows(readme, heading);
+
+    for (const tool of TOOLS) {
+      const row = rows.get(tool.name);
+      assert.ok(row, `${file} has no table row for ${tool.name}`);
+      const required = [...tool.inputSchema.required].sort();
+      const optional = Object.keys(tool.inputSchema.properties).filter((name) => !required.includes(name)).sort();
+      assert.deepEqual(row.required.sort(), required, `${file} required inputs drifted for ${tool.name}`);
+      assert.deepEqual(row.optional.sort(), optional, `${file} optional inputs drifted for ${tool.name}`);
+      assert.equal(row.readOnly, tool.annotations.readOnlyHint, `${file} read-only claim drifted for ${tool.name}`);
     }
   }
 });

@@ -29,6 +29,6 @@ English: [`README.md`](README.md)
 | [`PARITY_AUDIT_v0.6.1.md`](PARITY_AUDIT_v0.6.1.md) | 外掛 v0.6.1 重評 | `PARITY_AUDIT_v0.11.1.md` |
 | [`PARITY_AUDIT_v0.11.1.md`](PARITY_AUDIT_v0.11.1.md) | 外掛 v0.11.1 對上游 v1.0.6，2026-08-04 | 當前狀態見 [`parity.zh-TW.md`](parity.zh-TW.md) |
 | [`AGY_1.1.2_MACOS_LINUX_VALIDATION.md`](AGY_1.1.2_MACOS_LINUX_VALIDATION.md) | 外掛 v0.7.1 對 AGY **1.1.2**，macOS/Linux | 無人重跑；見該檔開頭的說明 |
-| [`HANDOVER_MARKETING_AND_RELEASE_PLAYBOOK.md`](HANDOVER_MARKETING_AND_RELEASE_PLAYBOOK.md) | 外掛 v0.22.2 / `22b93a7`，2026-08-21 | 狀態欄見 [`ROADMAP.md`](ROADMAP.md)；其規格與範本未被取代。 |
+| [`HANDOVER_MARKETING_AND_RELEASE_PLAYBOOK.md`](HANDOVER_MARKETING_AND_RELEASE_PLAYBOOK.md) | 外掛 v0.22.2 / `22b93a7`，2026-08-21 | [`ROADMAP.md`](ROADMAP.md) 依較新基準完成分類。所有規格與範本都只視為有日期的提案，使用前須對 HEAD 重驗。 |
 
 比上述最新一份更晚量到的行為，記在 [CHANGELOG](../plugins/gemini/CHANGELOG.md) 與 `THREAT-MODEL.md` §7.2，兩者各自帶有量測日期。

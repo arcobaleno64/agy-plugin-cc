@@ -21,11 +21,11 @@ belong to.
 | [sakibsadmanshajib/gemini-plugin-cc](https://github.com/sakibsadmanshajib/gemini-plugin-cc) | 24 | 2026-05-22 | v1.0.1, archived | Gemini CLI | ACP |
 | [sakibsadmanshajib/antigravity-plugin](https://github.com/sakibsadmanshajib/antigravity-plugin) | 19 | 2026-05-22 | none | AGY only | `agy --print` |
 | [m-ghalib/gemini-plugin-cc](https://github.com/m-ghalib/gemini-plugin-cc) | 18 | 2026-04-24 | v0.1.0 | Gemini CLI, setup installs 0.38.2 | ACP |
-| **this project** | 9 | 2026-08-24 | v0.22.3 | Gemini CLI **and** AGY | direct spawn, structured JSON |
+| **this project** | 10 | 2026-08-28 | v0.24.1 | Gemini CLI **and** AGY | direct spawn, structured JSON |
 
 | Surface | Slash commands | MCP tools | Skills | Test files (`*.test.*`) |
 |---|---|---|---|---|
-| **this project** | 8 | **6** | 3 | 36 |
+| **this project** | 8 | **6** | 3 | 37 |
 | abiswas97 | 8 | 0 | 3 | 13 |
 | m-ghalib | 7 | 0 | 3 | 12 |
 | sakibsadmanshajib/antigravity-plugin | 6 | 0 | 0 | 12 |
@@ -94,7 +94,7 @@ cannot tell a credential problem from a real finding.
 - Standard and adversarial code review over the current diff or branch.
 - Background jobs with status, result, and cancel flows.
 - Gemini model aliases, graceful model fallback, and transient review retry.
-- AGY transcript recovery for `agy --print` non-pipe behavior.
+- Version-gated AGY result handling: structured stdout on 1.1.8+, transcript recovery only below it.
 - Safer stdin prompt delivery on the Gemini engine.
 
 ## What This Plugin Does Not Claim

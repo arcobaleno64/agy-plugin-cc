@@ -18,8 +18,8 @@ Only the current MINOR line is supported. Update this table with every MINOR bum
 - Argument validation and flag parsing (preventing flag injection into CLI subprocesses).
 - Process boundary security (forcing `shell: false` on Git operations in `plugins/gemini/scripts/lib/git.mjs`, and resolving bare command names to an absolute executable or npm entry script so engine spawns also avoid the shell — `resolveSpawnTarget` in `plugins/gemini/scripts/lib/process.mjs`).
 - Secret file redaction filters (`isSecretFile()` and `redactSecretsFromDiff()` in `plugins/gemini/scripts/lib/secrets.mjs`, shared by the review and transfer paths; `transfer-context.mjs` re-exports `isSecretFile` under its original name).
-- Background job state directory isolation (`.omc/`).
-- **Prompt injection and delegated agency** — the plugin hands repository content it did not author to an agent that can be write-capable. Modelled in [`docs/THREAT-MODEL.md` §7](docs/THREAT-MODEL.md), mapped against the OWASP Top 10 for LLM Applications. Read that section before reporting: the highest-rated item (`/gemini:rescue` defaulting to a write-capable run with no path sandbox) is **known and documented**, not an undisclosed flaw.
+- Background job state directory isolation (`GEMINI_COMPANION_DATA`, then Claude Code's `CLAUDE_PLUGIN_DATA`, with a system-temp fallback). Workspace-local `.omc/` holds transfer snapshots only.
+- **Prompt injection and delegated agency** — the plugin hands repository content it did not author to an agent that may have write access. Modelled in [`docs/THREAT-MODEL.md` §7](docs/THREAT-MODEL.md), mapped against the OWASP Top 10 for LLM Applications. `/gemini:rescue` defaults to read-only intent and adds `--write` only when edits are requested, but AGY does not provide an enforced read-only or path boundary in either mode. The plugin reports detected writes after a turn dispatched without `--write`; this residual risk is **known and documented**, not an undisclosed flaw.
 
 ### Out-of-Scope Components
 - Third-party CLI binary vulnerabilities within Google's `gemini` or `agy` executables.

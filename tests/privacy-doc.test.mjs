@@ -89,6 +89,54 @@ test("PRIVACY.md declares the minor line it was checked against", () => {
   );
 });
 
+test("current security docs distinguish job state, transfers, and write intent", () => {
+  const security = read("SECURITY.md");
+  const threat = read("docs", "THREAT-MODEL.md");
+
+  assert.match(security, /GEMINI_COMPANION_DATA.*CLAUDE_PLUGIN_DATA.*system-temp/i);
+  assert.match(security, /\.omc[/\\]?`? holds transfer snapshots only/i);
+  assert.doesNotMatch(security, /Background job state directory isolation \(`?\.omc/i);
+  assert.match(threat, /Gemini: only with `--write`\. AGY: possible with or without it/);
+  assert.match(threat, /completed or partial `--write` task/);
+  assert.doesNotMatch(threat, /review diff itself is unbounded/i);
+});
+
+test("entry docs describe the partial write gate and unused AGY sandbox", () => {
+  for (const file of ["README.md", "README.zh-TW.md", "plugins/gemini/README.md", "PRIVACY.md"]) {
+    const text = read(...file.split("/"));
+    assert.match(text, /partial/i, `${file} omits partial write tasks from its current behavior`);
+  }
+
+  assert.match(read("README.md"), /plugin deliberately never passes it/);
+  assert.match(read("README.zh-TW.md"), /本外掛刻意從不傳入/);
+});
+
+test("current comparison and parity docs follow shipped behavior", () => {
+  const version = JSON.parse(read("package.json")).version;
+  const testCount = [
+    ...fs.readdirSync(path.join(ROOT, "tests")).filter((file) => file.endsWith(".test.mjs")),
+    ...fs.readdirSync(path.join(ROOT, "bench")).filter((file) => file.endsWith(".test.mjs"))
+  ].length;
+  const comparison = read("docs", "COMPARISON.md");
+  const parity = read("docs", "parity.md");
+  const parityZh = read("docs", "parity.zh-TW.md");
+
+  assert.match(comparison, new RegExp(`\\| \\*\\*this project\\*\\* \\|[^\\n]*\\| v${version.replaceAll(".", "\\.")} \\|`));
+  assert.match(comparison, new RegExp(`\\| \\*\\*this project\\*\\* \\| 8 \\| \\*\\*6\\*\\* \\| 3 \\| ${testCount} \\|`));
+  assert.doesNotMatch(parity, /`\/codex:rescue`[^\n]*\*\*1:1 parity\*\*/);
+  assert.match(parity, /agy --conversation/);
+  assert.doesNotMatch(parityZh, /`\/codex:rescue`[^\n]*\*\*1:1 對等\*\*/);
+  assert.match(parityZh, /agy --conversation/);
+});
+
+test("dated playbook indexes require revalidation instead of promising currency", () => {
+  for (const index of ["docs/README.md", "docs/README.zh-TW.md"]) {
+    const text = read(...index.split("/"));
+    assert.doesNotMatch(text, /specs and templates are not superseded|規格與範本未被取代/i);
+    assert.match(text, /reverify|重驗/i);
+  }
+});
+
 // docs/AGY_1.1.2_MACOS_LINUX_VALIDATION.md sat at 249 lines — the largest file in
 // docs/ — with zero inbound links from anywhere in the repository, pinning AGY
 // 1.1.2 while the plugin was being run against 1.1.13. Nothing was wrong with
