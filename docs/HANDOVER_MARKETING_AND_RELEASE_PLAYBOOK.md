@@ -563,10 +563,10 @@ gemini-plugin-cc pairs AI coding agents (Claude Code, Cursor, Claude Desktop) wi
 
 為了確保發布後的 SEO / AEO / GEO 規格不發生語意漂移、格式回歸或鏈路損壞，並能依據量化數據反饋持續調優，本專案建立了 **「CI/CD 自動化測試 + 定時 AEO 基準評測 + OODA 持續改進閉環」**：
 
-#### 1. CI/CD 靜態規格自動化驗證 (`tests/seo-aeo-validation.test.mjs`) `[PLANNED]`
-在每次 Pull Request 或版本發布時自動執行，100% 阻斷規格回歸：
+#### 1. 2026-08-21 playbook 範本靜態驗證 (`tests/playbook-template-validation.test.mjs`) `[PLANNED]`
+此測試驗證本文件內的 dated playbook 範本，不代表 SEO / AEO / GEO 功能已部署。若未來接入 CI，可在每次 Pull Request 或版本發布時執行：
 ```bash
-node --test tests/seo-aeo-validation.test.mjs
+npm run test:playbook-template
 ```
 * **驗證範疇**：
   1. `robots.txt`：RFC 9309 語法、各 Agent 群組非繼承隔離、crawling preference 表達（注意：這是 crawling preference，不是安全控制）。

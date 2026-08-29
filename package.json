@@ -41,7 +41,7 @@
   },
   "scripts": {
     "test": "node --import ./tests/isolate-state.mjs --test tests/*.test.mjs bench/*.test.mjs",
-    "test:seo": "node --test tests/seo-aeo-validation.test.mjs",
+    "test:playbook-template": "node --test tests/playbook-template-validation.test.mjs",
     "bump-version": "node scripts/bump-version.mjs",
     "check-version": "node scripts/bump-version.mjs --check",
     "verify-contracts": "node scripts/verify-contracts.mjs",

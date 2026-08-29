@@ -21,7 +21,7 @@ assert.ok(PLAYBOOK_PATH, `Handover playbook must exist in repo at docs/HANDOVER_
 // repo checks out CRLF on Windows, so a raw read fails there and nowhere else.
 const playbookContent = fs.readFileSync(PLAYBOOK_PATH, "utf8").replace(/\r\n/g, "\n");
 
-test("SEO Verification: robots.txt conforms to RFC 9309 and isolates sensitive paths per agent group", () => {
+test("Dated 2026-08-21 playbook template: robots.txt example conforms to RFC 9309 and isolates sensitive paths per agent group", () => {
   // Extract robots.txt code block from Section 4.5
   const robotsMatch = playbookContent.match(/```text\s*\n(# ===+[\s\S]+?Sitemap:[^\n]+)\n```/);
   assert.ok(robotsMatch, "robots.txt code block must be present in Section 4.5");
@@ -99,7 +99,7 @@ test("SEO Verification: robots.txt conforms to RFC 9309 and isolates sensitive p
   assert.equal(sitemapMatch[1], "https://arcobaleno64.github.io/gemini-plugin-cc/sitemap.xml");
 });
 
-test("AEO Verification: /llms.txt conforms to Answer.AI Spec v2 with Bijective MCP tool mapping", () => {
+test("Dated 2026-08-21 playbook template: /llms.txt example conforms to its stated structure and MCP tool mapping", () => {
   // Extract /llms.txt code block from Section 4.6
   const llmsMatch = playbookContent.match(/#### 檔案：`\/llms\.txt`[^\n]*\n```markdown\s*\n(# gemini-plugin-cc[\s\S]+?)\n```/);
   assert.ok(llmsMatch, "/llms.txt code block must be present in Section 4.6");
@@ -152,7 +152,7 @@ test("AEO Verification: /llms.txt conforms to Answer.AI Spec v2 with Bijective M
   assert.ok(llmsTxt.length < 5000, `/llms.txt must be lightweight (< 5000 chars, got ${llmsTxt.length})`);
 });
 
-test("GEO Verification: Schema.org JSON-LD structured data is valid and forms a connected DAG", () => {
+test("Dated 2026-08-21 playbook template: Schema.org JSON-LD example is valid and forms a connected DAG", () => {
   // Extract JSON-LD script from Section 4.7
   const jsonLdMatch = playbookContent.match(/<script type="application\/ld\+json">\s*\n([\s\S]+?)\n<\/script>/);
   assert.ok(jsonLdMatch, "JSON-LD script block must be present in Section 4.7");
@@ -191,7 +191,7 @@ test("GEO Verification: Schema.org JSON-LD structured data is valid and forms a 
   assert.ok(publisher && publisher.logo, "Publisher must have ImageObject logo for Google Articles");
 });
 
-test("E-E-A-T FAQ Verification: Answer-First structure with isolated scopes and ground-truth alignment", () => {
+test("Dated 2026-08-21 playbook template: FAQ example has answer-first structure and isolated scopes", () => {
   const faqKeys = ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7"];
 
   // Split FAQ section into individual question blocks to prevent cross-QA drift

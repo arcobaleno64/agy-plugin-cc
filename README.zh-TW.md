@@ -1,9 +1,6 @@
-# Gemini / Antigravity Companion for Claude Code
+# agy-plugin-cc — Gemini / Antigravity Companion for Claude Code
 
-> 在 Claude Code 內使用 Gemini CLI 或 Antigravity CLI (`agy`) 進行 task delegation、pragmatic code review 與 adversarial review。
-
-**為 Google Gemini CLI 到 Antigravity CLI 的遷移期而準備。**
-`agy-plugin-cc` 保留熟悉的 Claude Code slash-command workflow；Gemini CLI 可用時可走 Gemini CLI，遷移到 Antigravity CLI (`agy`) 的使用者則可改走 AGY engine。
+`agy-plugin-cc` 是 Claude Code 外掛，可透過 Gemini CLI 或 Antigravity CLI (`agy`) 委派任務並執行務實或對抗性程式碼審查，支援前景／背景工作控制，且不經營外掛自有服務。
 
 本外掛移植自 [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc)（Apache-2.0），在保留熟悉的斜線命令與背景工作模型之同時，將行為調適至 Gemini/AGY 能力並記錄刻意之差異。
 
@@ -14,6 +11,8 @@
 ## 為什麼選這個外掛？
 
 `agy-plugin-cc` 是 Claude Code-native 的 companion bridge，適合在 Google Gemini CLI transition 期間同時保留 Gemini CLI 與 Antigravity CLI (`agy`) 路徑的使用者。
+
+專案範圍與刻意取捨請直接參閱實測的 [Gemini／Antigravity 外掛比較](docs/COMPARISON.md)。
 
 相較於 AGY-only、多宿主外掛，本專案保留 Gemini CLI 可用時的路徑，同時提供明確的 `--engine agy` 給正在遷移到 Antigravity CLI 的使用者。
 

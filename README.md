@@ -1,9 +1,6 @@
-# Gemini / Antigravity Companion for Claude Code
+# agy-plugin-cc — Gemini / Antigravity Companion for Claude Code
 
-> Use Gemini CLI or Antigravity CLI (`agy`) inside Claude Code for task delegation, pragmatic code review, and adversarial review.
-
-**Transition-ready for Google's Gemini CLI to Antigravity CLI migration.**
-`agy-plugin-cc` keeps the familiar Claude Code slash-command workflow while letting you route work to Gemini CLI where available, or to Antigravity CLI (`agy`) during the post-June-2026 transition.
+`agy-plugin-cc` is a Claude Code plugin that delegates tasks and runs pragmatic or adversarial code reviews through Gemini CLI or Antigravity CLI (`agy`), with foreground/background job control and no plugin-operated service.
 
 [繁體中文說明 →](README.zh-TW.md)
 
@@ -16,6 +13,8 @@ Ported from [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) 
 ## Why this plugin?
 
 `agy-plugin-cc` is a Claude Code-native companion bridge for users who want both Gemini CLI and Antigravity CLI (`agy`) support during Google's Gemini CLI transition.
+
+See the measured [Gemini / Antigravity plugin comparison](docs/COMPARISON.md) for the project's scope and deliberate trade-offs.
 
 Compared with AGY-only, multi-host plugins, this project keeps the Gemini CLI path where available while providing an explicit `--engine agy` route for users migrating to Antigravity CLI.
 
