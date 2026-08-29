@@ -2,14 +2,14 @@
   "schemaVersion": 1,
   "captureSetId": "2026-08-29-chatgpt-web-search",
   "subjectCommit": "d7d68e2f508c3deae11158601733df26b50abcdc",
-  "evaluatorCommit": "ee6a507cfa4b48463d6709ea4b253868e7260826",
+  "evaluatorCommit": "0383fe1a4149df8a769b9ef4b04aeb4ef8ca6a76",
   "provenanceLevel": "self-attested",
   "surface": "ChatGPT web search",
   "capturedAt": "2026-08-29T11:15:00Z",
   "captureMethod": "Each benchmark query was submitted verbatim as an independent web search. The ordered title and URL of each returned organic result were transcribed; news results and snippets were excluded.",
   "resultPolicy": "First 10 organic results, or every organic result when fewer than 10 were returned.",
-  "manualAdjudicationFile": "2026-08-29-web-search/MANUAL_ADJUDICATION.md",
-  "manualAdjudicationSha256": "2e5b768444f225840e9e92845fe4215312ff30ec00046a638338710e71a44968",
+  "manualAdjudicationFile": "2026-08-29-web-search/manual-adjudication.json",
+  "manualAdjudicationSha256": "7cd7c2917aa4372b42df073cbf6871f50a35ab84a1bcd73212ad0b6c0d6f0c16",
   "session": {
     "fresh": true,
     "webSearch": "on"
