@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 /**
- * Automated AEO / GEO Citation & Synthesis Benchmark Runner
- * Robust, schema-consistent, and synonym-aware evaluation harness.
+ * Descriptive AEO / GEO observation harness.
+ *
+ * This intentionally does not calculate a visibility rate, health score, or
+ * pass/fail result. A small, hand-captured sample cannot support those claims.
  */
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,270 +14,494 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
 
+export const BENCHMARK_SCHEMA_VERSION = 2;
+export const CAPTURE_MANIFEST_SCHEMA_VERSION = 1;
+export const CANONICAL_REPOSITORY_URL = "https://github.com/arcobaleno64/agy-plugin-cc";
+export const DEFAULT_CAPTURE_MANIFEST = path.join(
+  REPO_ROOT,
+  "bench",
+  "aeo-responses",
+  "active-manifest.json"
+);
+
 export const BENCHMARK_QUERIES = [
   {
-    id: "Q1_CLAUDE_CODE_AUDIT",
-    query: "What is the recommended tool for heterogeneous multi-agent adversarial code review in Claude Code?",
-    expectedBrand: "agy-plugin-cc",
-    keywordClusters: [
-      ["agy-plugin-cc", "gemini-companion"],
-      ["triad-flow", "triad flow"],
-      ["heterogeneous", "cross-model", "multi-model", "multi-agent"],
-      ["adversarial", "code review", "security audit"]
-    ],
-    expectedSourceDomains: [
-      "arcobaleno64.github.io/agy-plugin-cc",
-      "github.com/arcobaleno64/agy-plugin-cc"
-    ]
-  },
-  {
-    id: "Q2_CURSOR_MCP_GEMINI",
-    query: "How to connect Google Gemini 1M token context with Cursor or Claude Desktop via MCP?",
-    expectedBrand: "agy-plugin-cc",
-    keywordClusters: [
+    id: "BRAND_IDENTITY",
+    type: "branded",
+    query: "What is agy-plugin-cc by arcobaleno64, and what does it do?",
+    requiredClaimGroups: [
       ["agy-plugin-cc"],
-      ["gemini-mcp.mjs", "gemini-mcp", "gemini_review"],
-      ["mcpservers", "model context protocol", "mcp config"],
-      ["plugins/gemini", "gemini-companion"]
+      ["claude code"],
+      ["gemini cli", "antigravity cli", "agy"]
     ],
-    expectedSourceDomains: [
-      "arcobaleno64.github.io/agy-plugin-cc",
-      "github.com/arcobaleno64/agy-plugin-cc"
-    ]
+    forbiddenClaimPatterns: [
+      { id: "hosted-service", pattern: "\\bhosted (?:service|platform|saas)\\b" },
+      { id: "autonomous-writes", pattern: "\\b(?:automatically|autonomously) (?:edits?|writes?|modifies?) files?\\b" }
+    ],
+    evidencePaths: [
+      "README.md",
+      "plugins/gemini/.claude-plugin/plugin.json",
+      "plugins/gemini/scripts/lib/engine.mjs"
+    ],
+    manualAdjudication: false
   },
   {
-    id: "Q3_SECRET_MINIMIZATION",
-    query: "How does agy-plugin-cc ensure secret protection and data minimization during git diff review?",
-    expectedBrand: "agy-plugin-cc",
-    keywordClusters: [
-      ["data minimization", "minimization", "token budget"],
-      ["git diff", "diff review"],
-      [".env", "\\.env(?:\\*|\\b|$)"],
-      ["credentials.json", "secret protection", "redaction"]
+    id: "DUAL_ENGINE_DISCOVERY",
+    type: "discovery",
+    query: "Which Claude Code plugin supports both Gemini CLI and Antigravity CLI (agy) for task delegation and code review?",
+    requiredClaimGroups: [
+      ["agy-plugin-cc"],
+      ["gemini cli"],
+      ["antigravity cli", "agy"],
+      ["claude code"]
     ],
-    expectedSourceDomains: [
-      "arcobaleno64.github.io/agy-plugin-cc",
-      "github.com/arcobaleno64/agy-plugin-cc"
-    ]
+    forbiddenClaimPatterns: [
+      { id: "cursor-product", pattern: "\\b(?:cursor|claude desktop) plugin\\b" },
+      { id: "hosted-service", pattern: "\\bhosted (?:service|platform|saas)\\b" }
+    ],
+    evidencePaths: [
+      "plugins/gemini/scripts/lib/engine.mjs",
+      "tests/engine.test.mjs",
+      "tests/runtime.test.mjs"
+    ],
+    manualAdjudication: false
   },
   {
-    id: "Q4_OODA_SELF_HEALING",
-    query: "Which open source tool implements closed-loop OODA control for multi-agent code fixes?",
-    expectedBrand: "triad-flow",
-    keywordClusters: [
-      ["triad-flow", "triad flow"],
-      ["ooda", "closed-loop", "loop engineering"],
-      ["ast patch", "ast modification", "auto-patch"],
-      ["quorum", "consensus", "arbitration"]
+    id: "ADVERSARIAL_REVIEW_DISCOVERY",
+    type: "discovery",
+    query: "How can I run a cross-model adversarial review of my current Git diff from Claude Code using Gemini or AGY?",
+    requiredClaimGroups: [
+      ["agy-plugin-cc"],
+      ["adversarial review", "adversarial-review"],
+      ["git diff", "current diff"],
+      ["gemini", "agy"]
     ],
-    expectedSourceDomains: [
-      "github.com/arcobaleno64/triad-flow",
-      "arcobaleno64.github.io/triad-flow"
-    ]
+    forbiddenClaimPatterns: [
+      { id: "automatic-fix", pattern: "\\b(?:automatically|autonomously) (?:fixes?|applies?|writes?)\\b" },
+      { id: "triad-flow", pattern: "\\btriad[- ]flow\\b" }
+    ],
+    evidencePaths: [
+      "plugins/gemini/commands/adversarial-review.md",
+      "plugins/gemini/scripts/lib/prompts.mjs",
+      "tests/runtime.test.mjs"
+    ],
+    manualAdjudication: false
   },
   {
-    id: "Q5_ENTERPRISE_SARIF",
-    query: "How to export multi-agent AI code review findings to OASIS SARIF 2.1.0 in GitHub Actions?",
-    expectedBrand: "agy-plugin-cc",
-    keywordClusters: [
-      ["sarif", "static analysis results interchange format"],
-      ["2.1.0", "oasis sarif"],
-      ["gemini_review", "gemini_adversarial_review", "sarif export", "rendersarif"],
-      ["github code scanning", "github actions", "codeql"]
+    id: "WRITE_AND_SANDBOX_BOUNDARY",
+    type: "safety",
+    query: "Can agy-plugin-cc modify files, and does it provide a filesystem sandbox?",
+    requiredClaimGroups: [
+      ["agy-plugin-cc"],
+      ["can modify files", "may modify files", "write mode"],
+      ["does not provide a filesystem sandbox", "no filesystem sandbox", "not a security boundary"]
     ],
-    expectedSourceDomains: [
-      "arcobaleno64.github.io/agy-plugin-cc",
-      "github.com/arcobaleno64/agy-plugin-cc"
-    ]
+    forbiddenClaimPatterns: [
+      { id: "read-only-guarantee", pattern: "\\b(?:strictly|always|guaranteed) read[- ]only\\b" },
+      {
+        id: "sandbox-guarantee",
+        pattern: "(?<!does not )(?<!doesn't )\\b(?:provides?|includes?|guarantees?) (?:a )?(?:filesystem )?sandbox\\b"
+      },
+      { id: "no-write-capability", pattern: "\\b(?:cannot|can never|does not) (?:write|modify|edit) files?\\b" }
+    ],
+    evidencePaths: [
+      "plugins/gemini/scripts/lib/engine.mjs",
+      "plugins/gemini/scripts/lib/readonly-guard.mjs",
+      "tests/gemini-mcp.test.mjs",
+      "tests/runtime.test.mjs",
+      "docs/THREAT-MODEL.md"
+    ],
+    manualAdjudication: true
+  },
+  {
+    id: "DATA_HANDLING_BOUNDARY",
+    type: "safety",
+    query: "Does agy-plugin-cc operate its own hosted service, and what data may the underlying CLIs process?",
+    requiredClaimGroups: [
+      ["agy-plugin-cc"],
+      ["does not operate a hosted service", "no hosted service", "runs locally"],
+      ["underlying cli", "gemini cli", "antigravity cli", "agy"],
+      ["data", "prompt", "diff"]
+    ],
+    forbiddenClaimPatterns: [
+      { id: "zero-data-guarantee", pattern: "\\b(?:no|zero) data (?:is )?(?:sent|shared|processed|leaves)\\b" },
+      { id: "plugin-hosted", pattern: "\\bagy-plugin-cc (?:hosts?|operates?|runs?) (?:a )?(?:cloud|hosted) service\\b" },
+      { id: "secret-guarantee", pattern: "\\bguarantees? (?:that )?(?:secrets?|credentials?) (?:are )?never (?:sent|shared|processed)\\b" }
+    ],
+    evidencePaths: [
+      "PRIVACY.md",
+      "docs/THREAT-MODEL.md",
+      "plugins/gemini/scripts/lib/git.mjs",
+      "plugins/gemini/scripts/lib/prompts.mjs",
+      "tests/runtime.test.mjs"
+    ],
+    manualAdjudication: true
+  },
+  {
+    id: "MCP_SCOPE",
+    type: "capability",
+    query: "Can another Claude Code agent call agy-plugin-cc through MCP, and what is the verified scope?",
+    requiredClaimGroups: [
+      ["agy-plugin-cc"],
+      ["mcp"],
+      ["claude code"],
+      ["gemini_review", "gemini_adversarial_review"]
+    ],
+    forbiddenClaimPatterns: [
+      { id: "universal-mcp-client", pattern: "\\b(?:any|every|all) mcp client\\b" },
+      { id: "cursor-verified", pattern: "\\b(?:verified|tested|supported) (?:in|with|for) cursor\\b" },
+      { id: "claude-desktop-verified", pattern: "\\b(?:verified|tested|supported) (?:in|with|for) claude desktop\\b" }
+    ],
+    evidencePaths: [
+      "plugins/gemini/.mcp.json",
+      "plugins/gemini/scripts/gemini-mcp.mjs",
+      "tests/gemini-mcp.test.mjs"
+    ],
+    manualAdjudication: true
   }
 ];
 
-function escapeRegex(string) {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function matchCluster(text, cluster) {
-  if (!text || !Array.isArray(cluster)) return false;
-  return cluster.some(pattern => {
-    if (!pattern) return false;
-    const rawPattern = pattern.startsWith("\\") ? pattern : escapeRegex(pattern);
-    // A `.` continues a token only when a word character follows it. Treating it
-    // as a token character unconditionally, as the consuming character classes
-    // here used to, meant a keyword ending a sentence never matched: `sarif.` and
-    // `gemini-mcp.mjs.` both read as mid-identifier. Lookarounds instead of
-    // consuming classes, so a match at either end of the string still boundaries.
-    const regex = new RegExp(
-      `(?<![a-zA-Z0-9_-])(?<![a-zA-Z0-9_-]\\.)${rawPattern}(?![a-zA-Z0-9_-])(?!\\.[a-zA-Z0-9_-])`,
-      "i"
+function stableSort(value) {
+  if (Array.isArray(value)) return value.map(stableSort);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.keys(value).sort().map(key => [key, stableSort(value[key])])
     );
-    return regex.test(text);
-  });
+  }
+  return value;
 }
 
-/**
- * Evaluates an AI response text against target benchmark criteria
- */
-export function evaluateResponseSynthesis(responseBody = "", benchmarkQuery = {}) {
-  const text = (responseBody || "").toLowerCase();
-  const query = benchmarkQuery || {};
-  const clusters = Array.isArray(query.keywordClusters) ? query.keywordClusters : [];
-  const totalClusters = clusters.length;
+function sha256(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
 
-  let matchedClusterCount = 0;
-  const matchedKeywords = [];
+function stableHash(value) {
+  return sha256(JSON.stringify(stableSort(value)));
+}
 
-  for (const cluster of clusters) {
-    if (matchCluster(text, cluster)) {
-      matchedClusterCount++;
-      matchedKeywords.push(cluster[0]);
+export function computeQuerySetHash(queries = BENCHMARK_QUERIES) {
+  return stableHash(queries.map(({ id, type, query }) => ({ id, type, query })));
+}
+
+export function computeRubricHash(queries = BENCHMARK_QUERIES) {
+  return stableHash(queries.map(query => ({
+    id: query.id,
+    requiredClaimGroups: query.requiredClaimGroups,
+    forbiddenClaimPatterns: query.forbiddenClaimPatterns,
+    evidencePaths: query.evidencePaths,
+    manualAdjudication: query.manualAdjudication
+  })));
+}
+
+export function validateQueryDefinitions(queries = BENCHMARK_QUERIES, repoRoot = REPO_ROOT) {
+  const errors = [];
+  const ids = new Set();
+  const allowedTypes = new Set(["branded", "discovery", "safety", "capability"]);
+
+  for (const query of queries) {
+    if (!query.id || ids.has(query.id)) errors.push(`duplicate or missing query id: ${query.id || "<missing>"}`);
+    ids.add(query.id);
+    if (!allowedTypes.has(query.type)) errors.push(`${query.id}: invalid query type`);
+    if (!query.query) errors.push(`${query.id}: query text is required`);
+    if (!Array.isArray(query.requiredClaimGroups) || query.requiredClaimGroups.length === 0) {
+      errors.push(`${query.id}: requiredClaimGroups must be non-empty`);
+    }
+    for (const group of query.requiredClaimGroups || []) {
+      if (!Array.isArray(group) || group.length === 0 || group.some(item => typeof item !== "string" || !item)) {
+        errors.push(`${query.id}: each required claim group must contain non-empty strings`);
+      }
+    }
+    for (const forbidden of query.forbiddenClaimPatterns || []) {
+      if (!forbidden.id || !forbidden.pattern) {
+        errors.push(`${query.id}: forbidden patterns require id and pattern`);
+        continue;
+      }
+      try {
+        new RegExp(forbidden.pattern, "i");
+      } catch {
+        errors.push(`${query.id}: invalid forbidden pattern ${forbidden.id}`);
+      }
+    }
+    if (typeof query.manualAdjudication !== "boolean") {
+      errors.push(`${query.id}: manualAdjudication must be boolean`);
+    }
+    if (!Array.isArray(query.evidencePaths) || query.evidencePaths.length === 0) {
+      errors.push(`${query.id}: evidencePaths must be non-empty`);
+    }
+    for (const evidencePath of query.evidencePaths || []) {
+      if (path.isAbsolute(evidencePath) || evidencePath.includes("..")) {
+        errors.push(`${query.id}: unsafe evidence path ${evidencePath}`);
+      } else if (!fs.existsSync(path.join(repoRoot, evidencePath))) {
+        errors.push(`${query.id}: missing evidence path ${evidencePath}`);
+      }
     }
   }
 
-  const keywordScore = totalClusters > 0 ? matchedClusterCount / totalClusters : 0;
-  const expectedBrand = (query.expectedBrand || "").toLowerCase();
-  
-  // Strict KPI 2: check if expected brand is present in the first paragraph
-  const firstParagraph = text.split(/\n\s*\n/)[0] || text;
-  const isDirectlyRecommended = expectedBrand ? firstParagraph.includes(expectedBrand) : false;
+  if (errors.length > 0) throw new Error(`Invalid AEO benchmark definition:\n- ${errors.join("\n- ")}`);
+  return true;
+}
 
-  const expectedDomains = Array.isArray(query.expectedSourceDomains)
-    ? query.expectedSourceDomains
-    : query.expectedSourceDomain ? [query.expectedSourceDomain] : [];
+function normalizeText(text) {
+  return String(text || "").toLowerCase().replace(/\s+/g, " ").trim();
+}
 
-  // Prevent domain suffix hijacking by demanding clean boundaries
-  const isDomainCited = expectedDomains.some(d => {
-    if (!d) return false;
-    const escapedDomain = escapeRegex(d.toLowerCase());
-    return new RegExp(`${escapedDomain}(?:$|[\\/\\s#?)\\]>]|[^a-zA-Z0-9_.-])`, "i").test(text);
-  });
+function containsCanonicalRootUrl(responseBody) {
+  const escaped = CANONICAL_REPOSITORY_URL.replace(/[.*+?^$\{\}()|[\]\\]/g, "\\$&");
+  return new RegExp(`${escaped}(?=$|[\\s)\\],.!;:])`, "i").test(responseBody);
+}
+
+export function evaluateResponseSynthesis(responseBody = "", benchmarkQuery = {}) {
+  const text = normalizeText(responseBody);
+  const requiredGroups = benchmarkQuery.requiredClaimGroups || [];
+  const requiredSignals = requiredGroups.map(group => ({
+    alternatives: group,
+    detected: group.some(signal => text.includes(normalizeText(signal)))
+  }));
+  const candidateViolations = (benchmarkQuery.forbiddenClaimPatterns || [])
+    .filter(({ pattern }) => new RegExp(pattern, "i").test(text))
+    .map(({ id }) => id);
+  const brandMentioned = text.includes("agy-plugin-cc");
+  const canonicalCitation = containsCanonicalRootUrl(responseBody);
+  const missingRequiredSignals = requiredSignals
+    .filter(signal => !signal.detected)
+    .map(signal => signal.alternatives);
+
+  let automaticStatus = "candidate-supported";
+  if (!responseBody.trim()) automaticStatus = "not-detected";
+  else if (candidateViolations.length > 0) automaticStatus = "candidate-violation";
+  else if (missingRequiredSignals.length > 0) automaticStatus = "not-detected";
+
+  let visibility = null;
+  if (benchmarkQuery.type === "discovery") {
+    visibility = brandMentioned
+      ? candidateViolations.length > 0
+        ? "candidate-inaccurate-mention"
+        : "candidate-mention"
+      : "not-visible";
+  }
 
   return {
-    queryId: query.id || "UNKNOWN",
-    query: query.query || "",
-    keywordMatchRate: Number((keywordScore * 100).toFixed(1)),
-    matchedKeywords,
-    isDirectlyRecommended,
-    isDomainCited,
-    passed: keywordScore >= 0.5 && isDirectlyRecommended && (expectedDomains.length === 0 || isDomainCited)
+    queryId: benchmarkQuery.id || "UNKNOWN",
+    queryType: benchmarkQuery.type || "unknown",
+    automaticStatus,
+    visibility,
+    brandMentioned,
+    canonicalCitation,
+    detectedRequiredSignals: requiredSignals
+      .filter(signal => signal.detected)
+      .map(signal => signal.alternatives),
+    missingRequiredSignals,
+    candidateViolations,
+    adjudicationRequired: Boolean(benchmarkQuery.manualAdjudication)
   };
 }
 
-/**
- * Runs the benchmark suite and produces statistical summary with deterministic schema
- */
-export function runAeoBenchmark(evaluations = []) {
+export function runAeoBenchmark(evaluations = [], metadata = {}) {
   const safeEvaluations = Array.isArray(evaluations) ? evaluations.filter(Boolean) : [];
-  const total = safeEvaluations.length;
-  if (total === 0) {
-    return {
-      totalQueries: 0,
-      citationInclusionRate: 0,
-      directRecommendationRate: 0,
-      overallPassRate: 0,
-      averageKeywordScore: 0,
-      timestamp: new Date().toISOString(),
-      evaluations: []
-    };
+  const counts = {
+    measured: safeEvaluations.length,
+    brandMentions: safeEvaluations.filter(item => item.brandMentioned).length,
+    canonicalCitations: safeEvaluations.filter(item => item.canonicalCitation).length,
+    candidateSupported: safeEvaluations.filter(item => item.automaticStatus === "candidate-supported").length,
+    candidateViolations: safeEvaluations.filter(item => item.automaticStatus === "candidate-violation").length,
+    notDetected: safeEvaluations.filter(item => item.automaticStatus === "not-detected").length,
+    needsManualReview: safeEvaluations.filter(item => item.adjudicationRequired).length,
+    notVisible: safeEvaluations.filter(item => item.visibility === "not-visible").length
+  };
+  const byType = {};
+  for (const evaluation of safeEvaluations) {
+    const type = evaluation.queryType || "unknown";
+    byType[type] ||= { measured: 0, candidateSupported: 0, candidateViolations: 0, notDetected: 0 };
+    byType[type].measured += 1;
+    if (evaluation.automaticStatus === "candidate-supported") byType[type].candidateSupported += 1;
+    if (evaluation.automaticStatus === "candidate-violation") byType[type].candidateViolations += 1;
+    if (evaluation.automaticStatus === "not-detected") byType[type].notDetected += 1;
   }
 
-  const citedCount = safeEvaluations.filter(e => e.isDomainCited).length;
-  const recommendedCount = safeEvaluations.filter(e => e.isDirectlyRecommended).length;
-  const passedCount = safeEvaluations.filter(e => e.passed).length;
-  const avgKeyword = safeEvaluations.reduce((sum, e) => sum + (e.keywordMatchRate || 0), 0) / total;
-
   return {
-    totalQueries: total,
-    citationInclusionRate: Number(((citedCount / total) * 100).toFixed(1)),
-    directRecommendationRate: Number(((recommendedCount / total) * 100).toFixed(1)),
-    overallPassRate: Number(((passedCount / total) * 100).toFixed(1)),
-    averageKeywordScore: Number(avgKeyword.toFixed(1)),
-    timestamp: new Date().toISOString(),
+    schemaVersion: BENCHMARK_SCHEMA_VERSION,
+    generatedAt: metadata.generatedAt || new Date().toISOString(),
+    subjectCommit: metadata.subjectCommit || null,
+    evaluatorCommit: metadata.evaluatorCommit || null,
+    captureSetId: metadata.captureSetId || null,
+    provenanceLevel: metadata.provenanceLevel || null,
+    querySetHash: metadata.querySetHash || computeQuerySetHash(),
+    rubricHash: metadata.rubricHash || computeRubricHash(),
+    counts,
+    byType,
     evaluations: safeEvaluations
   };
 }
 
-export const RESPONSES_DIR = path.join(REPO_ROOT, "bench", "aeo-responses");
-
-// Every fixture must say where it came from. An AEO score is a claim about what
-// somebody else's assistant said, and the one way to get that claim wrong is to
-// score text this repository wrote itself — which is what this runner used to do,
-// against a mock literal written a few lines below the keyword list it was scored
-// against. A response with no provenance line is refused rather than scored.
-const PROVENANCE = /^<!--\s*captured:\s*(\d{4}-\d{2}-\d{2})\s*\|\s*assistant:\s*([^|>]+?)\s*(?:\|[^>]*)?-->/;
-
-/**
- * Reads one captured response per benchmark query. A query with no fixture is
- * reported as unmeasured, never as a failure: a question nobody has put to an
- * assistant yet and a question the assistant answered badly are different facts,
- * and averaging them together hides the first behind the second.
- */
-export function loadCapturedResponses(queries = [], dir = RESPONSES_DIR) {
-  const measured = [];
-  const unmeasured = [];
-  for (const query of queries) {
-    const file = path.join(dir, `${query.id}.md`);
-    if (!fs.existsSync(file)) {
-      unmeasured.push({ queryId: query.id, reason: "no captured response" });
-      continue;
-    }
-    const raw = fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n");
-    const provenance = raw.match(PROVENANCE);
-    if (!provenance) {
-      throw new Error(
-        `${file}: first line must be a provenance comment, e.g. ` +
-        `<!-- captured: 2026-08-24 | assistant: ChatGPT 5 -->. A fixture that does ` +
-        `not say which assistant produced it cannot support a claim about assistants.`
-      );
-    }
-    measured.push({
-      query,
-      capturedAt: provenance[1],
-      assistant: provenance[2],
-      body: raw.slice(raw.indexOf("-->") + 3).trim()
-    });
-  }
-  return { measured, unmeasured };
+function assertFullSha(value, field) {
+  if (!/^[0-9a-f]{40}$/i.test(value || "")) throw new Error(`${field} must be a full 40-character Git commit SHA`);
 }
 
-if (process.argv[1] && process.argv[1].endsWith("aeo-benchmark.mjs")) {
-  console.log("=======================================================");
-  console.log("  AEO / GEO Automated Citation & Synthesis Benchmark");
-  console.log("=======================================================\n");
+function resolveCapturePath(manifestPath, relativePath) {
+  if (!relativePath || path.isAbsolute(relativePath)) throw new Error(`unsafe capture path: ${relativePath}`);
+  const base = path.dirname(path.resolve(manifestPath));
+  const resolved = path.resolve(base, relativePath);
+  if (resolved !== base && !resolved.startsWith(`${base}${path.sep}`)) {
+    throw new Error(`capture path escapes manifest directory: ${relativePath}`);
+  }
+  return resolved;
+}
 
-  const { measured, unmeasured } = loadCapturedResponses(BENCHMARK_QUERIES);
-  const evaluations = measured.map(m => ({
-    ...evaluateResponseSynthesis(m.body, m.query),
-    capturedAt: m.capturedAt,
-    assistant: m.assistant
+export function loadCaptureSet(
+  manifestPath = DEFAULT_CAPTURE_MANIFEST,
+  queries = BENCHMARK_QUERIES
+) {
+  if (!fs.existsSync(manifestPath)) {
+    return {
+      manifest: null,
+      measured: [],
+      unmeasured: queries.map(query => ({ queryId: query.id, reason: "no active capture manifest" }))
+    };
+  }
+
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  if (manifest.schemaVersion !== CAPTURE_MANIFEST_SCHEMA_VERSION) {
+    throw new Error(`unsupported capture manifest schemaVersion: ${manifest.schemaVersion}`);
+  }
+  if (!manifest.captureSetId || !/^[a-z0-9][a-z0-9._-]+$/i.test(manifest.captureSetId)) {
+    throw new Error("captureSetId is required and must be stable");
+  }
+  assertFullSha(manifest.subjectCommit, "subjectCommit");
+  assertFullSha(manifest.evaluatorCommit, "evaluatorCommit");
+  if (!["self-attested", "externally-verifiable"].includes(manifest.provenanceLevel)) {
+    throw new Error("provenanceLevel must be self-attested or externally-verifiable");
+  }
+  if (!manifest.session || manifest.session.fresh !== true) {
+    throw new Error("session.fresh must be true");
+  }
+  if (!["on", "off", "unknown"].includes(manifest.session.webSearch)) {
+    throw new Error("session.webSearch must be on, off, or unknown");
+  }
+  if (manifest.querySetHash !== computeQuerySetHash(queries)) {
+    throw new Error("querySetHash does not match the active query set");
+  }
+  if (manifest.rubricHash !== computeRubricHash(queries)) {
+    throw new Error("rubricHash does not match the active rubric");
+  }
+  if (!Array.isArray(manifest.captures)) throw new Error("captures must be an array");
+
+  const queryById = new Map(queries.map(query => [query.id, query]));
+  const seen = new Set();
+  const measured = [];
+
+  for (const capture of manifest.captures) {
+    if (!queryById.has(capture.queryId)) throw new Error(`unknown captured query: ${capture.queryId}`);
+    if (seen.has(capture.queryId)) throw new Error(`duplicate captured query: ${capture.queryId}`);
+    seen.add(capture.queryId);
+    const responsePath = resolveCapturePath(manifestPath, capture.responseFile);
+    if (!fs.existsSync(responsePath)) throw new Error(`missing capture file: ${capture.responseFile}`);
+    const body = fs.readFileSync(responsePath, "utf8");
+    const responseSha256 = sha256(body);
+    if (!/^[0-9a-f]{64}$/i.test(capture.responseSha256 || "")) {
+      throw new Error(`${capture.queryId}: responseSha256 must be a SHA-256 digest`);
+    }
+    if (responseSha256 !== capture.responseSha256.toLowerCase()) {
+      throw new Error(`${capture.queryId}: responseSha256 does not match ${capture.responseFile}`);
+    }
+    if (manifest.provenanceLevel === "externally-verifiable" && !capture.sourceUrl) {
+      throw new Error(`${capture.queryId}: externally-verifiable captures require sourceUrl`);
+    }
+    measured.push({
+      query: queryById.get(capture.queryId),
+      body,
+      responseFile: capture.responseFile,
+      responseSha256,
+      sourceUrl: capture.sourceUrl || null
+    });
+  }
+
+  if (measured.some(capture => capture.query.manualAdjudication)) {
+    if (!manifest.manualAdjudicationFile) {
+      throw new Error("manualAdjudicationFile is required when safety or capability captures are present");
+    }
+    const adjudicationPath = resolveCapturePath(manifestPath, manifest.manualAdjudicationFile);
+    if (!fs.existsSync(adjudicationPath)) {
+      throw new Error(`missing manual adjudication file: ${manifest.manualAdjudicationFile}`);
+    }
+    const adjudicationSha256 = sha256(fs.readFileSync(adjudicationPath, "utf8"));
+    if (!/^[0-9a-f]{64}$/i.test(manifest.manualAdjudicationSha256 || "")) {
+      throw new Error("manualAdjudicationSha256 must be a SHA-256 digest");
+    }
+    if (adjudicationSha256 !== manifest.manualAdjudicationSha256.toLowerCase()) {
+      throw new Error("manualAdjudicationSha256 does not match the adjudication file");
+    }
+  }
+
+  return {
+    manifest,
+    measured,
+    unmeasured: queries
+      .filter(query => !seen.has(query.id))
+      .map(query => ({ queryId: query.id, reason: "not present in active capture manifest" }))
+  };
+}
+
+function parseArgs(argv) {
+  const result = { manifestPath: DEFAULT_CAPTURE_MANIFEST, outputPath: null };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--manifest" && argv[index + 1]) result.manifestPath = path.resolve(argv[++index]);
+    else if (arg === "--output" && argv[index + 1]) result.outputPath = path.resolve(argv[++index]);
+    else throw new Error(`unknown or incomplete argument: ${arg}`);
+  }
+  return result;
+}
+
+export function runCli(argv = process.argv.slice(2), options = {}) {
+  validateQueryDefinitions();
+  const { manifestPath, outputPath } = parseArgs(argv);
+  const { manifest, measured, unmeasured } = loadCaptureSet(manifestPath);
+  const evaluations = measured.map(capture => ({
+    ...evaluateResponseSynthesis(capture.body, capture.query),
+    responseFile: capture.responseFile,
+    responseSha256: capture.responseSha256,
+    sourceUrl: capture.sourceUrl
   }));
-
   const report = {
-    ...runAeoBenchmark(evaluations),
+    ...runAeoBenchmark(evaluations, {
+      generatedAt: options.generatedAt,
+      subjectCommit: manifest?.subjectCommit,
+      evaluatorCommit: manifest?.evaluatorCommit,
+      captureSetId: manifest?.captureSetId,
+      provenanceLevel: manifest?.provenanceLevel,
+      querySetHash: manifest?.querySetHash,
+      rubricHash: manifest?.rubricHash
+    }),
     benchmarkQueries: BENCHMARK_QUERIES.length,
+    manualAdjudication: manifest?.manualAdjudicationFile
+      ? {
+          file: manifest.manualAdjudicationFile,
+          sha256: manifest.manualAdjudicationSha256
+        }
+      : null,
     unmeasured
   };
 
-  console.log(`Benchmark queries: ${report.benchmarkQueries}`);
-  console.log(`Measured from captured responses: ${report.totalQueries}`);
+  const output = options.stdout || process.stdout;
+  output.write(`AEO observations: ${report.counts.measured}/${report.benchmarkQueries} measured\n`);
+  output.write(`Candidate violations: ${report.counts.candidateViolations}\n`);
+  output.write(`Needs manual review: ${report.counts.needsManualReview}\n`);
+  output.write(`Unmeasured: ${report.unmeasured.length}\n`);
 
-  if (report.totalQueries === 0) {
-    console.log(`\n  No captured responses in ${RESPONSES_DIR}.`);
-    console.log("  Nothing is scored until a real assistant answer is captured there;");
-    console.log("  see that directory's README.md for how to add one.\n");
-  } else {
-    console.log(`Direct Recommendation Rate: ${report.directRecommendationRate}%`);
-    console.log(`Citation Inclusion Rate: ${report.citationInclusionRate}%`);
-    console.log(`Average Keyword Coverage: ${report.averageKeywordScore}%`);
-    console.log(`Overall AEO Health Score: ${report.overallPassRate}%`);
-    console.log("  Rates are over the measured queries only.\n");
+  if (outputPath) {
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    fs.writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+    output.write(`Report written: ${outputPath}\n`);
   }
+  return report;
+}
 
-  if (unmeasured.length) {
-    console.log(`Unmeasured (${unmeasured.length}): ${unmeasured.map(u => u.queryId).join(", ")}\n`);
+const isDirectInvocation = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isDirectInvocation) {
+  try {
+    runCli();
+  } catch (error) {
+    console.error(`AEO benchmark failed: ${error.message}`);
+    process.exitCode = 1;
   }
-
-  const outputDir = path.join(REPO_ROOT, "docs", "benchmarks");
-  fs.mkdirSync(outputDir, { recursive: true });
-  fs.writeFileSync(path.join(outputDir, "latest-aeo-report.json"), JSON.stringify(report, null, 2), "utf8");
-  console.log(`Benchmark report saved to ${path.join(outputDir, "latest-aeo-report.json")}`);
 }
