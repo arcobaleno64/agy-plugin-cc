@@ -23,6 +23,10 @@ function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
+function readLines(filePath) {
+  return fs.readFileSync(filePath, "utf8").split(/\r?\n/);
+}
+
 function makeFixture(version = "0.5.0") {
   const root = makeTempDir();
   writeJson(path.join(root, "package.json"), { name: "@arcobaleno64/agy-plugin-cc", version });
@@ -65,12 +69,12 @@ test("public English metadata uses one canonical short description", () => {
   assert.equal(pluginManifest.description, CANONICAL_DESCRIPTION);
 
   for (const file of ["README.md", path.join("plugins", "gemini", "README.md")]) {
-    assert.equal(fs.readFileSync(path.join(ROOT, file), "utf8").split("\n")[2], CANONICAL_DESCRIPTION, file);
+    assert.equal(readLines(path.join(ROOT, file))[2], CANONICAL_DESCRIPTION, file);
   }
 });
 
 test("the Traditional Chinese entry description stays semantically aligned", () => {
-  assert.equal(fs.readFileSync(path.join(ROOT, "README.zh-TW.md"), "utf8").split("\n")[2], CANONICAL_ZH_TW);
+  assert.equal(readLines(path.join(ROOT, "README.zh-TW.md"))[2], CANONICAL_ZH_TW);
 });
 
 test("verify-contracts passes on a well-formed fixture", () => {
