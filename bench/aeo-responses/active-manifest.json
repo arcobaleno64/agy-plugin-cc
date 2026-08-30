@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "captureSetId": "2026-08-29-chatgpt-web-search",
+  "subjectCommit": "d7d68e2f508c3deae11158601733df26b50abcdc",
+  "evaluatorCommit": "52acf3b1801db7ede10403484105507fbe41e3f6",
+  "provenanceLevel": "self-attested",
+  "surface": "ChatGPT web search",
+  "capturedAt": "2026-08-29T11:15:00Z",
+  "captureMethod": "Each benchmark query was submitted verbatim as an independent web search. The ordered title and URL of each returned organic result were transcribed; news results and snippets were excluded.",
+  "resultPolicy": "First 10 organic results, or every organic result when fewer than 10 were returned.",
+  "manualAdjudicationFile": "2026-08-29-web-search/manual-adjudication.json",
+  "manualAdjudicationSha256": "7cd7c2917aa4372b42df073cbf6871f50a35ab84a1bcd73212ad0b6c0d6f0c16",
+  "session": {
+    "fresh": true,
+    "webSearch": "on"
+  },
+  "querySetHash": "286018383f77acf0432d082a6596ba0432ab7abeb8eb98f368ff34c313d3b640",
+  "rubricHash": "47899e2a5bedf2f96cfdd41eb91c72d1c6af6d12ccd101c04c432ce2c3735426",
+  "captures": [
+    {
+      "queryId": "BRAND_IDENTITY",
+      "responseFile": "2026-08-29-web-search/BRAND_IDENTITY.md",
+      "responseSha256": "80851a9d5428d99184bb72d34b92314a9b4bfe1eec1addf9330eb4dea775e9c9"
+    },
+    {
+      "queryId": "DUAL_ENGINE_DISCOVERY",
+      "responseFile": "2026-08-29-web-search/DUAL_ENGINE_DISCOVERY.md",
+      "responseSha256": "56123259205a9dd0e1e43b672e5212b3097cc0a5a39c5f92ef0501abad6da758"
+    },
+    {
+      "queryId": "ADVERSARIAL_REVIEW_DISCOVERY",
+      "responseFile": "2026-08-29-web-search/ADVERSARIAL_REVIEW_DISCOVERY.md",
+      "responseSha256": "174b5bbd07bcc3ced1b8d8b539a0f97663c2107d88416efe26b8cce01157dcde"
+    },
+    {
+      "queryId": "WRITE_AND_SANDBOX_BOUNDARY",
+      "responseFile": "2026-08-29-web-search/WRITE_AND_SANDBOX_BOUNDARY.md",
+      "responseSha256": "b67eb0f8576678ee9ea0efc55b5f49125990c41f7732d89a7e91e089fdd5e92b"
+    },
+    {
+      "queryId": "DATA_HANDLING_BOUNDARY",
+      "responseFile": "2026-08-29-web-search/DATA_HANDLING_BOUNDARY.md",
+      "responseSha256": "55ea8ad142ef8d0fbc1e1e24b0daaf34aad9cb9431ef10094216f92ec2d87857"
+    },
+    {
+      "queryId": "MCP_SCOPE",
+      "responseFile": "2026-08-29-web-search/MCP_SCOPE.md",
+      "responseSha256": "22ef273d22afec4a5238f4ebb4a6e75dcb59300d2c669856c86da4f5ad931bd8"
+    }
+  ]
+}

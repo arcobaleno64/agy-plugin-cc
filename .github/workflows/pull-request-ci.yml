@@ -4,6 +4,20 @@ on:
 permissions:
   contents: read
 jobs:
+  aeo-node18:
+    # package.json supports Node >=18. Keep the dependency-free observation
+    # harness honest on the oldest supported major without duplicating the full
+    # three-platform suite below.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: 18
+      - run: node --test tests/aeo-benchmark.test.mjs
+      - run: npm run bench:aeo
+
   ci:
     # Windows is not redundant here. Four tests are Windows-only by construction
     # (`skip: process.platform !== "win32"`) because they assert cmd.exe
