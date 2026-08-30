@@ -334,7 +334,12 @@ function maskHtmlTagsAndAnchorLabels(value, urls) {
   for (let index = 0; index < characters.length; index += 1) {
     if (characters[index] !== "<") continue;
     const tagEnd = findHtmlTagEnd(characters, index);
-    if (tagEnd === -1) continue;
+    if (tagEnd === -1) {
+      for (let maskIndex = index; maskIndex < characters.length; maskIndex += 1) {
+        characters[maskIndex] = " ";
+      }
+      break;
+    }
     const openingTag = characters.slice(index, tagEnd + 1).join("");
     let maskEnd = tagEnd;
     const autolink = openingTag.match(/^<(https?:\/\/[^>\s]+)>$/i);

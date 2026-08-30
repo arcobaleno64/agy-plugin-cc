@@ -300,6 +300,8 @@ test("canonical project identity requires the actual repository-root URL", () =>
     `<a title="<${CANONICAL_REPOSITORY_URL}>" href="https://evil.example/repo">not canonical</a>`,
     `<span data-source="${CANONICAL_REPOSITORY_URL}">not a link</span>`,
     `<span data-source="<${CANONICAL_REPOSITORY_URL}>">not a link</span>`,
+    `<div data-source="${CANONICAL_REPOSITORY_URL}"`,
+    `<a href="https://evil.example/repo ${CANONICAL_REPOSITORY_URL}`,
     "agy-plugin-cc by arcobaleno64"
   ]) {
     const result = evaluateResponseSynthesis(
