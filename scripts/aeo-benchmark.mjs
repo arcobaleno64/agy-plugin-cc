@@ -337,16 +337,24 @@ function maskHtmlTagsAndAnchorLabels(value, urls) {
     if (tagEnd === -1) continue;
     const openingTag = characters.slice(index, tagEnd + 1).join("");
     let maskEnd = tagEnd;
+    const autolink = openingTag.match(/^<(https?:\/\/[^>\s]+)>$/i);
+    if (autolink) urls.push(autolink[1]);
 
     if (/^<a(?:\s|>)/i.test(openingTag)) {
       const href = openingTag.match(/\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/i);
       if (href) urls.push(href[1] || href[2] || href[3]);
-      for (let closeStart = tagEnd + 1; closeStart < characters.length; closeStart += 1) {
-        const candidate = characters.slice(closeStart, closeStart + 4).join("");
-        if (!/^<\/a(?:\s|>)/i.test(candidate)) continue;
+      maskEnd = characters.length - 1;
+      for (let closeStart = tagEnd + 1; closeStart < characters.length;) {
+        while (closeStart < characters.length && characters[closeStart] !== "<") closeStart += 1;
+        if (closeStart >= characters.length) break;
         const closeEnd = findHtmlTagEnd(characters, closeStart);
-        if (closeEnd !== -1) maskEnd = closeEnd;
-        break;
+        if (closeEnd === -1) break;
+        const candidate = characters.slice(closeStart, closeEnd + 1).join("");
+        if (/^<\/a\s*>$/i.test(candidate)) {
+          maskEnd = closeEnd;
+          break;
+        }
+        closeStart = closeEnd + 1;
       }
     }
 
@@ -369,10 +377,6 @@ function extractHttpUrls(responseBody) {
     }
   );
   remaining = maskMarkdownLinkLabels(remaining);
-  remaining = remaining.replace(/<(https?:\/\/[^>\s]+)>/gi, (_match, destination) => {
-    urls.push(destination);
-    return " ";
-  });
   const bareUrl = /(^|[^a-z0-9+.-])(https?:\/\/[^\s<>)\]"']+)/gi;
   for (const match of remaining.matchAll(bareUrl)) urls.push(match[2]);
   return urls.map(url => url.replace(/[.,!;:]+$/, ""));

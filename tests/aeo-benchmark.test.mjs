@@ -293,7 +293,13 @@ test("canonical project identity requires the actual repository-root URL", () =>
     `[${CANONICAL_REPOSITORY_URL}]\n[${CANONICAL_REPOSITORY_URL}]: https://evil.example/repo`,
     `<a href="https://evil.example/repo">${CANONICAL_REPOSITORY_URL}</a>`,
     `<a title=">" href='https://evil.example/repo'><span>${CANONICAL_REPOSITORY_URL}</span></a>`,
+    `<a href="https://evil.example/repo">${CANONICAL_REPOSITORY_URL}`,
+    `<a href="https://evil.example/repo">${CANONICAL_REPOSITORY_URL} mirror`,
+    `<a href="https://evil.example/repo"><img alt="</a>">${CANONICAL_REPOSITORY_URL}</a>`,
+    `<a href="https://evil.example/repo"><span title="</a>">${CANONICAL_REPOSITORY_URL}</span></a>`,
+    `<a title="<${CANONICAL_REPOSITORY_URL}>" href="https://evil.example/repo">not canonical</a>`,
     `<span data-source="${CANONICAL_REPOSITORY_URL}">not a link</span>`,
+    `<span data-source="<${CANONICAL_REPOSITORY_URL}>">not a link</span>`,
     "agy-plugin-cc by arcobaleno64"
   ]) {
     const result = evaluateResponseSynthesis(
@@ -324,6 +330,13 @@ test("canonical project identity requires the actual repository-root URL", () =>
   );
   assert.equal(htmlAnchorWithCanonicalDestination.canonicalProjectMentioned, true);
   assert.equal(htmlAnchorWithCanonicalDestination.canonicalCitation, true);
+
+  const markdownAutolink = evaluateResponseSynthesis(
+    `agy-plugin-cc is a Claude Code plugin for Gemini CLI and Antigravity CLI. <${CANONICAL_REPOSITORY_URL}>`,
+    target
+  );
+  assert.equal(markdownAutolink.canonicalProjectMentioned, true);
+  assert.equal(markdownAutolink.canonicalCitation, true);
 });
 
 test("safety regexes produce candidates and still require manual adjudication", () => {
