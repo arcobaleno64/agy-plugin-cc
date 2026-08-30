@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "captureSetId": "2026-08-29-chatgpt-web-search",
   "subjectCommit": "d7d68e2f508c3deae11158601733df26b50abcdc",
-  "evaluatorCommit": "953d06de56077e65f069d75ecca2583b60935e2b",
+  "evaluatorCommit": "52acf3b1801db7ede10403484105507fbe41e3f6",
   "provenanceLevel": "self-attested",
   "surface": "ChatGPT web search",
   "capturedAt": "2026-08-29T11:15:00Z",
