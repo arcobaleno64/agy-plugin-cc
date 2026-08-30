@@ -77,6 +77,51 @@ test("the Traditional Chinese entry description stays semantically aligned", () 
   assert.equal(readLines(path.join(ROOT, "README.zh-TW.md"))[2], CANONICAL_ZH_TW);
 });
 
+test("root READMEs surface setup and representative workflows before detailed positioning", () => {
+  const cases = [
+    {
+      file: "README.md",
+      markers: [
+        "## Start here",
+        "You need **Claude Code**, **Node.js ≥ 18**, and **one** supported engine",
+        "/plugin marketplace add arcobaleno64/agy-plugin-cc",
+        "/plugin install gemini@agy-plugin-cc",
+        "/reload-plugins",
+        "### Three common workflows",
+        "/gemini:review --wait",
+        "/gemini:adversarial-review --wait",
+        "/gemini:rescue --background",
+        "## Why this plugin?"
+      ]
+    },
+    {
+      file: "README.zh-TW.md",
+      markers: [
+        "## 從這裡開始",
+        "你需要 **Claude Code**、**Node.js ≥ 18**，以及**一個**支援的引擎",
+        "/plugin marketplace add arcobaleno64/agy-plugin-cc",
+        "/plugin install gemini@agy-plugin-cc",
+        "/reload-plugins",
+        "### 三個常見工作流程",
+        "/gemini:review --wait",
+        "/gemini:adversarial-review --wait",
+        "/gemini:rescue --background",
+        "## 為什麼選這個外掛？"
+      ]
+    }
+  ];
+
+  for (const { file, markers } of cases) {
+    const text = fs.readFileSync(path.join(ROOT, file), "utf8");
+    let cursor = -1;
+    for (const marker of markers) {
+      const index = text.indexOf(marker, cursor + 1);
+      assert.ok(index > cursor, `${file} does not surface ${JSON.stringify(marker)} in the expected order`);
+      cursor = index;
+    }
+  }
+});
+
 test("verify-contracts passes on a well-formed fixture", () => {
   const result = run("node", [VERIFY, "--root", makeFixture()], { cwd: ROOT });
   assert.equal(result.status, 0, result.stderr);
