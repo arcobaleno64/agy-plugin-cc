@@ -3,7 +3,7 @@
   "version": "0.24.1",
   "private": true,
   "type": "module",
-  "description": "Use Gemini CLI or Antigravity CLI (agy) inside Claude Code for task delegation, code review, and adversarial review.",
+  "description": "agy-plugin-cc is a Claude Code companion for running Gemini CLI or Antigravity CLI (agy) as a cross-model task delegate and code reviewer, with pragmatic and adversarial review, MCP tools, and background jobs.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/arcobaleno64/agy-plugin-cc.git"

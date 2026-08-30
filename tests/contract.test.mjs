@@ -11,6 +11,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BUMP = path.join(ROOT, "scripts", "bump-version.mjs");
 const VERIFY = path.join(ROOT, "scripts", "verify-contracts.mjs");
 const COMMANDS = ["setup", "review", "adversarial-review", "rescue", "status", "result", "cancel", "transfer"];
+const CANONICAL_DESCRIPTION = "agy-plugin-cc is a Claude Code companion for running Gemini CLI or Antigravity CLI (agy) as a cross-model task delegate and code reviewer, with pragmatic and adversarial review, MCP tools, and background jobs.";
+const CANONICAL_ZH_TW = "`agy-plugin-cc` 是 Claude Code 協作外掛，可透過 Gemini CLI 或 Antigravity CLI（`agy`）進行跨模型任務委派與程式碼審查，並提供務實與對抗性審查、MCP 工具及背景工作。";
 
 function writeJson(filePath, json) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -50,6 +52,25 @@ function makeFixture(version = "0.5.0") {
 test("verify-contracts passes on the real repository", () => {
   const result = run("node", [VERIFY], { cwd: ROOT });
   assert.equal(result.status, 0, result.stderr || result.stdout);
+});
+
+test("public English metadata uses one canonical short description", () => {
+  const packageManifest = readJson(path.join(ROOT, "package.json"));
+  const marketplace = readJson(path.join(ROOT, ".claude-plugin", "marketplace.json"));
+  const pluginManifest = readJson(path.join(ROOT, "plugins", "gemini", ".claude-plugin", "plugin.json"));
+
+  assert.equal(packageManifest.description, CANONICAL_DESCRIPTION);
+  assert.equal(marketplace.metadata.description, CANONICAL_DESCRIPTION);
+  assert.equal(marketplace.plugins.find(plugin => plugin.name === "gemini")?.description, CANONICAL_DESCRIPTION);
+  assert.equal(pluginManifest.description, CANONICAL_DESCRIPTION);
+
+  for (const file of ["README.md", path.join("plugins", "gemini", "README.md")]) {
+    assert.equal(fs.readFileSync(path.join(ROOT, file), "utf8").split("\n")[2], CANONICAL_DESCRIPTION, file);
+  }
+});
+
+test("the Traditional Chinese entry description stays semantically aligned", () => {
+  assert.equal(fs.readFileSync(path.join(ROOT, "README.zh-TW.md"), "utf8").split("\n")[2], CANONICAL_ZH_TW);
 });
 
 test("verify-contracts passes on a well-formed fixture", () => {
