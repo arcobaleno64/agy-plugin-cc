@@ -312,9 +312,55 @@ function maskMarkdownLinkLabels(value) {
   return characters.join("");
 }
 
+function findHtmlTagEnd(characters, start) {
+  let quote = null;
+  for (let index = start + 1; index < characters.length; index += 1) {
+    const character = characters[index];
+    if (quote) {
+      if (character === quote) quote = null;
+      continue;
+    }
+    if (character === "\"" || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (character === ">") return index;
+  }
+  return -1;
+}
+
+function maskHtmlTagsAndAnchorLabels(value, urls) {
+  const characters = [...String(value || "")];
+  for (let index = 0; index < characters.length; index += 1) {
+    if (characters[index] !== "<") continue;
+    const tagEnd = findHtmlTagEnd(characters, index);
+    if (tagEnd === -1) continue;
+    const openingTag = characters.slice(index, tagEnd + 1).join("");
+    let maskEnd = tagEnd;
+
+    if (/^<a(?:\s|>)/i.test(openingTag)) {
+      const href = openingTag.match(/\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/i);
+      if (href) urls.push(href[1] || href[2] || href[3]);
+      for (let closeStart = tagEnd + 1; closeStart < characters.length; closeStart += 1) {
+        const candidate = characters.slice(closeStart, closeStart + 4).join("");
+        if (!/^<\/a(?:\s|>)/i.test(candidate)) continue;
+        const closeEnd = findHtmlTagEnd(characters, closeStart);
+        if (closeEnd !== -1) maskEnd = closeEnd;
+        break;
+      }
+    }
+
+    for (let maskIndex = index; maskIndex <= maskEnd; maskIndex += 1) {
+      characters[maskIndex] = " ";
+    }
+    index = maskEnd;
+  }
+  return characters.join("");
+}
+
 function extractHttpUrls(responseBody) {
   const urls = [];
-  let remaining = String(responseBody || "");
+  let remaining = maskHtmlTagsAndAnchorLabels(responseBody, urls);
   remaining = remaining.replace(
     /!?\[[^\]]*\]\(\s*(?:<([^>\s]+)>|(https?:\/\/[^\s)]+))(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/gi,
     (_match, angleDestination, plainDestination) => {
