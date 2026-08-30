@@ -11,6 +11,11 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BUMP = path.join(ROOT, "scripts", "bump-version.mjs");
 const VERIFY = path.join(ROOT, "scripts", "verify-contracts.mjs");
 const COMMANDS = ["setup", "review", "adversarial-review", "rescue", "status", "result", "cancel", "transfer"];
+const ENTRY_INSTALL_COMMANDS = [
+  "/plugin marketplace add arcobaleno64/agy-plugin-cc",
+  "/plugin install gemini@agy-plugin-cc",
+  "/reload-plugins"
+];
 const CANONICAL_DESCRIPTION = "agy-plugin-cc is a Claude Code companion for running Gemini CLI or Antigravity CLI (agy) as a cross-model task delegate and code reviewer, with pragmatic and adversarial review, MCP tools, and background jobs.";
 const CANONICAL_ZH_TW = "`agy-plugin-cc` 是 Claude Code 協作外掛，可透過 Gemini CLI 或 Antigravity CLI（`agy`）進行跨模型任務委派與程式碼審查，並提供務實與對抗性審查、MCP 工具及背景工作。";
 
@@ -81,12 +86,11 @@ test("root READMEs surface setup and representative workflows before detailed po
   const cases = [
     {
       file: "README.md",
+      detailsHeading: "## Installation",
       markers: [
         "## Start here",
         "You need **Claude Code**, **Node.js ≥ 18**, and **one** supported engine",
-        "/plugin marketplace add arcobaleno64/agy-plugin-cc",
-        "/plugin install gemini@agy-plugin-cc",
-        "/reload-plugins",
+        ...ENTRY_INSTALL_COMMANDS,
         "### Three common workflows",
         "/gemini:review --wait",
         "/gemini:adversarial-review --wait",
@@ -96,12 +100,11 @@ test("root READMEs surface setup and representative workflows before detailed po
     },
     {
       file: "README.zh-TW.md",
+      detailsHeading: "## 安裝",
       markers: [
         "## 從這裡開始",
         "你需要 **Claude Code**、**Node.js ≥ 18**，以及**一個**支援的引擎",
-        "/plugin marketplace add arcobaleno64/agy-plugin-cc",
-        "/plugin install gemini@agy-plugin-cc",
-        "/reload-plugins",
+        ...ENTRY_INSTALL_COMMANDS,
         "### 三個常見工作流程",
         "/gemini:review --wait",
         "/gemini:adversarial-review --wait",
@@ -111,13 +114,19 @@ test("root READMEs surface setup and representative workflows before detailed po
     }
   ];
 
-  for (const { file, markers } of cases) {
+  for (const { file, detailsHeading, markers } of cases) {
     const text = fs.readFileSync(path.join(ROOT, file), "utf8");
     let cursor = -1;
     for (const marker of markers) {
       const index = text.indexOf(marker, cursor + 1);
       assert.ok(index > cursor, `${file} does not surface ${JSON.stringify(marker)} in the expected order`);
       cursor = index;
+    }
+
+    const detailsIndex = text.indexOf(detailsHeading, cursor + 1);
+    assert.ok(detailsIndex > cursor, `${file} does not retain its detailed installation section`);
+    for (const command of ENTRY_INSTALL_COMMANDS) {
+      assert.ok(text.indexOf(`\n${command}\n`, detailsIndex) > detailsIndex, `${file} detailed installation drifted from the entry commands`);
     }
   }
 });
