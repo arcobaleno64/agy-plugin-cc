@@ -288,6 +288,9 @@ test("canonical project identity requires the actual repository-root URL", () =>
     "[arcobaleno64/agy-plugin-cc](https://evil.example/repo \"fake canonical\")",
     "[arcobaleno64/agy-plugin-cc][evil]\n[evil]: https://evil.example/repo",
     "[source [arcobaleno64/agy-plugin-cc]](https://evil.example/repo)",
+    `[[${CANONICAL_REPOSITORY_URL}]](https://evil.example/repo)`,
+    `[source [${CANONICAL_REPOSITORY_URL}]](https://evil.example/repo)`,
+    `[${CANONICAL_REPOSITORY_URL}]\n[${CANONICAL_REPOSITORY_URL}]: https://evil.example/repo`,
     "agy-plugin-cc by arcobaleno64"
   ]) {
     const result = evaluateResponseSynthesis(
@@ -304,6 +307,13 @@ test("canonical project identity requires the actual repository-root URL", () =>
   );
   assert.equal(canonical.canonicalProjectMentioned, true);
   assert.equal(canonical.canonicalCitation, true);
+
+  const nestedLabelWithCanonicalDestination = evaluateResponseSynthesis(
+    `agy-plugin-cc is a Claude Code plugin for Gemini CLI and Antigravity CLI. [source [repository]](${CANONICAL_REPOSITORY_URL})`,
+    target
+  );
+  assert.equal(nestedLabelWithCanonicalDestination.canonicalProjectMentioned, true);
+  assert.equal(nestedLabelWithCanonicalDestination.canonicalCitation, true);
 });
 
 test("safety regexes produce candidates and still require manual adjudication", () => {

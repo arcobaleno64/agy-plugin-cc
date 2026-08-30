@@ -282,6 +282,36 @@ function forbiddenPatternMatch(pattern, text) {
   };
 }
 
+function maskMarkdownLinkLabels(value) {
+  const characters = [...String(value || "")];
+  const bracketStack = [];
+  let escaped = false;
+
+  for (let index = 0; index < characters.length; index += 1) {
+    const character = characters[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (character === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (character === "[") {
+      bracketStack.push(index);
+      continue;
+    }
+    if (character !== "]" || bracketStack.length === 0) continue;
+
+    const labelStart = bracketStack.pop();
+    for (let labelIndex = labelStart; labelIndex <= index; labelIndex += 1) {
+      characters[labelIndex] = " ";
+    }
+  }
+
+  return characters.join("");
+}
+
 function extractHttpUrls(responseBody) {
   const urls = [];
   let remaining = String(responseBody || "");
@@ -292,6 +322,7 @@ function extractHttpUrls(responseBody) {
       return " ";
     }
   );
+  remaining = maskMarkdownLinkLabels(remaining);
   remaining = remaining.replace(/<(https?:\/\/[^>\s]+)>/gi, (_match, destination) => {
     urls.push(destination);
     return " ";
