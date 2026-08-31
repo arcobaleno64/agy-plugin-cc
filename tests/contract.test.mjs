@@ -87,6 +87,9 @@ test("root READMEs surface setup and representative workflows before detailed po
     {
       file: "README.md",
       detailsHeading: "## Installation",
+      entryHeading: "## Start here",
+      entryEndHeading: "## Why this plugin?",
+      releaseHeading: "### Release channel (marketplace follows `main`)",
       markers: [
         "## Start here",
         "You need **Claude Code**, **Node.js ≥ 18**, and **one** supported engine",
@@ -101,6 +104,9 @@ test("root READMEs surface setup and representative workflows before detailed po
     {
       file: "README.zh-TW.md",
       detailsHeading: "## 安裝",
+      entryHeading: "## 從這裡開始",
+      entryEndHeading: "## 為什麼選這個外掛？",
+      releaseHeading: "### 發布通道（marketplace 來源追蹤 `main`）",
       markers: [
         "## 從這裡開始",
         "你需要 **Claude Code**、**Node.js ≥ 18**，以及**一個**支援的引擎",
@@ -114,20 +120,29 @@ test("root READMEs surface setup and representative workflows before detailed po
     }
   ];
 
-  for (const { file, detailsHeading, markers } of cases) {
-    const text = fs.readFileSync(path.join(ROOT, file), "utf8");
+  for (const { file, detailsHeading, entryHeading, entryEndHeading, releaseHeading, markers } of cases) {
+    const lines = readLines(path.join(ROOT, file));
+    const entryStart = lines.indexOf(entryHeading);
+    const entryEnd = lines.indexOf(entryEndHeading, entryStart + 1);
+    assert.ok(entryStart >= 0 && entryEnd > entryStart, `${file} does not retain its bounded entry section`);
+
+    const entryText = lines.slice(entryStart, entryEnd + 1).join("\n");
     let cursor = -1;
     for (const marker of markers) {
-      const index = text.indexOf(marker, cursor + 1);
+      const index = entryText.indexOf(marker, cursor + 1);
       assert.ok(index > cursor, `${file} does not surface ${JSON.stringify(marker)} in the expected order`);
       cursor = index;
     }
 
-    const detailsIndex = text.indexOf(detailsHeading, cursor + 1);
-    assert.ok(detailsIndex > cursor, `${file} does not retain its detailed installation section`);
-    for (const command of ENTRY_INSTALL_COMMANDS) {
-      assert.ok(text.indexOf(`\n${command}\n`, detailsIndex) > detailsIndex, `${file} detailed installation drifted from the entry commands`);
-    }
+    const detailsIndex = lines.indexOf(detailsHeading, entryEnd + 1);
+    const releaseIndex = lines.indexOf(releaseHeading, detailsIndex + 1);
+    const releaseFenceStart = lines.indexOf("```", releaseIndex + 1);
+    const releaseFenceEnd = lines.indexOf("```", releaseFenceStart + 1);
+    assert.ok(detailsIndex > entryEnd, `${file} does not retain its detailed installation section`);
+    assert.ok(releaseIndex > detailsIndex && releaseFenceStart > releaseIndex && releaseFenceEnd > releaseFenceStart, `${file} does not retain its bounded release-channel command block`);
+
+    const releaseCommands = lines.slice(releaseFenceStart + 1, releaseFenceEnd).filter((line) => line.startsWith("/"));
+    assert.deepEqual(releaseCommands, ENTRY_INSTALL_COMMANDS, `${file} detailed release-channel commands drifted from the entry commands`);
   }
 });
 
