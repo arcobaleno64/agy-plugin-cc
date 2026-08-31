@@ -26,6 +26,47 @@ const FAQ_TOPICS = [
   ["How do I pin a specific version?", "如何釘選特定版本？"]
 ];
 
+const RECOMMENDED_GITHUB_TOPICS = [
+  "agy",
+  "adversarial-review",
+  "ai-code-review",
+  "antigravity-cli",
+  "claude-code",
+  "claude-code-plugin",
+  "code-review",
+  "cross-model-review",
+  "gemini-cli",
+  "mcp",
+  "model-context-protocol",
+  "task-delegation"
+].sort();
+
+const UNIVERSAL_CLAIM_RULES = {
+  english: [
+    /\b(?:all|every)\s+review commands?\s+are\s+read-only\b/gi,
+    /\b(?:all|every)\s+(?:delegated\s+)?engines?\s+(?:is|are)\s+fully sandboxed\b/gi,
+    /\b(?:all|every)\s+(?:delegated\s+)?engines?\s+cannot (?:touch|write to|modify) (?:your |the )?filesystem\b/gi
+  ],
+  traditionalChinese: [
+    /所有審查命令(?:都是|一律)(?:唯讀|只讀)/g,
+    /(?:所有|每個)(?:受委派的)?引擎(?:都是|一律)(?:完全沙箱化|完全受到沙箱保護)/g,
+    /(?:所有|每個)(?:受委派的)?引擎(?:都|一律)?無法(?:接觸|寫入|修改)(?:你的)?檔案系統/g
+  ]
+};
+
+function affirmativeUniversalClaims(text, patterns, negators) {
+  const claims = [];
+
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      const prefix = text.slice(0, match.index).toLowerCase();
+      if (!negators.some((negator) => prefix.endsWith(negator))) claims.push(match[0]);
+    }
+  }
+
+  return claims;
+}
+
 function faqSections(text) {
   const entries = [...text.matchAll(/^## ([^\r\n]+)\r?$/gm)];
   return entries.map((entry, index) => ({
@@ -154,6 +195,19 @@ test("current comparison and parity docs follow shipped behavior", () => {
   assert.match(parityZh, /agy --conversation/);
 });
 
+test("current comparison recommends the approved high-intent GitHub topic set", () => {
+  const comparison = read("docs", "COMPARISON.md");
+  const heading = "## Recommended GitHub Topics";
+  const sectionStart = comparison.indexOf(heading);
+
+  assert.notEqual(sectionStart, -1, "docs/COMPARISON.md has no Recommended GitHub Topics section");
+  const sectionBodyStart = sectionStart + heading.length;
+  const nextSectionStart = comparison.indexOf("\n## ", sectionBodyStart);
+  const section = comparison.slice(sectionBodyStart, nextSectionStart === -1 ? undefined : nextSectionStart);
+  const actual = [...section.matchAll(/`([^`]+)`/g)].map((match) => match[1]).sort();
+  assert.deepEqual(actual, RECOMMENDED_GITHUB_TOPICS);
+});
+
 test("dated playbook indexes require revalidation instead of promising currency", () => {
   for (const index of ["docs/README.md", "docs/README.zh-TW.md"]) {
     const text = read(...index.split("/"));
@@ -219,6 +273,78 @@ test("FAQ trust-boundary answers reject universal read-only and sandbox claims",
   assert.match(english, /No such universal boundary is provided by this plugin/);
   assert.match(traditionalChinese, /無法保證每種引擎設定都會阻止寫入/);
   assert.match(traditionalChinese, /不提供可一概而論的此類邊界/);
+
+  assert.deepEqual(affirmativeUniversalClaims(english, UNIVERSAL_CLAIM_RULES.english, ["not "]), []);
+  assert.deepEqual(
+    affirmativeUniversalClaims(
+      traditionalChinese,
+      UNIVERSAL_CLAIM_RULES.traditionalChinese,
+      ["並非", "並不是", "不是", "未必", "不見得"]
+    ),
+    []
+  );
+});
+
+test("universal-claim classification separates affirmative claims from direct negations", () => {
+  const englishAffirmative = [
+    "All review commands are read-only.",
+    "Every delegated engine is fully sandboxed.",
+    "Every delegated engine cannot touch your filesystem."
+  ];
+  const englishNegated = [
+    "Not all review commands are read-only.",
+    "The delegated engine is not fully sandboxed.",
+    "Not every delegated engine is fully sandboxed.",
+    "Not every delegated engine cannot touch your filesystem."
+  ];
+  const traditionalChineseAffirmative = [
+    "所有審查命令都是唯讀。",
+    "所有受委派的引擎都是完全沙箱化。",
+    "每個引擎都無法寫入檔案系統。"
+  ];
+  const traditionalChineseNegated = [
+    "並非所有審查命令都是唯讀。",
+    "並非所有受委派的引擎都是完全沙箱化。",
+    "並不是每個引擎都無法寫入檔案系統。"
+  ];
+
+  for (const claim of englishAffirmative) {
+    assert.ok(affirmativeUniversalClaims(claim, UNIVERSAL_CLAIM_RULES.english, ["not "]).length > 0, claim);
+  }
+  for (const claim of englishNegated) {
+    assert.deepEqual(affirmativeUniversalClaims(claim, UNIVERSAL_CLAIM_RULES.english, ["not "]), [], claim);
+  }
+  for (const claim of traditionalChineseAffirmative) {
+    assert.ok(
+      affirmativeUniversalClaims(
+        claim,
+        UNIVERSAL_CLAIM_RULES.traditionalChinese,
+        ["並非", "並不是", "不是", "未必", "不見得"]
+      ).length > 0,
+      claim
+    );
+  }
+  for (const claim of traditionalChineseNegated) {
+    assert.deepEqual(
+      affirmativeUniversalClaims(
+        claim,
+        UNIVERSAL_CLAIM_RULES.traditionalChinese,
+        ["並非", "並不是", "不是", "未必", "不見得"]
+      ),
+      [],
+      claim
+    );
+  }
+});
+
+test("FAQ pinning answers preserve the remove, reinstall, and reload sequence", () => {
+  const english = read("docs", "FAQ.md");
+  const traditionalChinese = read("docs", "FAQ.zh-TW.md");
+
+  assert.match(english, /remove the existing marketplace first \(which also uninstalls the plugin\)/);
+  assert.match(english, /add it again at the new tag, reinstall the plugin, and run `\/reload-plugins`/);
+  assert.match(traditionalChinese, /先移除現有 marketplace（這也會解除安裝該 marketplace 的外掛）/);
+  assert.match(traditionalChinese, /再以新 tag 重新加入、重新安裝外掛，並執行 `\/reload-plugins`/);
 });
 
 test("FAQ identity answers preserve the independent-project disclaimer", () => {
