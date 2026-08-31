@@ -6,7 +6,7 @@ This FAQ is a short route to the repository's current evidence. The linked sourc
 
 ## What is agy-plugin-cc?
 
-It is an independent Claude Code companion that runs Gemini CLI or Antigravity CLI (`agy`) as a cross-model task delegate and code reviewer. It is not affiliated with Google or Anthropic, and it is not a general-purpose multi-agent framework.
+It is an independent Claude Code companion that runs Gemini CLI or Antigravity CLI (`agy`) as a cross-model task delegate and code reviewer. It is not affiliated with, endorsed by, or sponsored by Google or Anthropic, and it is not a general-purpose multi-agent framework.
 
 Evidence: [`README.md`](../README.md) · [`COMPARISON.md`](COMPARISON.md)
 

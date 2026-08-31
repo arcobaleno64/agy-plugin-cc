@@ -221,6 +221,11 @@ test("FAQ trust-boundary answers reject universal read-only and sandbox claims",
   assert.match(traditionalChinese, /不提供可一概而論的此類邊界/);
 });
 
+test("FAQ identity answers preserve the independent-project disclaimer", () => {
+  assert.match(read("docs", "FAQ.md"), /not affiliated with, endorsed by, or sponsored by Google or Anthropic/);
+  assert.match(read("docs", "FAQ.zh-TW.md"), /與 Google、Anthropic 均無隸屬、背書或贊助關係/);
+});
+
 test("root READMEs and documentation indexes link both FAQ languages", () => {
   for (const file of ["README.md", "README.zh-TW.md", "docs/README.md", "docs/README.zh-TW.md"]) {
     const text = read(...file.split("/"));
