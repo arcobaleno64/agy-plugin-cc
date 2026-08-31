@@ -10,6 +10,7 @@ Start with the [README](../README.md). Nothing here is required reading to use t
 
 | File | Answers |
 |---|---|
+| [`FAQ.md`](FAQ.md) · [`FAQ.zh-TW.md`](FAQ.zh-TW.md) | Concise answers to identity, engine, review, trust-boundary, data-handling, MCP, installation, update, and version-pinning questions, each routed to current repository evidence. |
 | [`THREAT-MODEL.md`](THREAT-MODEL.md) | What an untrusted repository can make a delegated agent do, mapped to OWASP LLM Top 10. §7.2 is the one to read before trusting any "read-only" claim. |
 | [`parity.md`](parity.md) · [`parity.zh-TW.md`](parity.zh-TW.md) | How this plugin maps to `codex-plugin-cc`, command by command, and where the runtimes differ. |
 | [`known-diffs.md`](known-diffs.md) | Deliberate divergences from upstream, with the reason each one is kept. |

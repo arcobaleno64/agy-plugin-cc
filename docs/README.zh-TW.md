@@ -10,6 +10,7 @@ English: [`README.md`](README.md)
 
 | 檔案 | 回答什麼 |
 |---|---|
+| [`FAQ.zh-TW.md`](FAQ.zh-TW.md) · [`FAQ.md`](FAQ.md) | 以精簡回答說明身分、引擎、審查、信任邊界、資料處理、MCP、安裝、更新與版本釘選，並逐題導向 repository 的現行證據。 |
 | [`THREAT-MODEL.md`](THREAT-MODEL.md) | 不可信的版本庫能讓被委派的 agent 做到什麼，對照 OWASP LLM Top 10。相信任何「唯讀」宣稱之前，先讀 §7.2。 |
 | [`parity.zh-TW.md`](parity.zh-TW.md) · [`parity.md`](parity.md) | 本外掛與 `codex-plugin-cc` 的逐命令對應，以及兩者執行時的差異。 |
 | [`known-diffs.md`](known-diffs.md) | 與上游的刻意差異，以及每一項保留的理由。 |

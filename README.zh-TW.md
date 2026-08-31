@@ -2,6 +2,8 @@
 
 `agy-plugin-cc` 是 Claude Code 協作外掛，可透過 Gemini CLI 或 Antigravity CLI（`agy`）進行跨模型任務委派與程式碼審查，並提供務實與對抗性審查、MCP 工具及背景工作。
 
+[English →](README.md) · 常見問題：[繁體中文](docs/FAQ.zh-TW.md) / [English](docs/FAQ.md)
+
 本外掛移植自 [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc)（Apache-2.0），在保留熟悉的斜線命令與背景工作模型之同時，將行為調適至 Gemini/AGY 能力並記錄刻意之差異。
 
 > **獨立專案。** `agy-plugin-cc` 由社群維護，**與 Google LLC 及 Anthropic 均無隸屬、背書或贊助關係**。「Gemini」與「Antigravity」為 Google LLC 的商標，「Claude」為 Anthropic 的商標，此處僅用於指稱本外掛所驅動的工具。這些工具需由你自行安裝與認證，送交其處理的內容適用各該工具自身的條款。
