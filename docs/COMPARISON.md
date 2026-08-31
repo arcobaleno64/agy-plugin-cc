@@ -106,4 +106,4 @@ cannot tell a credential problem from a real finding.
 
 ## Recommended GitHub Topics
 
-`claude-code`, `claude-code-plugin`, `gemini-cli`, `antigravity-cli`, `agy`, `google-gemini`, `google-antigravity`, `code-review`, `adversarial-review`, `ai-code-review`, `task-delegation`, `ai-coding-agent`, `agentic-coding`, `developer-tools`, `cli`, `nodejs`, `javascript`, `llm`, `plugins`
+`agy`, `adversarial-review`, `ai-code-review`, `antigravity-cli`, `claude-code`, `claude-code-plugin`, `code-review`, `cross-model-review`, `gemini-cli`, `mcp`, `model-context-protocol`, `task-delegation`

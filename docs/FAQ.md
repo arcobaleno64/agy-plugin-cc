@@ -60,6 +60,6 @@ Evidence: [`README.md`](../README.md) · [`version-sources.md`](version-sources.
 
 ## How do I pin a specific version?
 
-Add the marketplace as `arcobaleno64/agy-plugin-cc@<release-tag>`, then install the plugin and reload. A pinned marketplace stays on that git tag even when marketplace auto-update is enabled; moving versions requires re-adding the marketplace at the new tag.
+Add the marketplace as `arcobaleno64/agy-plugin-cc@<release-tag>`, then install the plugin and reload. A pinned marketplace stays on that git tag even when marketplace auto-update is enabled. To move versions, remove the existing marketplace first (which also uninstalls the plugin), add it again at the new tag, reinstall the plugin, and run `/reload-plugins`.
 
 Evidence: [`README.md`](../README.md) · [`version-sources.md`](version-sources.md)

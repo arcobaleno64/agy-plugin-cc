@@ -26,6 +26,21 @@ const FAQ_TOPICS = [
   ["How do I pin a specific version?", "如何釘選特定版本？"]
 ];
 
+const RECOMMENDED_GITHUB_TOPICS = [
+  "agy",
+  "adversarial-review",
+  "ai-code-review",
+  "antigravity-cli",
+  "claude-code",
+  "claude-code-plugin",
+  "code-review",
+  "cross-model-review",
+  "gemini-cli",
+  "mcp",
+  "model-context-protocol",
+  "task-delegation"
+].sort();
+
 function faqSections(text) {
   const entries = [...text.matchAll(/^## ([^\r\n]+)\r?$/gm)];
   return entries.map((entry, index) => ({
@@ -154,6 +169,15 @@ test("current comparison and parity docs follow shipped behavior", () => {
   assert.match(parityZh, /agy --conversation/);
 });
 
+test("current comparison recommends the approved high-intent GitHub topic set", () => {
+  const comparison = read("docs", "COMPARISON.md");
+  const section = comparison.match(/## Recommended GitHub Topics\r?\n\r?\n([^\r\n]+)/);
+
+  assert.ok(section, "docs/COMPARISON.md has no Recommended GitHub Topics section");
+  const actual = [...section[1].matchAll(/`([^`]+)`/g)].map((match) => match[1]).sort();
+  assert.deepEqual(actual, RECOMMENDED_GITHUB_TOPICS);
+});
+
 test("dated playbook indexes require revalidation instead of promising currency", () => {
   for (const index of ["docs/README.md", "docs/README.zh-TW.md"]) {
     const text = read(...index.split("/"));
@@ -219,6 +243,13 @@ test("FAQ trust-boundary answers reject universal read-only and sandbox claims",
   assert.match(english, /No such universal boundary is provided by this plugin/);
   assert.match(traditionalChinese, /無法保證每種引擎設定都會阻止寫入/);
   assert.match(traditionalChinese, /不提供可一概而論的此類邊界/);
+
+  assert.doesNotMatch(english, /\b(?:all|every)\s+review commands?\s+are\s+read-only\b/i);
+  assert.doesNotMatch(english, /\bfully sandboxed\b/i);
+  assert.doesNotMatch(english, /\bcannot (?:touch|write to|modify) (?:your |the )?filesystem\b/i);
+  assert.doesNotMatch(traditionalChinese, /所有審查命令(?:都是|一律)(?:唯讀|只讀)/);
+  assert.doesNotMatch(traditionalChinese, /(?:完全沙箱化|完全受到沙箱保護|一律唯讀)/);
+  assert.doesNotMatch(traditionalChinese, /無法(?:接觸|寫入|修改)(?:你的)?檔案系統/);
 });
 
 test("FAQ identity answers preserve the independent-project disclaimer", () => {

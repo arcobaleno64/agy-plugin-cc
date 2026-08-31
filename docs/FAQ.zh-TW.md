@@ -60,6 +60,6 @@ release-channel marketplace 會追蹤 `main`，但既有安裝只會在 manifest
 
 ## 如何釘選特定版本？
 
-以 `arcobaleno64/agy-plugin-cc@<release-tag>` 加入 marketplace，再安裝外掛並重新載入。即使 marketplace 已啟用自動更新，釘選後仍會停在該 git tag；如需移至其他版本，必須用新 tag 重新加入 marketplace。
+以 `arcobaleno64/agy-plugin-cc@<release-tag>` 加入 marketplace，再安裝外掛並重新載入。即使 marketplace 已啟用自動更新，釘選後仍會停在該 git tag。如需移至其他版本，先移除現有 marketplace（這也會解除安裝該 marketplace 的外掛），再以新 tag 重新加入、重新安裝外掛，並執行 `/reload-plugins`。
 
 依據：[`README.md`](../README.md) · [`version-sources.md`](version-sources.md)
