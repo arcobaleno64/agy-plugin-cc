@@ -41,6 +41,32 @@ const RECOMMENDED_GITHUB_TOPICS = [
   "task-delegation"
 ].sort();
 
+const UNIVERSAL_CLAIM_RULES = {
+  english: [
+    /\b(?:all|every)\s+review commands?\s+are\s+read-only\b/gi,
+    /\b(?:all|every)\s+(?:delegated\s+)?engines?\s+(?:is|are)\s+fully sandboxed\b/gi,
+    /\b(?:all|every)\s+(?:delegated\s+)?engines?\s+cannot (?:touch|write to|modify) (?:your |the )?filesystem\b/gi
+  ],
+  traditionalChinese: [
+    /所有審查命令(?:都是|一律)(?:唯讀|只讀)/g,
+    /(?:所有|每個)(?:受委派的)?引擎(?:都是|一律)(?:完全沙箱化|完全受到沙箱保護)/g,
+    /(?:所有|每個)(?:受委派的)?引擎(?:都|一律)?無法(?:接觸|寫入|修改)(?:你的)?檔案系統/g
+  ]
+};
+
+function affirmativeUniversalClaims(text, patterns, negators) {
+  const claims = [];
+
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      const prefix = text.slice(0, match.index).toLowerCase();
+      if (!negators.some((negator) => prefix.endsWith(negator))) claims.push(match[0]);
+    }
+  }
+
+  return claims;
+}
+
 function faqSections(text) {
   const entries = [...text.matchAll(/^## ([^\r\n]+)\r?$/gm)];
   return entries.map((entry, index) => ({
@@ -248,12 +274,67 @@ test("FAQ trust-boundary answers reject universal read-only and sandbox claims",
   assert.match(traditionalChinese, /無法保證每種引擎設定都會阻止寫入/);
   assert.match(traditionalChinese, /不提供可一概而論的此類邊界/);
 
-  assert.doesNotMatch(english, /\b(?:all|every)\s+review commands?\s+are\s+read-only\b/i);
-  assert.doesNotMatch(english, /(?<!not )\b(?:all|every)\s+(?:delegated\s+)?engines?\s+(?:is|are)\s+fully sandboxed\b/i);
-  assert.doesNotMatch(english, /(?<!not )\b(?:all|every)\s+(?:delegated\s+)?engines?\s+cannot (?:touch|write to|modify) (?:your |the )?filesystem\b/i);
-  assert.doesNotMatch(traditionalChinese, /所有審查命令(?:都是|一律)(?:唯讀|只讀)/);
-  assert.doesNotMatch(traditionalChinese, /(?:所有|每個)(?:受委派的)?引擎(?:都是|一律)(?:完全沙箱化|完全受到沙箱保護)/);
-  assert.doesNotMatch(traditionalChinese, /(?:所有|每個)(?:受委派的)?引擎(?:都|一律)?無法(?:接觸|寫入|修改)(?:你的)?檔案系統/);
+  assert.deepEqual(affirmativeUniversalClaims(english, UNIVERSAL_CLAIM_RULES.english, ["not "]), []);
+  assert.deepEqual(
+    affirmativeUniversalClaims(
+      traditionalChinese,
+      UNIVERSAL_CLAIM_RULES.traditionalChinese,
+      ["並非", "並不是", "不是", "未必", "不見得"]
+    ),
+    []
+  );
+});
+
+test("universal-claim classification separates affirmative claims from direct negations", () => {
+  const englishAffirmative = [
+    "All review commands are read-only.",
+    "Every delegated engine is fully sandboxed.",
+    "Every delegated engine cannot touch your filesystem."
+  ];
+  const englishNegated = [
+    "Not all review commands are read-only.",
+    "The delegated engine is not fully sandboxed.",
+    "Not every delegated engine is fully sandboxed.",
+    "Not every delegated engine cannot touch your filesystem."
+  ];
+  const traditionalChineseAffirmative = [
+    "所有審查命令都是唯讀。",
+    "所有受委派的引擎都是完全沙箱化。",
+    "每個引擎都無法寫入檔案系統。"
+  ];
+  const traditionalChineseNegated = [
+    "並非所有審查命令都是唯讀。",
+    "並非所有受委派的引擎都是完全沙箱化。",
+    "並不是每個引擎都無法寫入檔案系統。"
+  ];
+
+  for (const claim of englishAffirmative) {
+    assert.ok(affirmativeUniversalClaims(claim, UNIVERSAL_CLAIM_RULES.english, ["not "]).length > 0, claim);
+  }
+  for (const claim of englishNegated) {
+    assert.deepEqual(affirmativeUniversalClaims(claim, UNIVERSAL_CLAIM_RULES.english, ["not "]), [], claim);
+  }
+  for (const claim of traditionalChineseAffirmative) {
+    assert.ok(
+      affirmativeUniversalClaims(
+        claim,
+        UNIVERSAL_CLAIM_RULES.traditionalChinese,
+        ["並非", "並不是", "不是", "未必", "不見得"]
+      ).length > 0,
+      claim
+    );
+  }
+  for (const claim of traditionalChineseNegated) {
+    assert.deepEqual(
+      affirmativeUniversalClaims(
+        claim,
+        UNIVERSAL_CLAIM_RULES.traditionalChinese,
+        ["並非", "並不是", "不是", "未必", "不見得"]
+      ),
+      [],
+      claim
+    );
+  }
 });
 
 test("FAQ pinning answers preserve the remove, reinstall, and reload sequence", () => {
