@@ -92,8 +92,7 @@ test("the isolated canonical site stays factual, dependency-free, and motion-opt
 
   const html = fs.readFileSync(path.join(siteRoot, "index.html"), "utf8");
   const css = fs.readFileSync(path.join(siteRoot, "styles.css"), "utf8");
-  const escapedDescription = CANONICAL_DESCRIPTION.replace(/[.*+?^${}()|[\]\\]/g, "\\  const escapedDescription = CANONICAL_DESCRIPTION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const escapedSiteUrl = CANONICAL_SITE_URL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");");
+  const escapedDescription = CANONICAL_DESCRIPTION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
   assert.match(html, /^<!doctype html>/i);
   assert.match(html, /<html lang="en">/);
