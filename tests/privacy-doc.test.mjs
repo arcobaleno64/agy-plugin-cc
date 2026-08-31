@@ -13,6 +13,31 @@ const ROOT = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 const read = (...segments) => fs.readFileSync(path.join(ROOT, ...segments), "utf8");
 
+const FAQ_TOPICS = [
+  ["What is agy-plugin-cc?", "agy-plugin-cc 是什麼？"],
+  ["Which engine should I choose?", "我該選哪個引擎？"],
+  ["How do pragmatic and adversarial review differ?", "實用型與對抗性審查有何不同？"],
+  ["Can delegated work write files?", "被委派的工作可以寫入檔案嗎？"],
+  ["Is the delegated engine sandboxed or filesystem-confined?", "被委派的引擎有 sandbox 或檔案系統邊界嗎？"],
+  ["What data can leave my machine?", "哪些資料可能離開我的電腦？"],
+  ["What is available through MCP?", "MCP 提供哪些功能？"],
+  ["How do I install the plugin?", "如何安裝外掛？"],
+  ["How do updates work?", "如何更新？"],
+  ["How do I pin a specific version?", "如何釘選特定版本？"]
+];
+
+function faqSections(text) {
+  const entries = [...text.matchAll(/^## (.+)$/gm)];
+  return entries.map((entry, index) => ({
+    heading: entry[1],
+    body: text.slice(entry.index + entry[0].length, entries[index + 1]?.index ?? text.length)
+  }));
+}
+
+function faqTargets(text) {
+  return [...text.matchAll(/\]\(([^)]+)\)/g)].map((match) => match[1]).sort();
+}
+
 test("PRIVACY.md exists and answers the four directory questions", () => {
   const privacy = read("PRIVACY.md");
 
@@ -151,5 +176,51 @@ test("the docs index lists every file in docs/", () => {
     for (const file of present) {
       assert.ok(text.includes(`(${file})`), `${index} does not list \`${file}\``);
     }
+  }
+});
+
+test("the English and Traditional Chinese FAQs cover the frozen topics in order", () => {
+  const english = faqSections(read("docs", "FAQ.md"));
+  const traditionalChinese = faqSections(read("docs", "FAQ.zh-TW.md"));
+
+  assert.deepEqual(english.map(({ heading }) => heading), FAQ_TOPICS.map(([heading]) => heading));
+  assert.deepEqual(traditionalChinese.map(({ heading }) => heading), FAQ_TOPICS.map(([, heading]) => heading));
+});
+
+test("every FAQ answer cites evidence and both languages use the same targets", () => {
+  const english = faqSections(read("docs", "FAQ.md"));
+  const traditionalChinese = faqSections(read("docs", "FAQ.zh-TW.md"));
+
+  assert.equal(english.length, FAQ_TOPICS.length);
+  assert.equal(traditionalChinese.length, FAQ_TOPICS.length);
+
+  for (let index = 0; index < FAQ_TOPICS.length; index += 1) {
+    assert.match(english[index].body, /Evidence:/, `${english[index].heading} has no evidence label`);
+    assert.match(traditionalChinese[index].body, /依據：/, `${traditionalChinese[index].heading} 沒有依據標示`);
+    assert.ok(faqTargets(english[index].body).length > 0, `${english[index].heading} has no evidence link`);
+    assert.deepEqual(
+      faqTargets(traditionalChinese[index].body),
+      faqTargets(english[index].body),
+      `FAQ evidence targets differ for topic ${index + 1}`
+    );
+  }
+});
+
+test("FAQ trust-boundary answers reject universal read-only and sandbox claims", () => {
+  const english = read("docs", "FAQ.md");
+  const traditionalChinese = read("docs", "FAQ.zh-TW.md");
+
+  assert.match(english, /cannot promise that every engine configuration will prevent writes/);
+  assert.match(english, /No such universal boundary is provided by this plugin/);
+  assert.match(traditionalChinese, /無法保證每種引擎設定都會阻止寫入/);
+  assert.match(traditionalChinese, /不提供可一概而論的此類邊界/);
+});
+
+test("root READMEs and documentation indexes link both FAQ languages", () => {
+  for (const file of ["README.md", "README.zh-TW.md", "docs/README.md", "docs/README.zh-TW.md"]) {
+    const text = read(...file.split("/"));
+    const prefix = file.startsWith("docs/") ? "" : "docs/";
+    assert.match(text, new RegExp(`\\(${prefix}FAQ\\.md\\)`), `${file} does not link FAQ.md`);
+    assert.match(text, new RegExp(`\\(${prefix}FAQ\\.zh-TW\\.md\\)`), `${file} does not link FAQ.zh-TW.md`);
   }
 });
