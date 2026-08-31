@@ -27,7 +27,7 @@ const FAQ_TOPICS = [
 ];
 
 function faqSections(text) {
-  const entries = [...text.matchAll(/^## (.+)$/gm)];
+  const entries = [...text.matchAll(/^## ([^\r\n]+)\r?$/gm)];
   return entries.map((entry, index) => ({
     heading: entry[1],
     body: text.slice(entry.index + entry[0].length, entries[index + 1]?.index ?? text.length)
@@ -180,11 +180,16 @@ test("the docs index lists every file in docs/", () => {
 });
 
 test("the English and Traditional Chinese FAQs cover the frozen topics in order", () => {
-  const english = faqSections(read("docs", "FAQ.md"));
-  const traditionalChinese = faqSections(read("docs", "FAQ.zh-TW.md"));
+  const englishSource = read("docs", "FAQ.md");
+  const traditionalChineseSource = read("docs", "FAQ.zh-TW.md");
 
-  assert.deepEqual(english.map(({ heading }) => heading), FAQ_TOPICS.map(([heading]) => heading));
-  assert.deepEqual(traditionalChinese.map(({ heading }) => heading), FAQ_TOPICS.map(([, heading]) => heading));
+  for (const lineEnding of ["\n", "\r\n"]) {
+    const english = faqSections(englishSource.replace(/\r?\n/g, lineEnding));
+    const traditionalChinese = faqSections(traditionalChineseSource.replace(/\r?\n/g, lineEnding));
+
+    assert.deepEqual(english.map(({ heading }) => heading), FAQ_TOPICS.map(([heading]) => heading));
+    assert.deepEqual(traditionalChinese.map(({ heading }) => heading), FAQ_TOPICS.map(([, heading]) => heading));
+  }
 });
 
 test("every FAQ answer cites evidence and both languages use the same targets", () => {
