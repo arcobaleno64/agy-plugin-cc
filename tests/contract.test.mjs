@@ -93,6 +93,7 @@ test("the isolated canonical site stays factual, dependency-free, and motion-opt
   const html = fs.readFileSync(path.join(siteRoot, "index.html"), "utf8");
   const css = fs.readFileSync(path.join(siteRoot, "styles.css"), "utf8");
   const escapedDescription = CANONICAL_DESCRIPTION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapedSiteUrl = CANONICAL_SITE_URL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
   assert.match(html, /^<!doctype html>/i);
   assert.match(html, /<html lang="en">/);
@@ -100,8 +101,8 @@ test("the isolated canonical site stays factual, dependency-free, and motion-opt
   assert.match(html, /<meta name="viewport" content="width=device-width, initial-scale=1">/);
   assert.match(html, new RegExp(`<meta name="description" content="${escapedDescription}">`));
   assert.match(html, new RegExp(`<meta property="og:description" content="${escapedDescription}">`));
-  assert.match(html, new RegExp(`<link rel="canonical" href="${CANONICAL_SITE_URL}">`));
-  assert.match(html, new RegExp(`<meta property="og:url" content="${CANONICAL_SITE_URL}">`));
+  assert.match(html, new RegExp(`<link rel="canonical" href="${escapedSiteUrl}">`));
+  assert.match(html, new RegExp(`<meta property="og:url" content="${escapedSiteUrl}">`));
   assert.match(html, new RegExp(`<p class="canonical-description">${escapedDescription}</p>`));
 
   for (const command of ENTRY_INSTALL_COMMANDS) {
