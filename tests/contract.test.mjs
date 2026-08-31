@@ -11,6 +11,11 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BUMP = path.join(ROOT, "scripts", "bump-version.mjs");
 const VERIFY = path.join(ROOT, "scripts", "verify-contracts.mjs");
 const COMMANDS = ["setup", "review", "adversarial-review", "rescue", "status", "result", "cancel", "transfer"];
+const ENTRY_INSTALL_COMMANDS = [
+  "/plugin marketplace add arcobaleno64/agy-plugin-cc",
+  "/plugin install gemini@agy-plugin-cc",
+  "/reload-plugins"
+];
 const CANONICAL_DESCRIPTION = "agy-plugin-cc is a Claude Code companion for running Gemini CLI or Antigravity CLI (agy) as a cross-model task delegate and code reviewer, with pragmatic and adversarial review, MCP tools, and background jobs.";
 const CANONICAL_ZH_TW = "`agy-plugin-cc` 是 Claude Code 協作外掛，可透過 Gemini CLI 或 Antigravity CLI（`agy`）進行跨模型任務委派與程式碼審查，並提供務實與對抗性審查、MCP 工具及背景工作。";
 
@@ -75,6 +80,70 @@ test("public English metadata uses one canonical short description", () => {
 
 test("the Traditional Chinese entry description stays semantically aligned", () => {
   assert.equal(readLines(path.join(ROOT, "README.zh-TW.md"))[2], CANONICAL_ZH_TW);
+});
+
+test("root READMEs surface setup and representative workflows before detailed positioning", () => {
+  const cases = [
+    {
+      file: "README.md",
+      detailsHeading: "## Installation",
+      entryHeading: "## Start here",
+      entryEndHeading: "## Why this plugin?",
+      releaseHeading: "### Release channel (marketplace follows `main`)",
+      markers: [
+        "## Start here",
+        "You need **Claude Code**, **Node.js ≥ 18**, and **one** supported engine",
+        ...ENTRY_INSTALL_COMMANDS,
+        "### Three common workflows",
+        "/gemini:review --wait",
+        "/gemini:adversarial-review --wait",
+        "/gemini:rescue --background",
+        "## Why this plugin?"
+      ]
+    },
+    {
+      file: "README.zh-TW.md",
+      detailsHeading: "## 安裝",
+      entryHeading: "## 從這裡開始",
+      entryEndHeading: "## 為什麼選這個外掛？",
+      releaseHeading: "### 發布通道（marketplace 來源追蹤 `main`）",
+      markers: [
+        "## 從這裡開始",
+        "你需要 **Claude Code**、**Node.js ≥ 18**，以及**一個**支援的引擎",
+        ...ENTRY_INSTALL_COMMANDS,
+        "### 三個常見工作流程",
+        "/gemini:review --wait",
+        "/gemini:adversarial-review --wait",
+        "/gemini:rescue --background",
+        "## 為什麼選這個外掛？"
+      ]
+    }
+  ];
+
+  for (const { file, detailsHeading, entryHeading, entryEndHeading, releaseHeading, markers } of cases) {
+    const lines = readLines(path.join(ROOT, file));
+    const entryStart = lines.indexOf(entryHeading);
+    const entryEnd = lines.indexOf(entryEndHeading, entryStart + 1);
+    assert.ok(entryStart >= 0 && entryEnd > entryStart, `${file} does not retain its bounded entry section`);
+
+    const entryText = lines.slice(entryStart, entryEnd + 1).join("\n");
+    let cursor = -1;
+    for (const marker of markers) {
+      const index = entryText.indexOf(marker, cursor + 1);
+      assert.ok(index > cursor, `${file} does not surface ${JSON.stringify(marker)} in the expected order`);
+      cursor = index;
+    }
+
+    const detailsIndex = lines.indexOf(detailsHeading, entryEnd + 1);
+    const releaseIndex = lines.indexOf(releaseHeading, detailsIndex + 1);
+    const releaseFenceStart = lines.indexOf("```", releaseIndex + 1);
+    const releaseFenceEnd = lines.indexOf("```", releaseFenceStart + 1);
+    assert.ok(detailsIndex > entryEnd, `${file} does not retain its detailed installation section`);
+    assert.ok(releaseIndex > detailsIndex && releaseFenceStart > releaseIndex && releaseFenceEnd > releaseFenceStart, `${file} does not retain its bounded release-channel command block`);
+
+    const releaseCommands = lines.slice(releaseFenceStart + 1, releaseFenceEnd).filter((line) => line.startsWith("/"));
+    assert.deepEqual(releaseCommands, ENTRY_INSTALL_COMMANDS, `${file} detailed release-channel commands drifted from the entry commands`);
+  }
 });
 
 test("verify-contracts passes on a well-formed fixture", () => {

@@ -8,6 +8,32 @@
 
 ---
 
+## 從這裡開始
+
+你需要 **Claude Code**、**Node.js ≥ 18**，以及**一個**支援的引擎：Gemini CLI ≥ 0.40 或 AGY ≥ 1.0.3。只需安裝並認證你選擇的引擎，不必兩者都裝。Gemini CLI 需要 Standard／Enterprise 帳戶或 API 金鑰；個人帳戶實務上以 AGY 為預設選擇。支援版本與認證細節請見[系統需求](#系統需求)。
+
+### 從發布通道安裝
+
+```
+/plugin marketplace add arcobaleno64/agy-plugin-cc
+/plugin install gemini@agy-plugin-cc
+/reload-plugins
+```
+
+AGY 請用 `/gemini:setup --engine agy` 驗證所選引擎；auto／Gemini 請用 `/gemini:setup`。明確更新與釘選發布版的方式請見[安裝](#安裝)。
+
+### 三個常見工作流程
+
+| 目標 | 命令 |
+|---|---|
+| 對目前變更進行務實審查 | `/gemini:review --wait` |
+| 對設計決策進行對抗性挑戰 | `/gemini:adversarial-review --wait 重點檢查 retry 邏輯` |
+| 將較長任務交由背景執行 | `/gemini:rescue --background 調查失敗的測試` |
+
+背景工作完成後，用 `/gemini:status` 與 `/gemini:result <job-id>` 取得結果。完整介面與各引擎差異請見[命令說明](#命令說明)。
+
+---
+
 ## 為什麼選這個外掛？
 
 `agy-plugin-cc` 是 Claude Code-native 的 companion bridge，適合在 Google Gemini CLI transition 期間同時保留 Gemini CLI 與 Antigravity CLI (`agy`) 路徑的使用者。

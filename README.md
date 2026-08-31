@@ -10,6 +10,32 @@ Ported from [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) 
 
 ---
 
+## Start here
+
+You need **Claude Code**, **Node.js ≥ 18**, and **one** supported engine: Gemini CLI ≥ 0.40 or AGY ≥ 1.0.3. Install and authenticate the engine you choose; you do not need both. Gemini CLI requires a Standard/Enterprise account or an API key, while AGY is the practical default for personal accounts. See [Prerequisites](#prerequisites) for the supported versions and authentication details.
+
+### Install from the release channel
+
+```
+/plugin marketplace add arcobaleno64/agy-plugin-cc
+/plugin install gemini@agy-plugin-cc
+/reload-plugins
+```
+
+Verify the selected engine with `/gemini:setup --engine agy` for AGY, or `/gemini:setup` for auto/Gemini. See [Installation](#installation) for explicit updates and pinned releases.
+
+### Three common workflows
+
+| Goal | Command |
+|---|---|
+| Pragmatic review of the current change | `/gemini:review --wait` |
+| Adversarial challenge of a design decision | `/gemini:adversarial-review --wait Focus on the retry logic` |
+| Background delegation of a longer task | `/gemini:rescue --background Investigate the failing tests` |
+
+Use `/gemini:status` and `/gemini:result <job-id>` to collect a background result. See [Commands](#commands) for the complete interface and engine-specific behavior.
+
+---
+
 ## Why this plugin?
 
 `agy-plugin-cc` is a Claude Code-native companion bridge for users who want both Gemini CLI and Antigravity CLI (`agy`) support during Google's Gemini CLI transition.
