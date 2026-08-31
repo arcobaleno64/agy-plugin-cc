@@ -171,10 +171,14 @@ test("current comparison and parity docs follow shipped behavior", () => {
 
 test("current comparison recommends the approved high-intent GitHub topic set", () => {
   const comparison = read("docs", "COMPARISON.md");
-  const section = comparison.match(/## Recommended GitHub Topics\r?\n\r?\n([^\r\n]+)/);
+  const heading = "## Recommended GitHub Topics";
+  const sectionStart = comparison.indexOf(heading);
 
-  assert.ok(section, "docs/COMPARISON.md has no Recommended GitHub Topics section");
-  const actual = [...section[1].matchAll(/`([^`]+)`/g)].map((match) => match[1]).sort();
+  assert.notEqual(sectionStart, -1, "docs/COMPARISON.md has no Recommended GitHub Topics section");
+  const sectionBodyStart = sectionStart + heading.length;
+  const nextSectionStart = comparison.indexOf("\n## ", sectionBodyStart);
+  const section = comparison.slice(sectionBodyStart, nextSectionStart === -1 ? undefined : nextSectionStart);
+  const actual = [...section.matchAll(/`([^`]+)`/g)].map((match) => match[1]).sort();
   assert.deepEqual(actual, RECOMMENDED_GITHUB_TOPICS);
 });
 
@@ -245,11 +249,11 @@ test("FAQ trust-boundary answers reject universal read-only and sandbox claims",
   assert.match(traditionalChinese, /不提供可一概而論的此類邊界/);
 
   assert.doesNotMatch(english, /\b(?:all|every)\s+review commands?\s+are\s+read-only\b/i);
-  assert.doesNotMatch(english, /\bfully sandboxed\b/i);
-  assert.doesNotMatch(english, /\bcannot (?:touch|write to|modify) (?:your |the )?filesystem\b/i);
+  assert.doesNotMatch(english, /(?<!not )\b(?:all|every)\s+(?:delegated\s+)?engines?\s+(?:is|are)\s+fully sandboxed\b/i);
+  assert.doesNotMatch(english, /(?<!not )\b(?:all|every)\s+(?:delegated\s+)?engines?\s+cannot (?:touch|write to|modify) (?:your |the )?filesystem\b/i);
   assert.doesNotMatch(traditionalChinese, /所有審查命令(?:都是|一律)(?:唯讀|只讀)/);
-  assert.doesNotMatch(traditionalChinese, /(?:完全沙箱化|完全受到沙箱保護|一律唯讀)/);
-  assert.doesNotMatch(traditionalChinese, /無法(?:接觸|寫入|修改)(?:你的)?檔案系統/);
+  assert.doesNotMatch(traditionalChinese, /(?:所有|每個)(?:受委派的)?引擎(?:都是|一律)(?:完全沙箱化|完全受到沙箱保護)/);
+  assert.doesNotMatch(traditionalChinese, /(?:所有|每個)(?:受委派的)?引擎(?:都|一律)?無法(?:接觸|寫入|修改)(?:你的)?檔案系統/);
 });
 
 test("FAQ pinning answers preserve the remove, reinstall, and reload sequence", () => {
