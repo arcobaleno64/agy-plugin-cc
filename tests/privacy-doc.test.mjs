@@ -252,6 +252,16 @@ test("FAQ trust-boundary answers reject universal read-only and sandbox claims",
   assert.doesNotMatch(traditionalChinese, /無法(?:接觸|寫入|修改)(?:你的)?檔案系統/);
 });
 
+test("FAQ pinning answers preserve the remove, reinstall, and reload sequence", () => {
+  const english = read("docs", "FAQ.md");
+  const traditionalChinese = read("docs", "FAQ.zh-TW.md");
+
+  assert.match(english, /remove the existing marketplace first \(which also uninstalls the plugin\)/);
+  assert.match(english, /add it again at the new tag, reinstall the plugin, and run `\/reload-plugins`/);
+  assert.match(traditionalChinese, /先移除現有 marketplace（這也會解除安裝該 marketplace 的外掛）/);
+  assert.match(traditionalChinese, /再以新 tag 重新加入、重新安裝外掛，並執行 `\/reload-plugins`/);
+});
+
 test("FAQ identity answers preserve the independent-project disclaimer", () => {
   assert.match(read("docs", "FAQ.md"), /not affiliated with, endorsed by, or sponsored by Google or Anthropic/);
   assert.match(read("docs", "FAQ.zh-TW.md"), /與 Google、Anthropic 均無隸屬、背書或贊助關係/);
