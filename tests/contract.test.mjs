@@ -115,7 +115,8 @@ test("the isolated canonical site stays factual, dependency-free, and motion-opt
   assert.match(html, /The plugin operates no hosted service/);
   assert.match(html, /<div class="hero-visual" role="img" aria-label="[^"]+">/);
   assert.match(html, /<svg[^>]*aria-hidden="true"/);
-  assert.match(html, /<ol class="workflow-steps"/);
+  assert.match(html, /<ol class="workflow-steps" role="list">/);
+  assert.match(html, /<pre tabindex="0"><code>/);
 
   assert.doesNotMatch(html, /<(?:script|iframe|img|picture|video|audio|source|object|embed)\b/i);
   assert.doesNotMatch(html, /\b(?:SEO|AEO|GEO|ranking|ranked|best|leading|official plugin)\b/i);
