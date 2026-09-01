@@ -39,7 +39,8 @@ a {
 }
 
 a:focus-visible,
-.button:focus-visible {
+.button:focus-visible,
+pre:focus-visible {
   outline: 3px solid var(--cyan);
   outline-offset: 4px;
 }
@@ -446,11 +447,14 @@ footer p {
 
 @media (max-width: 860px) {
   .site-header {
-    align-items: flex-start;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
   }
 
-  nav a:not(:last-child) {
-    display: none;
+  nav {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .hero,
