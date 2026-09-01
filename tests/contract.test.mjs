@@ -20,6 +20,7 @@ const CANONICAL_DESCRIPTION = "agy-plugin-cc is a Claude Code companion for runn
 const CANONICAL_ZH_TW = "`agy-plugin-cc` 是 Claude Code 協作外掛，可透過 Gemini CLI 或 Antigravity CLI（`agy`）進行跨模型任務委派與程式碼審查，並提供務實與對抗性審查、MCP 工具及背景工作。";
 const CANONICAL_SITE_TITLE = "agy-plugin-cc — Cross-model review for Claude Code";
 const CANONICAL_SITE_URL = "https://arcobaleno64.github.io/agy-plugin-cc/";
+const CANONICAL_REPOSITORY_URL = "https://github.com/arcobaleno64/agy-plugin-cc";
 
 function writeJson(filePath, json) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -98,6 +99,7 @@ test("the isolated canonical site stays factual, dependency-free, and motion-opt
   const sitemap = fs.readFileSync(path.join(siteRoot, "sitemap.xml"), "utf8").replace(/\r\n/g, "\n");
   const css = fs.readFileSync(path.join(siteRoot, "styles.css"), "utf8");
   const escapedDescription = CANONICAL_DESCRIPTION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const jsonLdScripts = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
 
   assert.match(html, /^<!doctype html>/i);
   assert.match(html, /<html lang="en">/);
@@ -112,6 +114,18 @@ test("the isolated canonical site stays factual, dependency-free, and motion-opt
   assert.ok(html.includes(`<link rel="canonical" href="${CANONICAL_SITE_URL}">`));
   assert.ok(html.includes(`<meta property="og:url" content="${CANONICAL_SITE_URL}">`));
   assert.match(html, new RegExp(`<p class="canonical-description">${escapedDescription}</p>`));
+  assert.ok(html.includes("<span>agy-plugin-cc</span>"), "structured application name must remain visible");
+  assert.ok(html.includes(`href="${CANONICAL_REPOSITORY_URL}"`), "structured repository identity must remain visible");
+  assert.equal((html.match(/<script\b/gi) ?? []).length, 1, "site must contain only the reviewed JSON-LD script");
+  assert.equal(jsonLdScripts.length, 1, "site must contain one SoftwareApplication JSON-LD block");
+  assert.deepEqual(JSON.parse(jsonLdScripts[0][1]), {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "agy-plugin-cc",
+    description: CANONICAL_DESCRIPTION,
+    url: CANONICAL_SITE_URL,
+    sameAs: CANONICAL_REPOSITORY_URL,
+  });
   assert.equal(sitemap, `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
@@ -131,7 +145,7 @@ test("the isolated canonical site stays factual, dependency-free, and motion-opt
   assert.match(html, /<ol class="workflow-steps" role="list">/);
   assert.match(html, /<pre tabindex="0"><code>/);
 
-  assert.doesNotMatch(html, /<(?:script|iframe|img|picture|video|audio|source|object|embed)\b/i);
+  assert.doesNotMatch(html, /<(?:iframe|img|picture|video|audio|source|object|embed)\b/i);
   assert.doesNotMatch(html, /\b(?:SEO|AEO|GEO|ranking|ranked|best|leading|official plugin)\b/i);
   assert.doesNotMatch(html, /\b(?:all|every)\s+review commands?\s+are\s+read-only\b/i);
   assert.doesNotMatch(html, /\breview commands?\s+are\s+always\s+read-only\b/i);
