@@ -18,6 +18,7 @@ const ENTRY_INSTALL_COMMANDS = [
 ];
 const CANONICAL_DESCRIPTION = "agy-plugin-cc is a Claude Code companion for running Gemini CLI or Antigravity CLI (agy) as a cross-model task delegate and code reviewer, with pragmatic and adversarial review, MCP tools, and background jobs.";
 const CANONICAL_ZH_TW = "`agy-plugin-cc` 是 Claude Code 協作外掛，可透過 Gemini CLI 或 Antigravity CLI（`agy`）進行跨模型任務委派與程式碼審查，並提供務實與對抗性審查、MCP 工具及背景工作。";
+const CANONICAL_SITE_URL = "https://arcobaleno64.github.io/agy-plugin-cc/";
 
 function writeJson(filePath, json) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -80,6 +81,55 @@ test("public English metadata uses one canonical short description", () => {
 
 test("the Traditional Chinese entry description stays semantically aligned", () => {
   assert.equal(readLines(path.join(ROOT, "README.zh-TW.md"))[2], CANONICAL_ZH_TW);
+});
+
+test("the isolated canonical site stays factual, dependency-free, and motion-optional", () => {
+  const siteRoot = path.join(ROOT, "site");
+  const trackedSite = run("git", ["ls-files", "--", "site"], { cwd: ROOT });
+  assert.equal(trackedSite.status, 0, trackedSite.stderr);
+  const files = trackedSite.stdout.trim().split(/\r?\n/)
+    .filter(Boolean)
+    .map((file) => path.relative("site", file))
+    .sort();
+  assert.deepEqual(files, ["index.html", "styles.css"], "tracked site/ sources must remain an explicit allowlist");
+
+  const html = fs.readFileSync(path.join(siteRoot, "index.html"), "utf8");
+  const css = fs.readFileSync(path.join(siteRoot, "styles.css"), "utf8");
+  const escapedDescription = CANONICAL_DESCRIPTION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  assert.match(html, /^<!doctype html>/i);
+  assert.match(html, /<html lang="en">/);
+  assert.match(html, /<meta charset="utf-8">/);
+  assert.match(html, /<meta name="viewport" content="width=device-width, initial-scale=1">/);
+  assert.ok(html.includes('<link rel="stylesheet" href="styles.css">'));
+  assert.equal((html.match(/<link\b/gi) ?? []).length, 2, "site must not load additional link resources");
+  assert.match(html, new RegExp(`<meta name="description" content="${escapedDescription}">`));
+  assert.match(html, new RegExp(`<meta property="og:description" content="${escapedDescription}">`));
+  assert.ok(html.includes(`<link rel="canonical" href="${CANONICAL_SITE_URL}">`));
+  assert.ok(html.includes(`<meta property="og:url" content="${CANONICAL_SITE_URL}">`));
+  assert.match(html, new RegExp(`<p class="canonical-description">${escapedDescription}</p>`));
+
+  for (const command of ENTRY_INSTALL_COMMANDS) {
+    assert.match(html, new RegExp(command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `site omits ${command}`);
+  }
+  assert.match(html, /not affiliated with, endorsed by, or sponsored by Google LLC or Anthropic/);
+  assert.match(html, /Read-only is an intent, not an enforced filesystem boundary/);
+  assert.match(html, /The plugin operates no hosted service/);
+  assert.match(html, /<div class="hero-visual" role="img" aria-label="[^"]+">/);
+  assert.match(html, /<svg[^>]*aria-hidden="true"/);
+  assert.match(html, /<ol class="workflow-steps" role="list">/);
+  assert.match(html, /<pre tabindex="0"><code>/);
+
+  assert.doesNotMatch(html, /<(?:script|iframe|img|picture|video|audio|source|object|embed)\b/i);
+  assert.doesNotMatch(html, /\b(?:SEO|AEO|GEO|ranking|ranked|best|leading|official plugin)\b/i);
+  assert.doesNotMatch(html, /\b(?:all|every)\s+review commands?\s+are\s+read-only\b/i);
+  assert.doesNotMatch(html, /\breview commands?\s+are\s+always\s+read-only\b/i);
+  assert.doesNotMatch(html, /\ball\s+reviews?\s+are\s+read-only\b/i);
+  assert.doesNotMatch(html, /\b(?:all|every)\s+(?:delegated\s+)?engines?\s+(?:is|are)\s+fully sandboxed\b/i);
+  assert.doesNotMatch(css, /@import|url\s*\(\s*["']?https?:/i, "site CSS must not load third-party assets");
+  assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
+  assert.match(css, /animation:\s*none\s*!important/);
+  assert.ok(Buffer.byteLength(html) + Buffer.byteLength(css) < 100 * 1024, "the static site must stay below 100 KiB");
 });
 
 test("root READMEs surface setup and representative workflows before detailed positioning", () => {

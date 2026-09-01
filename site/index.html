@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>agy-plugin-cc — Cross-model review for Claude Code</title>
+  <meta name="description" content="agy-plugin-cc is a Claude Code companion for running Gemini CLI or Antigravity CLI (agy) as a cross-model task delegate and code reviewer, with pragmatic and adversarial review, MCP tools, and background jobs.">
+  <link rel="canonical" href="https://arcobaleno64.github.io/agy-plugin-cc/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="agy-plugin-cc — Cross-model review for Claude Code">
+  <meta property="og:description" content="agy-plugin-cc is a Claude Code companion for running Gemini CLI or Antigravity CLI (agy) as a cross-model task delegate and code reviewer, with pragmatic and adversarial review, MCP tools, and background jobs.">
+  <meta property="og:url" content="https://arcobaleno64.github.io/agy-plugin-cc/">
+  <meta name="twitter:card" content="summary">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <a class="brand" href="https://github.com/arcobaleno64/agy-plugin-cc" aria-label="agy-plugin-cc repository">
+      <span class="brand-mark" aria-hidden="true">agy</span>
+      <span>agy-plugin-cc</span>
+    </a>
+    <nav aria-label="Primary navigation">
+      <a href="#workflow">Workflow</a>
+      <a href="#start">Start here</a>
+      <a href="#boundaries">Boundaries</a>
+      <a href="https://github.com/arcobaleno64/agy-plugin-cc">GitHub</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow">Claude Code companion · Gemini CLI + Antigravity CLI</p>
+        <h1 id="hero-title">Bring a second model into the review loop.</h1>
+        <p class="canonical-description">agy-plugin-cc is a Claude Code companion for running Gemini CLI or Antigravity CLI (agy) as a cross-model task delegate and code reviewer, with pragmatic and adversarial review, MCP tools, and background jobs.</p>
+        <div class="hero-actions">
+          <a class="button primary" href="#start">Install the plugin</a>
+          <a class="button secondary" href="https://github.com/arcobaleno64/agy-plugin-cc">View the repository</a>
+        </div>
+        <p class="independent-note"><strong>Independent project.</strong> agy-plugin-cc is community-maintained and is not affiliated with, endorsed by, or sponsored by Google LLC or Anthropic.</p>
+      </div>
+
+      <div class="hero-visual" role="img" aria-label="Claude Code delegates to either Gemini CLI or Antigravity CLI, receives review evidence, and continues the development loop.">
+        <svg class="workflow-orbit" viewBox="0 0 620 460" aria-hidden="true" focusable="false">
+          <defs>
+            <linearGradient id="line-gradient" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#70d6ff"></stop>
+              <stop offset="0.5" stop-color="#a78bfa"></stop>
+              <stop offset="1" stop-color="#ff70a6"></stop>
+            </linearGradient>
+          </defs>
+          <path class="orbit-base" d="M310 73 C478 73 548 173 510 286 C471 401 291 423 157 349 C30 279 73 115 205 82 C240 73 274 71 310 73 Z"></path>
+          <path class="orbit-signal signal-one" d="M310 73 C478 73 548 173 510 286 C471 401 291 423 157 349 C30 279 73 115 205 82 C240 73 274 71 310 73 Z"></path>
+          <path class="orbit-signal signal-two" d="M310 73 C478 73 548 173 510 286 C471 401 291 423 157 349 C30 279 73 115 205 82 C240 73 274 71 310 73 Z"></path>
+
+          <g class="node node-claude" transform="translate(310 73)">
+            <circle r="66"></circle>
+            <text text-anchor="middle" y="-5">Claude Code</text>
+            <text class="node-caption" text-anchor="middle" y="19">coordinates</text>
+          </g>
+          <g class="node node-engine" transform="translate(502 276)">
+            <circle r="72"></circle>
+            <text text-anchor="middle" y="-12">Gemini CLI</text>
+            <text text-anchor="middle" y="12">or AGY</text>
+            <text class="node-caption" text-anchor="middle" y="36">reviews</text>
+          </g>
+          <g class="node node-evidence" transform="translate(154 330)">
+            <circle r="68"></circle>
+            <text text-anchor="middle" y="-5">Evidence</text>
+            <text class="node-caption" text-anchor="middle" y="19">returns</text>
+          </g>
+        </svg>
+      </div>
+    </section>
+
+    <section id="workflow" class="section workflow-section" aria-labelledby="workflow-title">
+      <div class="section-heading">
+        <p class="eyebrow">One deliberate cycle</p>
+        <h2 id="workflow-title">Delegate, challenge, inspect, continue.</h2>
+        <p>The visual motion is optional. The workflow remains the same when animation is disabled.</p>
+      </div>
+      <ol class="workflow-steps" role="list">
+        <li>
+          <span class="step-number">01</span>
+          <h3>Choose one engine</h3>
+          <p>Use Gemini CLI when you have supported access, or AGY as the practical path for personal accounts.</p>
+        </li>
+        <li>
+          <span class="step-number">02</span>
+          <h3>Ask for another view</h3>
+          <p>Run a pragmatic review, challenge the approach adversarially, or delegate a longer investigation.</p>
+        </li>
+        <li>
+          <span class="step-number">03</span>
+          <h3>Inspect the evidence</h3>
+          <p>Claude Code receives findings and job results so you can decide what to accept, reject, or verify.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section id="start" class="section start-section" aria-labelledby="start-title">
+      <div class="section-heading">
+        <p class="eyebrow">Start here</p>
+        <h2 id="start-title">Three commands, then choose an engine.</h2>
+        <p>You need Claude Code, Node.js 18 or newer, and one separately installed and authenticated engine. You do not need both engines.</p>
+      </div>
+      <div class="terminal" role="group" aria-label="Plugin installation commands">
+        <div class="terminal-bar" aria-hidden="true"><span></span><span></span><span></span></div>
+        <pre tabindex="0"><code><span class="comment"># Add the marketplace</span>
+/plugin marketplace add arcobaleno64/agy-plugin-cc
+
+<span class="comment"># Install and reload</span>
+/plugin install gemini@agy-plugin-cc
+/reload-plugins</code></pre>
+      </div>
+      <p class="detail-link"><a href="https://github.com/arcobaleno64/agy-plugin-cc#prerequisites">Read prerequisites, authentication, update, and pinned-release details →</a></p>
+    </section>
+
+    <section class="section examples-section" aria-labelledby="examples-title">
+      <div class="section-heading">
+        <p class="eyebrow">Representative workflows</p>
+        <h2 id="examples-title">Use the loop at the level you need.</h2>
+      </div>
+      <div class="command-grid">
+        <article>
+          <h3>Pragmatic review</h3>
+          <code>/gemini:review --wait</code>
+          <p>Look for concrete defects in the current change.</p>
+        </article>
+        <article>
+          <h3>Adversarial review</h3>
+          <code>/gemini:adversarial-review --wait Focus on the retry logic</code>
+          <p>Challenge assumptions and focus the critique.</p>
+        </article>
+        <article>
+          <h3>Background delegation</h3>
+          <code>/gemini:rescue --background Investigate the failing tests</code>
+          <p>Move a longer investigation into a tracked job.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="boundaries" class="section boundaries-section" aria-labelledby="boundaries-title">
+      <div class="section-heading">
+        <p class="eyebrow">Honest boundaries</p>
+        <h2 id="boundaries-title">A companion, not a security boundary.</h2>
+      </div>
+      <div class="boundary-grid">
+        <article>
+          <h3>Write behavior</h3>
+          <p>Read-only is an intent, not an enforced filesystem boundary. The plugin checks the workspace afterward and reports detected changes.</p>
+        </article>
+        <article>
+          <h3>Data path</h3>
+          <p>The plugin operates no hosted service. The engine CLI you installed sends the assembled prompt to Google under that engine's terms.</p>
+        </article>
+        <article>
+          <h3>MCP scope</h3>
+          <p>MCP annotations describe a conservative worst case. They are hints, not guarantees about engine behavior or every MCP client.</p>
+        </article>
+      </div>
+      <div class="evidence-links" role="group" aria-label="Project evidence and policies">
+        <a href="https://github.com/arcobaleno64/agy-plugin-cc/blob/main/docs/FAQ.md">FAQ</a>
+        <a href="https://github.com/arcobaleno64/agy-plugin-cc/blob/main/docs/FAQ.zh-TW.md" lang="zh-TW">繁體中文 FAQ</a>
+        <a href="https://github.com/arcobaleno64/agy-plugin-cc/blob/main/PRIVACY.md">Privacy</a>
+        <a href="https://github.com/arcobaleno64/agy-plugin-cc/blob/main/SECURITY.md">Security</a>
+        <a href="https://github.com/arcobaleno64/agy-plugin-cc/releases">Releases</a>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Community-maintained under open-source licenses. “Gemini” and “Antigravity” are trademarks of Google LLC; “Claude” is a trademark of Anthropic.</p>
+    <a href="https://github.com/arcobaleno64/agy-plugin-cc">arcobaleno64/agy-plugin-cc</a>
+  </footer>
+</body>
+</html>
