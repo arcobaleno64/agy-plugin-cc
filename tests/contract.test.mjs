@@ -18,6 +18,7 @@ const ENTRY_INSTALL_COMMANDS = [
 ];
 const CANONICAL_DESCRIPTION = "agy-plugin-cc is a Claude Code companion for running Gemini CLI or Antigravity CLI (agy) as a cross-model task delegate and code reviewer, with pragmatic and adversarial review, MCP tools, and background jobs.";
 const CANONICAL_ZH_TW = "`agy-plugin-cc` 是 Claude Code 協作外掛，可透過 Gemini CLI 或 Antigravity CLI（`agy`）進行跨模型任務委派與程式碼審查，並提供務實與對抗性審查、MCP 工具及背景工作。";
+const CANONICAL_SITE_TITLE = "agy-plugin-cc — Cross-model review for Claude Code";
 const CANONICAL_SITE_URL = "https://arcobaleno64.github.io/agy-plugin-cc/";
 
 function writeJson(filePath, json) {
@@ -101,9 +102,11 @@ test("the isolated canonical site stays factual, dependency-free, and motion-opt
   assert.match(html, /<html lang="en">/);
   assert.match(html, /<meta charset="utf-8">/);
   assert.match(html, /<meta name="viewport" content="width=device-width, initial-scale=1">/);
+  assert.ok(html.includes(`<title>${CANONICAL_SITE_TITLE}</title>`));
   assert.ok(html.includes('<link rel="stylesheet" href="styles.css">'));
   assert.equal((html.match(/<link\b/gi) ?? []).length, 2, "site must not load additional link resources");
   assert.match(html, new RegExp(`<meta name="description" content="${escapedDescription}">`));
+  assert.ok(html.includes(`<meta property="og:title" content="${CANONICAL_SITE_TITLE}">`));
   assert.match(html, new RegExp(`<meta property="og:description" content="${escapedDescription}">`));
   assert.ok(html.includes(`<link rel="canonical" href="${CANONICAL_SITE_URL}">`));
   assert.ok(html.includes(`<meta property="og:url" content="${CANONICAL_SITE_URL}">`));
@@ -130,6 +133,32 @@ test("the isolated canonical site stays factual, dependency-free, and motion-opt
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
   assert.match(css, /animation:\s*none\s*!important/);
   assert.ok(Buffer.byteLength(html) + Buffer.byteLength(css) < 100 * 1024, "the static site must stay below 100 KiB");
+});
+
+test("the canonical site deploys only its allowlisted source from main", () => {
+  const workflow = fs.readFileSync(path.join(ROOT, ".github", "workflows", "pages.yml"), "utf8");
+  const normalized = workflow.replace(/\r\n/g, "\n");
+  const deployStart = normalized.indexOf("\n  deploy:");
+  assert.ok(deployStart >= 0);
+  const followingJob = normalized.slice(deployStart + 1).search(/\n  [a-z0-9_-]+:\n/i);
+  const deployEnd = followingJob < 0 ? normalized.length : deployStart + 1 + followingJob;
+  const deploy = normalized.slice(deployStart, deployEnd);
+
+  assert.ok(normalized.includes('push:\n    branches: [main]\n    paths:\n      - "site/**"\n      - ".github/workflows/pages.yml"'));
+  assert.doesNotMatch(normalized, /pull_request(?:_target)?:|schedule:|workflow_dispatch:/);
+  assert.ok(normalized.includes("permissions:\n  contents: read\n\nconcurrency:"), "top-level permissions must remain exactly contents: read");
+  assert.match(workflow, /actions\/checkout@[0-9a-f]{40}\s+# v6\.0\.2/);
+  assert.match(workflow, /actions\/configure-pages@[0-9a-f]{40}\s+# v5\.0\.0/);
+  assert.match(normalized, /actions\/upload-pages-artifact@[0-9a-f]{40} # v4\.0\.0\n        with:\n          path: site$/m);
+  assert.ok(deploy.includes("permissions:\n      pages: write\n      id-token: write\n    environment:"), "deploy permissions must remain exactly pages: write and id-token: write");
+  assert.doesNotMatch(deploy, /(?:^|\n)[^\S\n]*(?:-[^\S\n]*)?run:/, "the privileged deploy job must not run repository code");
+  assert.deepEqual(
+    [...deploy.matchAll(/^\s+(?:-\s+)?uses:\s+(\S+)/gm)].map((match) => match[1]),
+    ["actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e"],
+    "the privileged deploy job must invoke only the reviewed deploy-pages action",
+  );
+  assert.match(workflow, /environment:\s*\n\s+name:\s+github-pages\s*\n\s+url:\s+\$\{\{ steps\.deployment\.outputs\.page_url \}\}/);
+  assert.match(workflow, /actions\/deploy-pages@[0-9a-f]{40}\s+# v4\.0\.5/);
 });
 
 test("root READMEs surface setup and representative workflows before detailed positioning", () => {
