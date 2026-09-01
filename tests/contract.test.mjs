@@ -92,9 +92,10 @@ test("the isolated canonical site stays factual, dependency-free, and motion-opt
     .filter(Boolean)
     .map((file) => path.relative("site", file))
     .sort();
-  assert.deepEqual(files, ["index.html", "styles.css"], "tracked site/ sources must remain an explicit allowlist");
+  assert.deepEqual(files, ["index.html", "sitemap.xml", "styles.css"], "tracked site/ sources must remain an explicit allowlist");
 
   const html = fs.readFileSync(path.join(siteRoot, "index.html"), "utf8");
+  const sitemap = fs.readFileSync(path.join(siteRoot, "sitemap.xml"), "utf8").replace(/\r\n/g, "\n");
   const css = fs.readFileSync(path.join(siteRoot, "styles.css"), "utf8");
   const escapedDescription = CANONICAL_DESCRIPTION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -111,6 +112,13 @@ test("the isolated canonical site stays factual, dependency-free, and motion-opt
   assert.ok(html.includes(`<link rel="canonical" href="${CANONICAL_SITE_URL}">`));
   assert.ok(html.includes(`<meta property="og:url" content="${CANONICAL_SITE_URL}">`));
   assert.match(html, new RegExp(`<p class="canonical-description">${escapedDescription}</p>`));
+  assert.equal(sitemap, `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>${CANONICAL_SITE_URL}</loc>
+  </url>
+</urlset>
+`);
 
   for (const command of ENTRY_INSTALL_COMMANDS) {
     assert.match(html, new RegExp(command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `site omits ${command}`);
@@ -132,7 +140,7 @@ test("the isolated canonical site stays factual, dependency-free, and motion-opt
   assert.doesNotMatch(css, /@import|url\s*\(\s*["']?https?:/i, "site CSS must not load third-party assets");
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
   assert.match(css, /animation:\s*none\s*!important/);
-  assert.ok(Buffer.byteLength(html) + Buffer.byteLength(css) < 100 * 1024, "the static site must stay below 100 KiB");
+  assert.ok(Buffer.byteLength(html) + Buffer.byteLength(sitemap) + Buffer.byteLength(css) < 100 * 1024, "the static site must stay below 100 KiB");
 });
 
 test("the canonical site deploys only its allowlisted source from main", () => {
