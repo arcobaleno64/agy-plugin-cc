@@ -137,14 +137,19 @@ test("the isolated canonical site stays factual, dependency-free, and motion-opt
 
 test("the canonical site deploys only its allowlisted source from main", () => {
   const workflow = fs.readFileSync(path.join(ROOT, ".github", "workflows", "pages.yml"), "utf8");
+  const normalized = workflow.replace(/\r\n/g, "\n");
+  const deployStart = normalized.indexOf("\n  deploy:");
+  const deploy = normalized.slice(deployStart);
 
-  assert.match(workflow, /push:\s*\n\s+branches:\s*\[main\]/);
-  assert.doesNotMatch(workflow, /pull_request:|schedule:/);
-  assert.match(workflow, /permissions:\s*\n\s+contents:\s*read/);
+  assert.ok(normalized.includes('push:\n    branches: [main]\n    paths:\n      - "site/**"\n      - ".github/workflows/pages.yml"'));
+  assert.doesNotMatch(normalized, /pull_request(?:_target)?:|schedule:|workflow_dispatch:/);
+  assert.ok(normalized.includes("permissions:\n  contents: read\n\nconcurrency:"), "top-level permissions must remain exactly contents: read");
   assert.match(workflow, /actions\/checkout@[0-9a-f]{40}\s+# v6\.0\.2/);
   assert.match(workflow, /actions\/configure-pages@[0-9a-f]{40}\s+# v5\.0\.0/);
   assert.match(workflow, /actions\/upload-pages-artifact@[0-9a-f]{40}\s+# v4\.0\.0[\s\S]*?path:\s+site/);
-  assert.match(workflow, /deploy:\s*[\s\S]*?needs:\s+build[\s\S]*?permissions:\s*\n\s+pages:\s*write\s*\n\s+id-token:\s*write/);
+  assert.ok(deployStart >= 0);
+  assert.ok(deploy.includes("permissions:\n      pages: write\n      id-token: write\n    environment:"), "deploy permissions must remain exactly pages: write and id-token: write");
+  assert.doesNotMatch(deploy, /actions\/checkout|\n\s+run:/, "the privileged deploy job must not check out or run repository code");
   assert.match(workflow, /environment:\s*\n\s+name:\s+github-pages\s*\n\s+url:\s+\$\{\{ steps\.deployment\.outputs\.page_url \}\}/);
   assert.match(workflow, /actions\/deploy-pages@[0-9a-f]{40}\s+# v4\.0\.5/);
 });
