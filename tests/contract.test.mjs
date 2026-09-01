@@ -85,11 +85,13 @@ test("the Traditional Chinese entry description stays semantically aligned", () 
 
 test("the isolated canonical site stays factual, dependency-free, and motion-optional", () => {
   const siteRoot = path.join(ROOT, "site");
-  const files = fs.readdirSync(siteRoot, { withFileTypes: true })
-    .filter((entry) => entry.name !== ".DS_Store")
-    .map((entry) => entry.name)
+  const trackedSite = run("git", ["ls-files", "--", "site"], { cwd: ROOT });
+  assert.equal(trackedSite.status, 0, trackedSite.stderr);
+  const files = trackedSite.stdout.trim().split(/\r?\n/)
+    .filter(Boolean)
+    .map((file) => path.relative("site", file))
     .sort();
-  assert.deepEqual(files, ["index.html", "styles.css"], "site/ must remain an explicit static-source allowlist");
+  assert.deepEqual(files, ["index.html", "styles.css"], "tracked site/ sources must remain an explicit allowlist");
 
   const html = fs.readFileSync(path.join(siteRoot, "index.html"), "utf8");
   const css = fs.readFileSync(path.join(siteRoot, "styles.css"), "utf8");
