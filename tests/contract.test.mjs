@@ -86,6 +86,7 @@ test("the Traditional Chinese entry description stays semantically aligned", () 
 test("the isolated canonical site stays factual, dependency-free, and motion-optional", () => {
   const siteRoot = path.join(ROOT, "site");
   const files = fs.readdirSync(siteRoot, { withFileTypes: true })
+    .filter((entry) => entry.name !== ".DS_Store")
     .map((entry) => entry.name)
     .sort();
   assert.deepEqual(files, ["index.html", "styles.css"], "site/ must remain an explicit static-source allowlist");
@@ -98,6 +99,8 @@ test("the isolated canonical site stays factual, dependency-free, and motion-opt
   assert.match(html, /<html lang="en">/);
   assert.match(html, /<meta charset="utf-8">/);
   assert.match(html, /<meta name="viewport" content="width=device-width, initial-scale=1">/);
+  assert.ok(html.includes('<link rel="stylesheet" href="styles.css">'));
+  assert.equal((html.match(/<link\b/gi) ?? []).length, 2, "site must not load additional link resources");
   assert.match(html, new RegExp(`<meta name="description" content="${escapedDescription}">`));
   assert.match(html, new RegExp(`<meta property="og:description" content="${escapedDescription}">`));
   assert.ok(html.includes(`<link rel="canonical" href="${CANONICAL_SITE_URL}">`));
@@ -110,12 +113,15 @@ test("the isolated canonical site stays factual, dependency-free, and motion-opt
   assert.match(html, /not affiliated with, endorsed by, or sponsored by Google LLC or Anthropic/);
   assert.match(html, /Read-only is an intent, not an enforced filesystem boundary/);
   assert.match(html, /The plugin operates no hosted service/);
+  assert.match(html, /<div class="hero-visual" role="img" aria-label="[^"]+">/);
   assert.match(html, /<svg[^>]*aria-hidden="true"/);
   assert.match(html, /<ol class="workflow-steps"/);
 
-  assert.doesNotMatch(html, /<(?:script|iframe)\b/i);
+  assert.doesNotMatch(html, /<(?:script|iframe|img|picture|video|audio|source|object|embed)\b/i);
   assert.doesNotMatch(html, /\b(?:SEO|AEO|GEO|ranking|ranked|best|leading|official plugin)\b/i);
   assert.doesNotMatch(html, /\b(?:all|every)\s+review commands?\s+are\s+read-only\b/i);
+  assert.doesNotMatch(html, /\breview commands?\s+are\s+always\s+read-only\b/i);
+  assert.doesNotMatch(html, /\ball\s+reviews?\s+are\s+read-only\b/i);
   assert.doesNotMatch(html, /\b(?:all|every)\s+(?:delegated\s+)?engines?\s+(?:is|are)\s+fully sandboxed\b/i);
   assert.doesNotMatch(css, /@import|url\s*\(\s*["']?https?:/i, "site CSS must not load third-party assets");
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
