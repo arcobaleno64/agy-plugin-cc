@@ -468,8 +468,8 @@ footer p {
 
   .hero-visual {
     order: 2;
-    max-width: 37rem;
-    margin-inline: auto;
+    width: min(100%, 37rem);
+    justify-self: center;
   }
 
   .workflow-steps,
