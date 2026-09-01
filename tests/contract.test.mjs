@@ -139,17 +139,24 @@ test("the canonical site deploys only its allowlisted source from main", () => {
   const workflow = fs.readFileSync(path.join(ROOT, ".github", "workflows", "pages.yml"), "utf8");
   const normalized = workflow.replace(/\r\n/g, "\n");
   const deployStart = normalized.indexOf("\n  deploy:");
-  const deploy = normalized.slice(deployStart);
+  assert.ok(deployStart >= 0);
+  const followingJob = normalized.slice(deployStart + 1).search(/\n  [a-z0-9_-]+:\n/i);
+  const deployEnd = followingJob < 0 ? normalized.length : deployStart + 1 + followingJob;
+  const deploy = normalized.slice(deployStart, deployEnd);
 
   assert.ok(normalized.includes('push:\n    branches: [main]\n    paths:\n      - "site/**"\n      - ".github/workflows/pages.yml"'));
   assert.doesNotMatch(normalized, /pull_request(?:_target)?:|schedule:|workflow_dispatch:/);
   assert.ok(normalized.includes("permissions:\n  contents: read\n\nconcurrency:"), "top-level permissions must remain exactly contents: read");
   assert.match(workflow, /actions\/checkout@[0-9a-f]{40}\s+# v6\.0\.2/);
   assert.match(workflow, /actions\/configure-pages@[0-9a-f]{40}\s+# v5\.0\.0/);
-  assert.match(workflow, /actions\/upload-pages-artifact@[0-9a-f]{40}\s+# v4\.0\.0[\s\S]*?path:\s+site/);
-  assert.ok(deployStart >= 0);
+  assert.match(normalized, /actions\/upload-pages-artifact@[0-9a-f]{40} # v4\.0\.0\n        with:\n          path: site$/m);
   assert.ok(deploy.includes("permissions:\n      pages: write\n      id-token: write\n    environment:"), "deploy permissions must remain exactly pages: write and id-token: write");
-  assert.doesNotMatch(deploy, /actions\/checkout|\n\s+run:/, "the privileged deploy job must not check out or run repository code");
+  assert.doesNotMatch(deploy, /(?:^|\n)[^\S\n]*(?:-[^\S\n]*)?run:/, "the privileged deploy job must not run repository code");
+  assert.deepEqual(
+    [...deploy.matchAll(/^\s+(?:-\s+)?uses:\s+(\S+)/gm)].map((match) => match[1]),
+    ["actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e"],
+    "the privileged deploy job must invoke only the reviewed deploy-pages action",
+  );
   assert.match(workflow, /environment:\s*\n\s+name:\s+github-pages\s*\n\s+url:\s+\$\{\{ steps\.deployment\.outputs\.page_url \}\}/);
   assert.match(workflow, /actions\/deploy-pages@[0-9a-f]{40}\s+# v4\.0\.5/);
 });
