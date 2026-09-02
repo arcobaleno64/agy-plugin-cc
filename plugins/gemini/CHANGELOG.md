@@ -2,6 +2,28 @@
 
 ## 0.24.4 - Unreleased
 
+- **The reviewer walkthrough stops competing with the job it is waiting for.**
+  `waitForRunningJob` and `waitForJob` in `scripts/reviewer-demo.mjs` polled by
+  spawning a full `gemini-companion.mjs status` process per iteration. Measured
+  on this machine while the suite was running: **245 ms per spawn against
+  0.05 ms for reading the job file** — roughly 4,900x, and on top of the nominal
+  200 ms interval, so a 30 s budget bought about 67 polls and spent some 16 s of
+  Node startup on the same machine the worker was trying to start on. Both waits
+  now read the job file directly, poll every 100 ms, and get 60 s. The reads use
+  a local null-on-error helper rather than `state.mjs`'s `readJobFile`, which
+  synthesises a `failed` job for an unreadable file — a poller would read that
+  as terminal and stop on a half-written write.
+
+  This matters beyond a flake: the walkthrough is the evidence a directory
+  reviewer runs in place of a testing account (Software Directory Policy 3.D),
+  and the degraded path prints "the worker never reported a running process",
+  which reads as a broken plugin rather than a busy machine.
+
+  Honest about what was verified: the original failure is load-dependent and
+  did **not** reproduce here — five runs under a full-suite load passed both
+  with and without the change, so that experiment discriminates nothing. The
+  case for the fix is the measured per-poll cost, not a repro.
+
 - **The empty-store message no longer promises jobs that are not there.** It was
   unconditional, and lied in two directions. `/gemini:result --all` against an
   empty store told the user to run the flag they had just run, and called the

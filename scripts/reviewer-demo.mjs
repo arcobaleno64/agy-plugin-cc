@@ -39,6 +39,7 @@ import process from "node:process";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import { resolveJobsDir } from "../plugins/gemini/scripts/lib/state.mjs";
 import { installFakeGemini } from "../tests/fake-gemini-fixture.mjs";
 import { initGitRepo } from "../tests/helpers.mjs";
 
@@ -186,20 +187,47 @@ function installSlowGemini(binDir, seconds = 120) {
   }
 }
 
-function waitForJob(env, cwd, jobId, timeoutMs = 60_000) {
+// Both waits below read the job file directly instead of spawning `status` on
+// every poll. That spawn was part of what they were waiting out: a whole Node
+// process per iteration, on a machine already running the rest of the suite, so
+// the loop competed with the worker it was waiting for. A file read costs
+// nothing, which is what lets the interval drop and the budget mean what it
+// says. The polls were never shown to the reviewer -- only the `show()` calls
+// are -- so nothing about the walkthrough's evidence changes.
+//
+// resolveStateDir reads GEMINI_COMPANION_DATA from process.env, and the demo
+// sets that only on the CHILD env. Borrow it for this one pure call rather than
+// rebuilding the slug/hash layout here, which would break silently the day
+// resolveStateDir changes.
+function resolveDemoJobsDir(dataDir, cwd) {
+  const previous = process.env.GEMINI_COMPANION_DATA;
+  process.env.GEMINI_COMPANION_DATA = dataDir;
+  try {
+    return resolveJobsDir(cwd);
+  } finally {
+    if (previous === undefined) delete process.env.GEMINI_COMPANION_DATA;
+    else process.env.GEMINI_COMPANION_DATA = previous;
+  }
+}
+
+// Deliberately NOT state.mjs's readJobFile: that one turns an unreadable file
+// into a synthetic `failed` job, which a poller would read as a terminal state
+// and stop on. A half-written file means "not yet", so this returns null and
+// the caller keeps waiting.
+function readDemoJob(jobsDir, jobId) {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(jobsDir, `${jobId}.json`), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function waitForJob(jobsDir, jobId, timeoutMs = 60_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const probe = spawnSync(process.execPath, ["--no-deprecation", COMPANION, "status", jobId, "--json"], {
-      cwd, env, encoding: "utf8", windowsHide: true
-    });
-    try {
-      const payload = JSON.parse(probe.stdout);
-      const job = payload.job ?? payload.jobs?.[0] ?? payload;
-      if (job && ["completed", "failed", "cancelled", "canceled"].includes(String(job.status))) return job.status;
-    } catch {
-      // status not written yet — keep waiting
-    }
-    sleep(400);
+    const job = readDemoJob(jobsDir, jobId);
+    if (job && ["completed", "failed", "cancelled", "canceled"].includes(String(job.status))) return job.status;
+    sleep(100);
   }
   return "timed-out";
 }
@@ -228,31 +256,23 @@ function waitForJob(env, cwd, jobId, timeoutMs = 60_000) {
 // "worker" — a worker is up but its engine never reported in; cancel still has
 // something to terminate, and the step says so rather than pretending.
 // "none"   — nothing to go on.
-function waitForRunningJob(env, cwd, jobId, timeoutMs = 30_000) {
+function waitForRunningJob(jobsDir, jobId, timeoutMs = 60_000) {
   const deadline = Date.now() + timeoutMs;
   let sawWorker = false;
   while (Date.now() < deadline) {
-    const probe = spawnSync(process.execPath, ["--no-deprecation", COMPANION, "status", jobId, "--json"], {
-      cwd, env, encoding: "utf8", windowsHide: true
-    });
-    try {
-      const payload = JSON.parse(probe.stdout);
-      const job = payload.job ?? payload.jobs?.[0] ?? payload;
-      const status = String(job?.status ?? "");
-      const phase = String(job?.phase ?? "");
-      if (status === "running" && job.pid) {
-        sawWorker = true;
-        if (phase === "running" || phase === "reviewing") return "engine";
-      }
-      // Anything neither queued nor running has finished, and will never reach
-      // running. Phrased as the complement of "still active" rather than as a
-      // list of terminal states, which would need updating every time the
-      // runtime gains one.
-      if (status && status !== "queued" && status !== "running") return sawWorker ? "worker" : "none";
-    } catch {
-      // status not written yet — keep waiting
+    const job = readDemoJob(jobsDir, jobId);
+    const status = String(job?.status ?? "");
+    const phase = String(job?.phase ?? "");
+    if (status === "running" && job.pid) {
+      sawWorker = true;
+      if (phase === "running" || phase === "reviewing") return "engine";
     }
-    sleep(200);
+    // Anything neither queued nor running has finished, and will never reach
+    // running. Phrased as the complement of "still active" rather than as a
+    // list of terminal states, which would need updating every time the
+    // runtime gains one.
+    if (status && status !== "queued" && status !== "running") return sawWorker ? "worker" : "none";
+    sleep(100);
   }
   return sawWorker ? "worker" : "none";
 }
@@ -312,6 +332,7 @@ function main() {
   installFakeGemini(binDir, "task");
   const repo = buildWorkspace(root);
   const env = buildEnv(binDir, dataDir);
+  const jobsDir = resolveDemoJobsDir(dataDir, repo);
 
   process.stdout.write(`${c(BOLD, "agy-plugin-cc — credential-free functional walkthrough")}\n`);
   process.stdout.write(`${c(DIM, `workspace: ${root}`)}\n`);
@@ -334,7 +355,7 @@ function main() {
     const started = show(["task", "--background", "add a regression test for the empty case"], { cwd: repo, env });
     const jobId = (started.body.match(JOB_ID) ?? [])[1];
     if (jobId) {
-      const status = waitForJob(env, repo, jobId);
+      const status = waitForJob(jobsDir, jobId);
       process.stdout.write(`${c(DIM, `  (waited for ${jobId} → ${status})`)}\n`);
       show(["status", "--all"], { cwd: repo, env });
       show(["result", jobId], { cwd: repo, env, allowFailure: true });
@@ -356,7 +377,7 @@ function main() {
     const toCancel = show(["task", "--background", "a job that will be cancelled"], { cwd: repo, env });
     const cancelId = (toCancel.body.match(JOB_ID) ?? [])[1];
     if (cancelId) {
-      const ready = waitForRunningJob(env, repo, cancelId);
+      const ready = waitForRunningJob(jobsDir, cancelId);
       if (ready === "worker") {
         note("The engine never reported its turn; cancelling the worker anyway.");
       } else if (ready === "none") {
