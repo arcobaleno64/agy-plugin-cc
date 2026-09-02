@@ -1,6 +1,6 @@
 {
   "name": "gemini",
-  "version": "0.24.2",
+  "version": "0.24.3",
   "description": "agy-plugin-cc is a Claude Code companion for running Gemini CLI or Antigravity CLI (agy) as a cross-model task delegate and code reviewer, with pragmatic and adversarial review, MCP tools, and background jobs.",
   "author": {
     "name": "arcobaleno64",

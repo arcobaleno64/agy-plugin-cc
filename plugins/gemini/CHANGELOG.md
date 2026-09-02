@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.24.3 - 2026-09-02 - A 503 is a flake again
+
+- **A transport 503 that names the model is retried again.** 0.24.2 stopped a
+  spend cap from burning three review attempts by asking `classifyCliFailure`
+  first and refusing to retry anything it called non-retryable. That test was
+  too wide: `model-unavailable` is non-retryable and matches on the bare word
+  `unavailable`, which is exactly what a 503 says. Measured — stderr
+  `503: model gemini-3-pro is temporarily unavailable, try again later` was
+  classified `model-unavailable` and returned on the first attempt, losing the
+  flake absorption `runGeminiReviewResilient` exists for. The guard now names
+  the categories it is about (`quota`, `auth`, `binary-missing`,
+  `prompt-too-long`); every other category stays subject to the transport and
+  envelope heuristics. Both directions are pinned by tests: reverting to the
+  wide test turns the 503 case red, deleting the guard turns the spend-cap
+  cases red. (#132)
+
 ## 0.24.2 - 2026-09-02 - The stop gate stops re-arming, and a spend cap stops being retried
 
 - **A write task now arms the stop-review gate once, not on every turn forever.**
