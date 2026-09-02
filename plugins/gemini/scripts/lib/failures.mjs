@@ -222,7 +222,11 @@ export function classifyCliFailure(input = {}) {
   ) {
     return normalizeFailure("auth", data);
   }
-  if (/quota|billing|RESOURCE_EXHAUSTED/i.test(structuredText)) {
+  // `spend(ing) cap` is matched explicitly: it is the wording Google actually
+  // returns for a project over its monthly limit, it arrives with code 429, and
+  // none of the other three words appear in it — so without this it fell through
+  // to `rate-limit` and was reported (and retried) as a passing flake.
+  if (/quota|billing|RESOURCE_EXHAUSTED|spend(ing)? cap/i.test(structuredText)) {
     return normalizeFailure("quota", data);
   }
   if (/\b429\b|too many requests|rate.?limit/i.test(structuredText)) {

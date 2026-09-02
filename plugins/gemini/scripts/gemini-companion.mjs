@@ -115,7 +115,7 @@ function printUsage() {
       "  node scripts/gemini-companion.mjs setup [--json] [--probe-agy] [--probe-gemini] [--enable-review-gate|--disable-review-gate]",
       "  node scripts/gemini-companion.mjs adversarial-review [--wait|--background] [--deep] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--effort <level>] [--engine agy|gemini|auto] [--engines gemini,agy] [--timeout <seconds>] [focus text]",
       "  node scripts/gemini-companion.mjs review [--wait|--background] [--deep] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--effort <level>] [--engine agy|gemini|auto] [--timeout <seconds>]",
-      "  node scripts/gemini-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--model <model>] [--effort <low|medium|high>] [--engine agy|gemini|auto] [--timeout <seconds>] [prompt]",
+      "  node scripts/gemini-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--model <model>] [--effort <none|minimal|low|medium|high|xhigh>] [--engine agy|gemini|auto] [--timeout <seconds>] [prompt]",
       "  node scripts/gemini-companion.mjs status [job-id] [--all] [--json]",
       "  node scripts/gemini-companion.mjs result [job-id] [--json]",
       "  node scripts/gemini-companion.mjs cancel [job-id] [--json]",

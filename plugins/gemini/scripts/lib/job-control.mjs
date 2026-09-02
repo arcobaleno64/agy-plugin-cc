@@ -306,7 +306,13 @@ export function reconcileActiveJobs(workspaceRoot, jobs, options = {}) {
   return changed ? listJobs(workspaceRoot) : reconciled;
 }
 
-function matchJobReference(jobs, reference, predicate = () => true) {
+// `missing: "throw"` is the default because most callers have nothing better to
+// say than "that id is not here". resolveResultJob does: it probes with a
+// finished-only predicate first and then with an active one, so a throw on the
+// first probe hides the "still running" answer the second probe exists to give.
+// That is exactly what `gemini_job_result` on a running job reported — "No job
+// found" for a job whose file was on disk and which /gemini:status was listing.
+function matchJobReference(jobs, reference, predicate = () => true, { missing = "throw" } = {}) {
   const filtered = jobs.filter(predicate);
   if (!reference) {
     return filtered[0] ?? null;
@@ -325,6 +331,9 @@ function matchJobReference(jobs, reference, predicate = () => true) {
     throw new Error(`Job reference "${reference}" is ambiguous. Use a longer job id.`);
   }
 
+  if (missing === "null") {
+    return null;
+  }
   throw new Error(`No job found for "${reference}". Run /gemini:status to list known jobs.`);
 }
 
@@ -390,14 +399,20 @@ export function resolveResultJob(cwd, reference, options = {}) {
   const selected = matchJobReference(
     jobs,
     reference,
-    (job) => job.status === "completed" || job.status === "failed" || job.status === "partial" || job.status === "cancelled"
+    (job) => job.status === "completed" || job.status === "failed" || job.status === "partial" || job.status === "cancelled",
+    { missing: "null" }
   );
 
   if (selected) {
     return { workspaceRoot, job: selected };
   }
 
-  const active = matchJobReference(jobs, reference, (job) => job.status === "queued" || job.status === "running");
+  const active = matchJobReference(
+    jobs,
+    reference,
+    (job) => job.status === "queued" || job.status === "running",
+    { missing: "null" }
+  );
   if (active) {
     throw new Error(`Job ${active.id} is still ${active.status}. Check /gemini:status and try again once it finishes.`);
   }
@@ -406,7 +421,15 @@ export function resolveResultJob(cwd, reference, options = {}) {
     throw new Error(`No finished job found for "${reference}". Run /gemini:status to inspect active jobs.`);
   }
 
-  throw new Error("No finished Gemini jobs found for this repository yet.");
+  // Scope honestly: the candidates were filtered to THIS session, so a finished
+  // job from ANOTHER session exists in the repository and is reachable with
+  // --all. Claiming the repository has none sends the user looking for a
+  // job-store problem that is not there. MCP-queued jobs are NOT among the
+  // hidden ones: filterJobsForCurrentSession includes untagged jobs by default
+  // (`includeUnattributed !== false`), so they are already listed here.
+  throw new Error(
+    "No finished Gemini jobs found for this session yet. Another session's jobs are not listed here — run `/gemini:result --all` to include them."
+  );
 }
 
 export function resolveResultJobs(cwd, reference, options = {}) {
@@ -470,8 +493,18 @@ export function resolveCancelableJob(cwd, reference, options = {}) {
   const activeJobs = jobs.filter((job) => job.status === "queued" || job.status === "running");
 
   if (reference) {
-    const selected = matchJobReference(activeJobs, reference);
+    // missing:"null" so the branch below is reachable. With the default throw,
+    // cancelling an id that has already finished reported `No job found` — the
+    // job plainly exists, it is simply past cancelling, and the generic message
+    // sent the user to /gemini:status to look for a store fault that is not there.
+    const selected = matchJobReference(activeJobs, reference, () => true, { missing: "null" });
     if (!selected) {
+      const finished = matchJobReference(jobs, reference, () => true, { missing: "null" });
+      if (finished) {
+        throw new Error(
+          `Job ${finished.id} is already ${finished.status} and cannot be cancelled. Read it with /gemini:result ${finished.id}.`
+        );
+      }
       throw new Error(`No active job found for "${reference}".`);
     }
     return { workspaceRoot, job: selected };

@@ -6,7 +6,7 @@ import process from "node:process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { getConfig, listJobs } from "./lib/state.mjs";
+import { getConfig, listJobs, upsertJob } from "./lib/state.mjs";
 import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
 
 const SELF_PATH = fileURLToPath(import.meta.url);
@@ -29,13 +29,54 @@ function emitDecision(payload) {
   process.stdout.write(`${JSON.stringify(payload)}\n`);
 }
 
-// Exported for test: this predicate decides whether a session that edited the
+// Exported for test: this predicate decides whether a turn that edited the
 // repository is reviewed before it ends, so which statuses count is a claim that
 // has to be pinned rather than read off the line.
-export function hasCompletedWriteTask(jobs) {
-  return jobs.some(
-    (job) => job.write === true && (job.status === "completed" || job.status === "partial") && job.jobClass === "task"
+//
+// The store it reads is the whole WORKSPACE, deliberately: a write task queued
+// through the MCP tools carries no session id, so a session-scoped predicate
+// would leave exactly those edits ungated. The cost of that scope is that the
+// trigger has to be CONSUMED, or one write task arms the gate on every turn
+// forever (SessionEnd never evicts an untagged job). `gateReviewedAt` is that
+// consumption mark.
+//
+// It is compared against `completedAt`, NOT `updatedAt`. `upsertJob` stamps
+// `updatedAt` with its own `nowIso()` on every write, so the very call that
+// records the mark moves `updatedAt` past it — a mark compared against
+// `updatedAt` is stale the instant it is written, and the gate re-arms every
+// turn exactly as before. `completedAt` is written once when the job reaches a
+// terminal state and is not touched by a later patch, so it is the timestamp
+// that identifies WHICH finished result was reviewed. A job that finishes again
+// (a resumed or re-run id) gets a newer `completedAt` and re-arms correctly.
+export function pendingGateWriteTasks(jobs) {
+  return jobs.filter(
+    (job) =>
+      job.write === true &&
+      (job.status === "completed" || job.status === "partial") &&
+      job.jobClass === "task" &&
+      !(job.gateReviewedAt && job.completedAt && job.gateReviewedAt >= job.completedAt)
   );
+}
+
+export function hasCompletedWriteTask(jobs) {
+  return pendingGateWriteTasks(jobs).length > 0;
+}
+
+// Marked only AFTER the review actually produced a verdict. A failed review
+// fails open (below) without marking, so the edits it could not check still arm
+// the gate on the next turn rather than being silently forgiven.
+function markGateReviewed(workspaceRoot, jobs) {
+  const stamp = new Date().toISOString();
+  for (const job of jobs) {
+    try {
+      // touch:false — this records that the gate reviewed the job, not that the
+      // job did anything, and bumping updatedAt would reorder the LRU and evict
+      // a newer result in this one's place.
+      upsertJob(workspaceRoot, { id: job.id, gateReviewedAt: stamp }, { touch: false });
+    } catch {
+      // A job whose file vanished mid-turn needs no mark.
+    }
+  }
 }
 
 function runAdversarialReview(cwd) {
@@ -103,7 +144,8 @@ async function main() {
   }
 
   const jobs = listJobs(workspaceRoot);
-  if (!hasCompletedWriteTask(jobs)) {
+  const pending = pendingGateWriteTasks(jobs);
+  if (pending.length === 0) {
     emitDecision({});
     return;
   }
@@ -120,6 +162,12 @@ async function main() {
     emitDecision({ systemMessage: warning });
     return;
   }
+
+  // The review ran and returned a verdict, so these edits have now been checked.
+  // Mark before acting on the verdict: a `needs-attention` block that did not
+  // mark would re-review the same edits on every subsequent turn, which is the
+  // loop this consumption mark exists to end.
+  markGateReviewed(workspaceRoot, pending);
 
   const verdict = payload?.result?.verdict;
   if (verdict === "needs-attention") {

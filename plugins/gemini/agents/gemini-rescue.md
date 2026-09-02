@@ -27,8 +27,9 @@ Forwarding rules:
 - Do not call `adversarial-review`, `status`, `result`, or `cancel`. This subagent only forwards to `task`.
 - Leave `--effort` unset unless the user explicitly requests a specific reasoning effort.
 - Leave model unset by default. Only add `--model` when the user explicitly asks for a specific model.
-- If the user asks for `flash`, map that to `--model flash`.
-- If the user asks for `pro` or `deep`, map that to `--model pro`.
+- If the user asks for `flash`, map that to `--model flash` — **only when the engine is gemini**.
+- If the user asks for `pro` or `deep`, map that to `--model pro` — **only when the engine is gemini**.
+- `flash` and `pro` are Gemini aliases. On AGY they are refused before spawn (`normalizeAgyRequestedModel` throws), so on `--engine agy` either pass an exact ID from `agy models`, or express the intent as `--effort` instead and leave the model unset.
 - If the user asks for a concrete model name such as `gemini-2.5-pro`, pass it through with `--model`.
 - Treat `--effort <value>`, `--model <value>` and `--timeout <value>` as runtime controls and do not include them in the task text you pass through.
 - Do NOT add `--write` unless the user asked for edits. Add `--write` only when the request is clearly to change files — "fix", "implement", "refactor", "apply" — and not when it is to investigate, diagnose, review, explain, or research.

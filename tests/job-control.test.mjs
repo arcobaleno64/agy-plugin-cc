@@ -234,3 +234,47 @@ test("a groupId whose members have all finished says so instead of \"no job foun
     "the group exists; saying it was not found sends the user after an id they gave correctly"
   );
 });
+
+// ---------------------------------------------------------------------------
+// A running job is not a missing job. resolveResultJob probes twice — finished
+// first, then active — so that it can say "still running" instead of "not
+// found". The finished probe used to THROW on no-match, which meant the active
+// probe was unreachable and gemini_job_result reported "No job found" for a job
+// whose file was on disk and which /gemini:status was listing at that moment.
+// ---------------------------------------------------------------------------
+
+test("resolveResultJob says a running job is still running, not missing", () => {
+  const cwd = makeTempDir();
+  upsertJob(cwd, {
+    id: "task-running-1",
+    title: "Gemini Task",
+    workspaceRoot: cwd,
+    jobClass: "task",
+    status: "running",
+    phase: "reviewing"
+  });
+
+  assert.throws(
+    () => resolveResultJob(cwd, "task-running-1", { all: true }),
+    /task-running-1 is still running/
+  );
+});
+
+test("resolveResultJob still reports a genuinely absent id as not found", () => {
+  const cwd = makeTempDir();
+  assert.throws(() => resolveResultJob(cwd, "task-nope", { all: true }), /No finished job found for "task-nope"/);
+});
+
+test("cancelling a finished job says it is finished, not that it is missing", async () => {
+  const cwd = makeTempDir();
+  await runTrackedJob(
+    { id: "task-done-cancel", title: "Gemini Task", workspaceRoot: cwd, jobClass: "task" },
+    () => ({ exitStatus: 0, payload: { rawOutput: "done" }, rendered: "done", summary: "s" })
+  );
+
+  const { resolveCancelableJob } = await import("../plugins/gemini/scripts/lib/job-control.mjs");
+  assert.throws(
+    () => resolveCancelableJob(cwd, "task-done-cancel", { all: true }),
+    /already completed and cannot be cancelled/
+  );
+});

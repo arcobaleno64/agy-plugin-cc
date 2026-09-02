@@ -176,7 +176,7 @@ AGY 請用 `/gemini:setup --engine agy` 驗證所選引擎；auto／Gemini 請�
 |---|---|
 | `--background` | 分離執行；立即回傳工作 ID |
 | `--write` | 宣告本次執行預期會修改檔案。預設關閉。gemini 上它加的是 `--yolo`，那確實決定寫入工具是否存在；AGY 上它只是在 `--add-dir` 與 `--new-project` 之間擇一，兩者都會將執行定位到你的版本庫，且**都不會限制寫入能力**，故在 AGY 上這是意圖宣告而非邊界——詳見 [安全性](#安全性) |
-| `--resume-last` | 繼續最近一次的 Gemini 工作階段 |
+| `--resume-last` | 繼續最近一次的 Gemini 工作階段。**在 gemini 引擎上與 `--write` 併用會被拒絕**：`gemini --resume` 只接受 `latest` 或索引數字，無法指名特定對話，接續到的可能是別的專案——而編輯會落到那裡。請改用 `--engine agy`（以 id 釘住對話），或不帶 `--write` 接續。 |
 | `--fresh` | 強制開啟全新 Gemini 工作階段，忽略可接續的執行緒 |
 | `--engine <gemini\|agy\|auto>` | 覆蓋引擎選擇 |
 | `--model <別名\|ID>` | 指定模型。Gemini 解析其別名；AGY 1.1.10+ 要求使用 `agy models` 列出的精確 model ID。AGY 的模型選擇不可與 `--effort` 或雙引擎（`--engines gemini,agy`）審查合併。 |
@@ -190,7 +190,7 @@ AGY 請用 `/gemini:setup --engine agy` 驗證所選引擎；auto／Gemini 請�
 |---|---|
 | `--engine <gemini\|agy\|auto>` | 決定輸出哪一種接手命令；`auto`（預設）兩種都印 |
 | `--model <ID>` | 帶入產生命令的模型指定。AGY 要求使用 `agy models` 列出的精確 ID |
-| `--effort <low\|medium\|high\|xhigh>` | 帶入產生之 AGY 命令的推理強度，不可與 `--model` 併用 |
+| `--effort <low\|medium\|high\|xhigh>` | 帶入產生之 AGY 命令的推理強度，不可與 `--model` 併用。**AGY 只接受 `low`、`medium`、`high`**——`xhigh` 產生的命令會被 AGY 拒絕。產生的 **gemini** 命令則完全不帶 effort 旗標 |
 
 ### `/gemini:review`
 
@@ -205,6 +205,7 @@ AGY 請用 `/gemini:setup --engine agy` 驗證所選引擎；auto／Gemini 請�
 | `--engine <gemini\|agy\|auto>` | 覆蓋引擎 |
 | `--model <別名\|ID>` | 指定模型 |
 | `--effort <level>` | Gemini 的模型選擇；未指定 AGY model 時的 AGY 1.1.10+ 原生推理強度（`low`、`medium`、`high`） |
+| `--engines gemini,agy` | 同時以兩個引擎各跑一次獨立的盲審。與 `--engine` 互斥，且不可與 AGY 的模型選擇併用 |
 
 ### `/gemini:adversarial-review [焦點]`
 
@@ -238,7 +239,7 @@ AGY 請用 `/gemini:setup --engine agy` 驗證所選引擎；auto／Gemini 請�
 
 | 旗標 | 說明 |
 |---|---|
-| `--wait` | 阻塞直到工作完成（需提供工作 ID） |
+| `--wait` | 阻塞直到工作完成（需提供工作 ID）。等待 4 分鐘後放棄並回報當下狀態——工作本身仍在跑，可再次 `--wait` 或稍後用 `/gemini:result` 收取 |
 | `--all` | 顯示所有工作，不限本次會話 |
 
 ### `/gemini:result [工作-ID]`
@@ -276,13 +277,19 @@ AGY 請用 `/gemini:setup --engine agy` 驗證所選引擎；auto／Gemini 請�
 
 ### 僅限斜線命令（明列缺口）
 
-列出來是為了讓缺口可見，而不是等人踩到：`/gemini:setup` 與其 probe 旗標（本質上是互動式的）、`/gemini:transfer`（會寫入工作區內的快照，且需要模型自行撰寫 instructions 檔）、`--resume-last`、`--engines gemini,agy` 都不在這個介面上——請改用斜線命令或 CLI。三個會花費 turn 的 MCP 工具都接受整數 `timeout`；省略時採各引擎預設值。每次 `gemini_rescue` 都是全新的 turn。[Review Gate](#review-gate可選) 由 `/gemini:setup` 設定，之後對整個 session 生效，與工作由哪個介面排入無關。
+列出來是為了讓缺口可見，而不是等人踩到：`/gemini:setup` 與其 probe 旗標（本質上是互動式的）、`/gemini:transfer`（會寫入工作區內的快照，且需要模型自行撰寫 instructions 檔）、`--resume-last`、`--engines gemini,agy` 都不在這個介面上——請改用斜線命令或 CLI。三個會花費 turn 的 MCP 工具都接受整數 `timeout`；省略時採各引擎預設值。每次 `gemini_rescue` 都是全新的 turn。[Review Gate](#review-gate可選) 由 `/gemini:setup` 設定，該設定**以 workspace 為單位存放在磁碟上**，因此跨 session 持續有效，並且在每個版本庫都要各自啟用一次。
 
 ---
 
 ## Review Gate（可選）
 
-可選的停止時審查閘門，當本次 session 有 `--write` 工作完成或帶著 partial output 返回時，在 Claude Code 停止前自動執行對抗性審查。預設停用；partial 也計入，因為檔案可能已被修改。
+可選的閘門，當有 `--write` 工作完成或帶著 partial output 返回時，在 Claude Code 停止前自動執行對抗性審查。預設停用；partial 也計入，因為檔案可能已被修改。
+
+它的作用域有三點容易誤解：
+
+- **每個 agent turn 結束都會跑**，不是 session 結束才跑一次——Claude Code 的 `Stop` hook 是逐 turn 觸發的。
+- **它找的 `--write` 工作是整個 workspace 裡的任何一個**，不限本次 session（`stop-review-gate-hook.mjs` 讀的是整個 workspace job store）。透過 MCP 工具排入的 write 工作不帶 session id，session 結束時不會被清掉，因此會持續讓閘門保持武裝，直到 50 筆的 job store 把它擠掉。
+- **啟用／停用的設定以 workspace 為單位存在磁碟上**，重啟後仍有效，且每個版本庫都要各自啟用一次。
 
 透過 `/gemini:setup` 啟用或停用：
 

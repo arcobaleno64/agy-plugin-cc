@@ -1,6 +1,6 @@
 ---
 description: Run an adversarial Gemini code review that challenges the implementation approach and design choices
-argument-hint: '[--wait|--background] [--deep] [--base <ref>] [--scope auto|working-tree|branch] [--engine <agy|gemini> | --engines gemini,agy] [--model <flash|pro>] [--timeout <seconds>] [focus ...]'
+argument-hint: '[--wait|--background] [--deep] [--base <ref>] [--scope auto|working-tree|branch] [--engine <agy|gemini> | --engines gemini,agy] [--model <flash|pro>] [--effort <level>] [--timeout <seconds>] [focus ...]'
 disable-model-invocation: true
 allowed-tools: Read, Glob, Grep, Bash(node:*), Bash(git:*), AskUserQuestion
 ---
@@ -65,7 +65,7 @@ Argument handling:
 - Preserve the user's arguments exactly.
 - Do not strip `--wait` or `--background` yourself.
 - Do not weaken the adversarial framing or rewrite the user's focus text.
-- The companion script handles `--background` itself: it enqueues the review and spawns a detached `review-worker`, so the result persists even if this session ends. Do not use Claude's `run_in_background: true` for it.
+- The companion script handles `--background` itself: it enqueues the review and spawns a detached `review-worker`, so the result outlives the foreground command. It does not outlive the session: `SessionEnd` removes this session's job records, finished ones included, so collect it with `/gemini:result` before the session ends. Do not use Claude's `run_in_background: true` for it.
 - `/gemini:adversarial-review` uses the same review target selection as `/gemini:review` (including `--base <ref>` and `--scope`).
 - Unlike `/gemini:review`, it can take extra focus text after the flags.
 - `--engines gemini,agy` queues the same blind prompt on both available engines as a background group. The jobs share a group ID but do not receive each other's identity or output. Do not combine `--engines` with `--engine` or `--wait`.

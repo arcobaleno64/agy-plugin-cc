@@ -1,5 +1,102 @@
 # Changelog
 
+## 0.24.2 - 2026-09-02 - The stop gate stops re-arming, and a spend cap stops being retried
+
+- **A write task now arms the stop-review gate once, not on every turn forever.**
+  The gate reads the whole workspace job store on purpose — a write task queued
+  through the MCP tools carries no session id, so a session-scoped predicate
+  would leave exactly those edits ungated — but nothing consumed the trigger,
+  and `SessionEnd` never evicts an untagged job. One MCP `--write` task therefore
+  re-ran an adversarial review at the end of every agent turn, indefinitely.
+  Jobs are now stamped `gateReviewedAt` once a review returns a verdict, and
+  re-arm only when the job reaches a terminal state again. The mark is compared
+  against `completedAt`, not `updatedAt`: `upsertJob` stamps `updatedAt` on every
+  write, so a mark compared against it is stale the instant it is recorded and the
+  gate re-arms every turn regardless — the defect this fix exists to remove. A
+  review that fails still fails
+  open **without** marking, so edits it could not check are not silently
+  forgiven. New `pendingGateWriteTasks` export; `hasCompletedWriteTask` is kept
+  as a predicate over it. (`stop-review-gate-hook.mjs`)
+
+- **The gate's review mark no longer evicts a newer result.** `listJobs` sorts by
+  `updatedAt` and `pruneJobStore` evicts everything past the 50-job cap, so
+  stamping the mark through a normal `upsertJob` promoted an old reviewed job to
+  the head of the list and evicted a NEWER finished result in its place.
+  `upsertJob` takes `{ touch: false }` for patches that record something about a
+  job rather than something the job did. (`lib/state.mjs`,
+  `stop-review-gate-hook.mjs`)
+
+- **Cancelling an already-finished job no longer reports it as missing.**
+  `resolveCancelableJob` searched only active jobs with the throwing form of
+  `matchJobReference`, so its own `No active job found` branch was unreachable and
+  a finished id came back as `No job found` — pointing at /gemini:status, which
+  then displayed the job. It now names the job and its status. (`lib/job-control.mjs`)
+
+- **An exhausted spend cap is no longer retried three times.** Google returns
+  `Your project has exceeded its monthly spending cap` with code 429, and none of
+  `quota`, `billing`, or `RESOURCE_EXHAUSTED` appear in it, so `classifyCliFailure`
+  fell through to `rate-limit` (retryable) and the review wrapper's transport
+  heuristic re-ran the review. Measured: three full attempts over 10m46s to reach
+  the same refusal. The classifier now matches `spend(ing) cap` as `quota`, and
+  `isTransientReviewFailure` consults `classifyCliFailure` before its own
+  heuristic, so any failure classified non-retryable ends the run immediately. A
+  plain `429 Too Many Requests` still retries. (`lib/failures.mjs`, `lib/gemini.mjs`)
+
+- **Docs corrected where they described the gate's scope wrongly.** The `Stop`
+  hook runs at the end of every agent turn, not once at session end; the gate's
+  enable/disable setting is stored per workspace on disk, so it persists across
+  sessions and must be enabled again in each repository; the `--write` task that
+  arms it is any one in the workspace, not only one from the current session; and
+  `SessionEnd` removes a session's finished job records too, so a background
+  result must be collected before the session ends rather than after.
+  (`README.md`, `README.zh-TW.md`, `plugins/gemini/README.md`,
+  `commands/review.md`, `commands/adversarial-review.md`, `lib/render.mjs`)
+
+- **`/gemini:result` no longer printed a resume command that cannot run.** The
+  gemini branch emitted `gemini --resume <session-id>`, but that flag accepts only
+  `latest` or an index number — the id is not addressable, as the runtime's own
+  `--resume-last --write` refusal already explained. The session id is still
+  shown; the paste-ready line is replaced by a note pointing at `--resume-last`.
+  New `resumeLine` helper, so a null command cannot render as the literal
+  `null`. (`lib/render.mjs`)
+
+- **`/gemini:result` on a running job said "No job found".** `resolveResultJob`
+  probes twice — finished first, then active — so it can answer "still running"
+  instead of "not found", but the first probe threw on no-match and the second was
+  unreachable. Measured through `gemini_job_result`: a job whose file was on disk
+  and which `/gemini:status` was listing as `running` came back as missing, with a
+  next step (`/gemini:status`) that then showed the job. `matchJobReference` takes
+  a `missing` mode, and the two probes inside `resolveResultJob` pass `"null"`;
+  every other caller keeps the throw. (`lib/job-control.mjs`)
+
+- **`/gemini:result` with nothing to show no longer overstates its scope.** The
+  message said no finished jobs existed "for this repository" while the search was
+  filtered to the current session, sending users to look for a job-store fault
+  that was not there. It now says "for this session" and names `--all`.
+  (`lib/job-control.mjs`)
+
+- **Flag documentation corrected where it under-reported the runtime.**
+  `--resume-last` is refused with `--write` on the gemini engine (README said
+  nothing); `--engines gemini,agy` was missing from the adversarial-review flag
+  table; `--effort` was missing from both review commands' argument hints;
+  `status --wait` gives up after 4 minutes rather than blocking indefinitely;
+  `transfer --effort xhigh` produces a command AGY rejects and the generated
+  gemini command carries no effort flag at all; and the CLI help for `task`
+  listed only `low|medium|high` when `none`, `minimal`, and `xhigh` are accepted.
+  (`README.md`, `README.zh-TW.md`, `commands/*.md`, `gemini-companion.mjs`)
+
+- **The rescue subagent no longer maps `flash` / `pro` to `--model` on AGY.**
+  Those are Gemini aliases; `normalizeAgyRequestedModel` refuses them before
+  spawn, so the instruction produced a guaranteed fatal error whenever the engine
+  was AGY. It is now conditioned on the engine, with `--effort` named as the AGY
+  route. (`agents/gemini-rescue.md`)
+
+- The comment justifying "agy is never retried" no longer cites agy's
+  transcript-recovery path: from AGY 1.1.8 on, `supportsAgyStructuredOutput`
+  routes to the native JSON envelope and that path never runs. The behaviour is
+  unchanged — the fail-fast timeout and respawn cost still hold it up — but the
+  stale half of the rationale is removed rather than left to be trusted.
+
 ## 0.24.1 - 2026-08-28 - Readonly guard now detects untracked submodule writes on Linux
 
 - **Readonly review jobs now fail when a submodule's untracked content changes.**

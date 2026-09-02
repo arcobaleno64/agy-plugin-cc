@@ -1537,7 +1537,8 @@ test("result returns the stored output and resume hint for the latest finished j
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Handled the requested task\./);
   assert.match(result.stdout, /Gemini session ID: thr_finished/);
-  assert.match(result.stdout, /Resume in Gemini: gemini --resume thr_finished/);
+  assert.match(result.stdout, /Resume in Gemini: gemini --resume takes only "latest" or an index, not this id/);
+  assert.doesNotMatch(result.stdout, /gemini --resume thr_finished/);
 });
 
 test("status and result aggregate adversarial-review jobs by groupId", () => {
@@ -1907,7 +1908,10 @@ test("result is scoped to the current session and needs --all to read another se
 
   const blocked = run("node", [SCRIPT, "result", "task-other"], { cwd: workspace, env });
   assert.notEqual(blocked.status, 0);
-  assert.match(blocked.stderr, /No job found/i);
+  // "No finished job found", not "No job found": the finished probe now returns
+  // null so the active probe can answer, and the wording it falls through to says
+  // which question was asked. Still hidden without --all, which is the point here.
+  assert.match(blocked.stderr, /No finished job found for "task-other"/);
 
   const crossed = run("node", [SCRIPT, "result", "task-other", "--all"], { cwd: workspace, env });
   assert.equal(crossed.status, 0, crossed.stderr);
@@ -1934,7 +1938,11 @@ test("cancel is scoped to the current session and will not target another sessio
   // By id: the job belongs to another session, so it is not a candidate.
   const byId = run("node", [SCRIPT, "cancel", "task-other"], { cwd: workspace, env });
   assert.notEqual(byId.status, 0);
-  assert.match(byId.stderr, /No job found/i);
+  // "No active job found": the finished-job branch added for a cancellable id
+  // searches the SAME session-scoped list, so another session's job is still
+  // invisible here — the message must not name it or reveal its status.
+  assert.match(byId.stderr, /No active job found for "task-other"/);
+  assert.doesNotMatch(byId.stderr, /running|Other session task/);
 
   // No id: the only active job belongs to another session, so there is nothing
   // in scope to cancel (it must NOT silently grab the other session's job).

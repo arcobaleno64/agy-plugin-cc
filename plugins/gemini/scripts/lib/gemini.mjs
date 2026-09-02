@@ -932,6 +932,15 @@ export function isTransientReviewFailure({ reviewJson, reviewText, stderr } = {}
   if (reviewJson != null) return false;                       // got structured findings — success
   const out = (reviewText ?? "").trim();
   const err = (stderr ?? "").trim();
+  // Asked BEFORE the transient heuristic, because the two overlap and only one
+  // of them is right: TRANSPORT_REVIEW_RE matches `429` and `resource_exhausted`
+  // on the theory that they are a passing rate limit, but the SAME words carry a
+  // spend cap or an exhausted billing quota, which no number of retries fixes.
+  // classifyCliFailure already separates those (`quota` is retryable:false and is
+  // tested ahead of `rate-limit`), so defer to it rather than keeping a second
+  // opinion here. Measured: a project over its monthly spend cap burned three full
+  // review attempts over 10m46s before reporting a non-retryable failure.
+  if (err && classifyCliFailure({ stderr: err }).retryable === false) return false;
   if (!out && !err) return true;                              // empty stdout+stderr — nothing usable
   if (ENVELOPE_REVIEW_RE.test(`${out}\n${err}`)) return true; // envelope — trusted on either channel
   if (TRANSPORT_REVIEW_RE.test(err)) return true;             // transport flake — trusted on stderr only
@@ -942,8 +951,11 @@ export function isTransientReviewFailure({ reviewJson, reviewText, stderr } = {}
 // idempotent (no side effects), so a transient empty / `Invalid stream` envelope is
 // safe to re-run. The gemini CLI flakes intermittently on this in practice
 // (observed needing 2-3 attempts for the SAME input); retrying here removes that
-// flakiness from the caller. agy is NOT retried — its transcript-recovery path and
-// fail-fast timeout handle its distinct failure mode, and re-spawning it is costly.
+// flakiness from the caller. agy is NOT retried — its fail-fast timeout handles its
+// distinct failure mode and re-spawning it is costly. (The original rationale also
+// cited agy's transcript-recovery path; that no longer applies from AGY 1.1.8 on,
+// where `supportsAgyStructuredOutput` routes to the native JSON envelope and the
+// transcript path never runs. The remaining two reasons are what holds it up now.)
 // Composes with runGeminiReview's inline GA-fallback (model-not-found) retry: that
 // fixes a deterministic wrong-model error within a single attempt; this re-runs the
 // whole review only when no usable result came back at all.
