@@ -260,6 +260,61 @@ test("resolveResultJob says a running job is still running, not missing", () => 
   );
 });
 
+// The empty-store message is advice, and advice that names the flag the user
+// just passed is worse than none: it sends them round the same loop and
+// misreports the scope that was actually searched. Two conditions have to hold
+// before --all is worth naming: the caller did not already pass it, AND there
+// is a finished job in another session to widen to.
+// ---------------------------------------------------------------------------
+
+function otherSessionJob(cwd) {
+  upsertJob(cwd, {
+    id: "task-other-session",
+    title: "Gemini Task",
+    workspaceRoot: cwd,
+    jobClass: "task",
+    sessionId: "session-not-ours",
+    status: "completed",
+    completedAt: "2026-01-01T00:00:00.000Z"
+  });
+}
+
+test("resolveResultJob points at --all when another session has a finished job", () => {
+  const cwd = makeTempDir();
+  otherSessionJob(cwd);
+  assert.throws(
+    () => resolveResultJob(cwd, null, {}),
+    (error) => /for this session/.test(error.message) && /--all/.test(error.message)
+  );
+});
+
+test("resolveResultJob resolves that hidden job once --all is passed", () => {
+  const cwd = makeTempDir();
+  otherSessionJob(cwd);
+  const { job } = resolveResultJob(cwd, null, { all: true });
+  assert.equal(job.id, "task-other-session");
+});
+
+test("resolveResultJob does not advise --all when --all was already passed", () => {
+  // Reaching the empty-store throw under --all means every session was searched
+  // and none of them holds a finished job, so there is nothing to widen to.
+  assert.throws(
+    () => resolveResultJob(makeTempDir(), null, { all: true }),
+    (error) =>
+      /in this workspace/.test(error.message) &&
+      !/--all/.test(error.message) &&
+      !/this session/.test(error.message)
+  );
+});
+
+test("resolveResultJob does not promise other sessions' jobs when there are none", () => {
+  const cwd = makeTempDir();
+  assert.throws(
+    () => resolveResultJob(cwd, null, {}),
+    (error) => /in this workspace/.test(error.message) && !/--all/.test(error.message)
+  );
+});
+
 test("resolveResultJob still reports a genuinely absent id as not found", () => {
   const cwd = makeTempDir();
   assert.throws(() => resolveResultJob(cwd, "task-nope", { all: true }), /No finished job found for "task-nope"/);

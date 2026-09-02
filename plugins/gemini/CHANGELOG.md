@@ -2,6 +2,16 @@
 
 ## 0.24.4 - Unreleased
 
+- **The empty-store message no longer promises jobs that are not there.** It was
+  unconditional, and lied in two directions. `/gemini:result --all` against an
+  empty store told the user to run the flag they had just run, and called the
+  scope "this session" when every session in the workspace had been searched.
+  A pristine store told any caller that other sessions' jobs existed and were
+  reachable with `--all` — advice that led to the first message. The `--all`
+  advice is now printed on the one condition that makes it true: the workspace
+  holds a finished job this scope hid. That single question answers both cases,
+  because reaching this point under `--all` means no session holds one.
+
 - **An AGY review survives a rate limit that clears in under a minute.**
   `runGeminiReviewResilient` returned on `engine === "agy"` unconditionally, so a
   limit AGY itself reports as `Resets in 58s` ended the review outright. Two of

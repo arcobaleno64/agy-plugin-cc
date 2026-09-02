@@ -71,6 +71,22 @@ Probed on this machine (gemini CLI **0.44.1**, then-current on npm), 2026-06-02:
 
 - **AGY (antigravity 1.0.4)** exposed **no `--model`/`--effort`** flag in the original 2026-06-02 probe. By 2026-07-06, local AGY 1.0.16 exposed `--model` and `agy models`.
   **Superseded since — current behavior (verified on AGY 1.1.12, 2026-08-12):** the plugin forwards both. `--effort <low|medium|high>` is passed to AGY natively, and `--model` is passed through as an exact AGY model id from `agy models`. What it still does *not* do is translate Gemini aliases into AGY ids — `flash` and `pro` are Gemini aliases only — and the two flags cannot be combined, because the AGY model ids reject the pairing. See `supportsAgyModelSelection` (gated at 1.1.10, the first version that applies the selection instead of silently falling back to the persisted model).
+- **AGY's own model listing, read 2026-09-02 on AGY 1.1.24.** `agy models` returns 14 ids:
+
+  | Family | Ids |
+  |---|---|
+  | Gemini 3.8 Flash | `gemini-3.8-flash-high` · `-medium` · `-low` |
+  | Gemini 3.7 Flash | `gemini-3.7-flash-high` · `-medium` · `-low` |
+  | Gemini 3.6 Flash | `gemini-3.6-flash-high` · `-medium` · `-low` |
+  | Gemini 3.1 Pro | `gemini-3.1-pro-high` · `-low` |
+  | Other vendors | `claude-sonnet-4-6` · `claude-opus-4-6-thinking` · `gpt-oss-120b-medium` |
+
+  Against the 1.1.13 reading below, the 3.8 Flash family is new and the **3.5
+  Flash family is gone** — the first removal since this section began recording.
+  The count is 14 either way, so a count check would have seen nothing. Nothing
+  in the plugin broke, because nothing keeps a roster to break: an id that no
+  longer exists is refused by AGY itself, which is the same path any typo takes.
+
 - **AGY's own model listing, read 2026-08-18 on AGY 1.1.13.** `agy models` returns 14 ids:
 
   | Family | Ids |
