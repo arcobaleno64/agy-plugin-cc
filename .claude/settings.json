@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run check-version)",
+      "Bash(npm run verify-contracts)",
+      "Bash(npm run test:seo)",
+      "Bash(npm run bench:aeo)",
+      "Bash(where.exe *)",
+      "PowerShell(dir *)",
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(Test-Path *)"
+    ]
+  }
+}
