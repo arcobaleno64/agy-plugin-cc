@@ -222,14 +222,33 @@ export function classifyCliFailure(input = {}) {
   ) {
     return normalizeFailure("auth", data);
   }
-  // `spend(ing) cap` is matched explicitly: it is the wording Google actually
-  // returns for a project over its monthly limit, it arrives with code 429, and
-  // none of the other three words appear in it — so without this it fell through
-  // to `rate-limit` and was reported (and retried) as a passing flake.
-  if (/quota|billing|RESOURCE_EXHAUSTED|spend(ing)? cap/i.test(structuredText)) {
+  // `quota` splits two failures that read almost identically and want opposite
+  // handling. The durable one — a project over its spend cap or its monthly
+  // allowance — cannot be retried into success, and 0.24.2 widened this branch to
+  // catch it after it was being reported as a passing flake. The transient one is
+  // Google's standard free-tier per-minute limit, whose entire wording is:
+  //
+  //   429 RESOURCE_EXHAUSTED: You exceeded your current quota, please check your
+  //   plan and billing details
+  //
+  // It clears in sixty seconds, and a review spawn measured ~3.5 minutes, so by
+  // attempt 2 the window has long elapsed — retrying genuinely recovers it.
+  //
+  // So only wordings unique to the durable case are matched here. `billing` is
+  // deliberately NOT among them despite being in the 0.24.2 set: the per-minute
+  // message above says `billing details`, so keeping it would leave exactly the
+  // bug this split exists to fix. Everything else carrying `quota` or
+  // `RESOURCE_EXHAUSTED` falls through to `rate-limit`, which is retryable.
+  //
+  // Defaulting the ambiguous middle to retryable is the deliberate choice: the
+  // message alone cannot separate a per-minute limit from a per-day one (Google
+  // returns the same string for both, and puts the distinction in a `violations`
+  // detail this classifier never sees). Two wasted attempts against a daily limit
+  // costs wall-clock; a hard failure against a per-minute limit costs the review.
+  if (/spend(ing)? cap|billing account|monthly (spend|quota|limit)|(daily|per.?day) (quota|limit)|exceeded your (monthly|daily)/i.test(structuredText)) {
     return normalizeFailure("quota", data);
   }
-  if (/\b429\b|too many requests|rate.?limit/i.test(structuredText)) {
+  if (/\b429\b|too many requests|rate.?limit|quota|RESOURCE_EXHAUSTED/i.test(structuredText)) {
     return normalizeFailure("rate-limit", data);
   }
   // AGY words a bad model as `invalid model selection (--model "x"): model x is

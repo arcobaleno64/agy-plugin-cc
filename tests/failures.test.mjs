@@ -10,11 +10,36 @@ test("classifyCliFailure identifies auth failures", () => {
   assert.match(failure.nextStep, /authenticate/i);
 });
 
-test("classifyCliFailure identifies quota failures", () => {
-  const failure = classifyCliFailure({ stderr: "RESOURCE_EXHAUSTED: quota exceeded for project" });
+// The two wordings below are one sentence apart and neither is derivable from
+// the other, so both are pinned. Getting the split wrong is silent in each
+// direction: call the per-minute limit durable and a recoverable review dies at
+// attempt 1; call the spend cap transient and it burns three attempts reaching
+// the same refusal.
+test("classifyCliFailure identifies a durable spend cap as quota", () => {
+  const failure = classifyCliFailure({
+    stderr: "Your project has exceeded its monthly spending cap. Please go to AI Studio to manage your project spend cap."
+  });
   assert.equal(failure.category, "quota");
   assert.equal(failure.retryable, false);
   assert.match(failure.nextStep, /quota|billing|later/i);
+});
+
+test("classifyCliFailure treats the free-tier per-minute limit as a retryable rate limit", () => {
+  // Google's verbatim wording. It says both `quota` and `billing`, which is why
+  // neither word can be a durable-quota marker — see failures.mjs.
+  const failure = classifyCliFailure({
+    stderr: "429 RESOURCE_EXHAUSTED: You exceeded your current quota, please check your plan and billing details"
+  });
+  assert.equal(failure.category, "rate-limit");
+  assert.equal(failure.retryable, true);
+});
+
+test("classifyCliFailure keeps a bare RESOURCE_EXHAUSTED retryable rather than unknown", () => {
+  // No 429 in the text: without RESOURCE_EXHAUSTED in the rate-limit branch this
+  // would fall past every category to `unknown`.
+  const failure = classifyCliFailure({ stderr: "RESOURCE_EXHAUSTED: quota exceeded for project" });
+  assert.equal(failure.category, "rate-limit");
+  assert.equal(failure.retryable, true);
 });
 
 test("classifyCliFailure identifies 429 rate limits as retryable", () => {

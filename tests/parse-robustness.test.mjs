@@ -103,10 +103,17 @@ test("isTransientReviewFailure: an exhausted spend cap is NOT transient", () => 
   assert.equal(isTransientReviewFailure({ reviewJson: null, reviewText: "", stderr }), false);
 });
 
-test("isTransientReviewFailure: RESOURCE_EXHAUSTED is NOT transient", () => {
+test("isTransientReviewFailure: the free-tier per-minute limit IS transient", () => {
+  // Google's verbatim per-minute refusal. It carries `RESOURCE_EXHAUSTED`,
+  // `quota` and `billing` and still clears in sixty seconds, so the guard above
+  // must key on the spend-cap wording alone — not on those three words.
   assert.equal(
-    isTransientReviewFailure({ reviewJson: null, reviewText: "", stderr: "RESOURCE_EXHAUSTED: quota exceeded" }),
-    false
+    isTransientReviewFailure({
+      reviewJson: null,
+      reviewText: "",
+      stderr: "429 RESOURCE_EXHAUSTED: You exceeded your current quota, please check your plan and billing details"
+    }),
+    true
   );
 });
 
