@@ -231,21 +231,35 @@ export function classifyCliFailure(input = {}) {
   //   429 RESOURCE_EXHAUSTED: You exceeded your current quota, please check your
   //   plan and billing details
   //
-  // It clears in sixty seconds, and a review spawn measured ~3.5 minutes, so by
-  // attempt 2 the window has long elapsed — retrying genuinely recovers it.
+  // That message is the free tier's generic refusal. It carries no period at all,
+  // so it cannot be classified from its own words — but the refusals that DO name
+  // a period say so in a quota metric or limit id, and those are matched directly:
   //
-  // So only wordings unique to the durable case are matched here. `billing` is
-  // deliberately NOT among them despite being in the 0.24.2 set: the per-minute
-  // message above says `billing details`, so keeping it would leave exactly the
-  // bug this split exists to fix. Everything else carrying `quota` or
-  // `RESOURCE_EXHAUSTED` falls through to `rate-limit`, which is retryable.
+  //   ... limit 'GenerateContent request limit per minute per project'
+  //   ... quota_id: GenerateRequestsPerDayPerProjectPerModel-FreeTier
   //
-  // Defaulting the ambiguous middle to retryable is the deliberate choice: the
-  // message alone cannot separate a per-minute limit from a per-day one (Google
-  // returns the same string for both, and puts the distinction in a `violations`
-  // detail this classifier never sees). Two wasted attempts against a daily limit
-  // costs wall-clock; a hard failure against a per-minute limit costs the review.
-  if (/spend(ing)? cap|billing account|monthly (spend|quota|limit)|(daily|per.?day) (quota|limit)|exceeded your (monthly|daily)/i.test(structuredText)) {
+  // `per day` / `PerDay` is durable on any horizon a review cares about (it
+  // resets at midnight Pacific); `per minute` is transient. Matching the period
+  // positively is why this is not a guess: an earlier draft wrote the day case as
+  // `(daily|per.?day) (quota|limit)`, which is the wrong word order — Google puts
+  // the period AFTER the noun (`limit ... per day`), so that alternative could
+  // never fire and every per-day refusal was retried three times.
+  //
+  // `billing` is deliberately NOT a durable marker despite being in the 0.24.2
+  // set: the generic message above says `billing details`, so keeping it would
+  // leave exactly the bug this split exists to fix. Only `billing account`
+  // survives, which appears in the disabled-account wording and not in that one.
+  //
+  // The period-less generic message therefore falls through to `rate-limit` and
+  // is retried. That is a choice made without knowing which limit it is, and the
+  // asymmetry is what decides it: a hard failure on a transient limit throws away
+  // a review that would have succeeded, while retrying a durable one wastes
+  // wall-clock and ends at the same refusal. Note that the cost of being wrong
+  // here is NOT small — the 0.24.2 measurement was 10m46s for three attempts to
+  // reach the same refusal, so each wasted attempt is minutes, not seconds. It is
+  // accepted because the periods that are nameable are now named above, leaving
+  // only the genuinely ambiguous case in this branch.
+  if (/spend(ing)? cap|billing account|monthly (spend|quota|limit)|per.?day|daily (quota|limit)|exceeded your (monthly|daily)/i.test(structuredText)) {
     return normalizeFailure("quota", data);
   }
   if (/\b429\b|too many requests|rate.?limit|quota|RESOURCE_EXHAUSTED/i.test(structuredText)) {

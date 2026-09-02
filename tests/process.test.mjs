@@ -699,5 +699,10 @@ test("a cancel kills a real engine the tree walk never saw", {
   assert.equal(outcome.delivered, true, "the worker is gone");
   assert.deepEqual(outcome.orphansKilled, [childPid], "and so is what it left behind");
   assert.ok(!outcome.treeIncomplete, "with nothing left to warn about");
+  // Same reap race as the test above: terminateProcessTree returns once the kills
+  // are requested, so asserting the child's death immediately is a race on a
+  // loaded runner. This one had not been seen to flake, which is not evidence
+  // that it cannot.
+  await waitFor(() => !isPidAlive(childPid), 10_000);
   assert.equal(isPidAlive(childPid), false);
 });
