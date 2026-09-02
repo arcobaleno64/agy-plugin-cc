@@ -2,12 +2,15 @@
 
 ## 0.24.4 - Unreleased
 
-- **`/gemini:result --all` no longer advises `--all`.** With an empty job store
-  the message was unconditional, so a user who had just passed the flag was told
-  to pass it, and told the search covered "this session" when it had covered
-  every session in the workspace. Under `--all` the message now says the
-  workspace is empty and stops there — there is nothing left to widen to. The
-  session-scoped message is unchanged, because that advice is still true.
+- **The empty-store message no longer promises jobs that are not there.** It was
+  unconditional, and lied in two directions. `/gemini:result --all` against an
+  empty store told the user to run the flag they had just run, and called the
+  scope "this session" when every session in the workspace had been searched.
+  A pristine store told any caller that other sessions' jobs existed and were
+  reachable with `--all` — advice that led to the first message. The `--all`
+  advice is now printed on the one condition that makes it true: the workspace
+  holds a finished job this scope hid. That single question answers both cases,
+  because reaching this point under `--all` means no session holds one.
 
 - **An AGY review survives a rate limit that clears in under a minute.**
   `runGeminiReviewResilient` returned on `engine === "agy"` unconditionally, so a
