@@ -176,7 +176,7 @@ Delegates a task to Gemini. Reads from stdin if no prompt is given.
 |---|---|
 | `--background` | Run detached; returns a job ID immediately |
 | `--write` | State that edits are expected. Off by default. On gemini it adds `--yolo`, which genuinely gates whether write tools exist. On AGY it selects `--new-project` over `--add-dir`; both orient the run on your repository and **neither withholds write**, so there it is a statement of intent, not a boundary — see [Security](#security) |
-| `--resume-last` | Continue the most recent Gemini session |
+| `--resume-last` | Continue the most recent Gemini session. **Refused with `--write` on the gemini engine**: `gemini --resume` accepts only `latest` or an index, so it cannot name a conversation, and the run it continues may belong to another project — which would receive the edits. Use `--engine agy` (which pins by id), or resume without `--write`. |
 | `--fresh` | Force a new Gemini session, ignoring any resumable thread |
 | `--engine <gemini\|agy\|auto>` | Override engine selection |
 | `--model <alias\|id>` | Model override. Gemini resolves its aliases; AGY 1.1.10+ requires an exact model ID from `agy models`. AGY model selection cannot be combined with `--effort` or a dual-engine (`--engines gemini,agy`) review. |
@@ -190,7 +190,7 @@ Exports current workspace context (git diff, status, instructions) and generates
 |---|---|
 | `--engine <gemini\|agy\|auto>` | Which handoff commands to print. `auto` (default) prints both |
 | `--model <id>` | Model override carried into the generated command. AGY requires an exact ID from `agy models` |
-| `--effort <low\|medium\|high\|xhigh>` | Reasoning effort carried into the generated AGY command. Cannot be combined with `--model` |
+| `--effort <low\|medium\|high\|xhigh>` | Reasoning effort carried into the generated AGY command. Cannot be combined with `--model`. **AGY accepts only `low`, `medium`, `high`** — `xhigh` produces a command AGY rejects. The generated **gemini** command carries no effort flag at all |
 
 ### `/gemini:review`
 
@@ -205,6 +205,7 @@ Runs a standard, pragmatic review over the current working tree or branch diff �
 | `--engine <gemini\|agy\|auto>` | Override engine |
 | `--model <alias\|id>` | Model override |
 | `--effort <level>` | Model selection on Gemini; native reasoning effort on AGY 1.1.10+ (`low`, `medium`, `high`) when no AGY model is selected |
+| `--engines gemini,agy` | Run both engines concurrently as independent blind reviews. Mutually exclusive with `--engine`, and cannot be combined with an AGY model selection |
 
 ### `/gemini:adversarial-review [focus]`
 
@@ -238,7 +239,7 @@ Lists active and recent background jobs. Pass a job ID to inspect a single job.
 
 | Flag | Description |
 |---|---|
-| `--wait` | Block until the job completes (requires a job ID) |
+| `--wait` | Block until the job completes (requires a job ID). Gives up after 4 minutes and reports the job's state at that point — the job itself keeps running, so re-run `--wait` or collect it later with `/gemini:result` |
 | `--all` | Show all jobs, not just this session's |
 
 ### `/gemini:result [job-id]`
@@ -276,13 +277,19 @@ The plugin also ships an MCP server (`.mcp.json` → `scripts/gemini-mcp.mjs`), 
 
 ### Slash-only, by omission
 
-Listed so the gap is visible rather than discovered: `/gemini:setup` and its probe flags (interactive by design), `/gemini:transfer` (it writes a workspace-local snapshot and needs the model to author the instructions file), `--resume-last`, and `--engines gemini,agy` are not on this surface — use the slash command or the CLI. Each of the three turn-spending MCP tools accepts an integer `timeout`; when omitted, the per-engine default applies. Every `gemini_rescue` starts a fresh turn. The [Review Gate](#review-gate-optional) is configured through `/gemini:setup` and then applies to the whole session, whichever surface queued the job.
+Listed so the gap is visible rather than discovered: `/gemini:setup` and its probe flags (interactive by design), `/gemini:transfer` (it writes a workspace-local snapshot and needs the model to author the instructions file), `--resume-last`, and `--engines gemini,agy` are not on this surface — use the slash command or the CLI. Each of the three turn-spending MCP tools accepts an integer `timeout`; when omitted, the per-engine default applies. Every `gemini_rescue` starts a fresh turn. The [Review Gate](#review-gate-optional) is configured through `/gemini:setup`, and the setting is stored per workspace, so it persists across sessions and must be enabled again in each repository.
 
 ---
 
 ## Review Gate (Optional)
 
-An optional stop-time gate that runs an adversarial review before Claude Code can stop, whenever a `--write` task completed or returned partial output in the session. Disabled by default; partial counts because edits may already exist.
+An optional gate that runs an adversarial review before Claude Code can stop, whenever a `--write` task completed or returned partial output. Disabled by default; partial counts because edits may already exist.
+
+Three things about its scope are easy to get wrong:
+
+- **It runs at the end of every agent turn**, not once when the session ends — Claude Code's `Stop` hook fires per turn.
+- **The `--write` task it looks for is any one in this workspace**, not only one from the current session (`stop-review-gate-hook.mjs` reads the whole workspace job store). A write task queued through the MCP tools carries no session id and is never cleaned up at session end, so it keeps arming the gate until the 50-job store evicts it.
+- **The enable/disable setting is per workspace and lives on disk**, so it survives restarts and must be enabled again in each repository.
 
 Enable or disable via `/gemini:setup`:
 

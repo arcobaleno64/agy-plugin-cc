@@ -89,8 +89,8 @@ The plugin spawns child processes (`git`, and the engine CLI you installed) and 
 | Hook | What it does | Default |
 |---|---|---|
 | `SessionStart` | Exports `GEMINI_COMPANION_SESSION_ID` so jobs can be attributed to a session. | Always on |
-| `SessionEnd` | Terminates **this session's** still-running background jobs and removes their records. Other sessions' jobs are untouched. | Always on |
-| `Stop` | Optional review gate: runs an adversarial review before the session ends, and can block the stop. | **Off** |
+| `SessionEnd` | Terminates **this session's** still-running background jobs and removes **all** of that session's job records — finished ones included, so their results are no longer retrievable. Other sessions' jobs, and jobs queued through the MCP tools (which carry no session id), are untouched. | Always on |
+| `Stop` | Optional review gate: runs an adversarial review at the end of **every agent turn**, not once at session end, and can block the stop. | **Off** |
 
 The Stop gate is the only thing that reaches the engine without a command you typed, and it is **off unless you turn it on** (`/gemini:setup --enable-review-gate`). It fires only after a `--write` task has completed or returned partial output in that workspace; partial counts because edits may already exist. It fails **open** when the review cannot run — the stop proceeds with a visible notice rather than trapping you.
 

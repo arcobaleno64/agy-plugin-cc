@@ -1,6 +1,6 @@
 ---
 description: Run a standard Gemini code review of recent git changes
-argument-hint: '[--wait|--background] [--deep] [--base <ref>] [--scope auto|working-tree|branch] [--engine <agy|gemini>] [--model <flash|pro>] [--timeout <seconds>]'
+argument-hint: '[--wait|--background] [--deep] [--base <ref>] [--scope auto|working-tree|branch] [--engine <agy|gemini>] [--model <flash|pro>] [--effort <level>] [--timeout <seconds>]'
 disable-model-invocation: true
 allowed-tools: Read, Glob, Grep, Bash(node:*), Bash(git:*), AskUserQuestion
 ---
@@ -58,7 +58,7 @@ Argument handling:
 - Preserve the user's arguments exactly.
 - Do not strip `--wait` or `--background` yourself.
 - Do not add extra review instructions or rewrite the user's intent.
-- The companion script handles `--background` itself: it enqueues the review and spawns a detached `review-worker`, so the result persists even if this session ends. Do not use Claude's `run_in_background: true` for it.
+- The companion script handles `--background` itself: it enqueues the review and spawns a detached `review-worker`, so the result outlives the foreground command. It does not outlive the session: `SessionEnd` removes this session's job records, finished ones included, so collect it with `/gemini:result` before the session ends. Do not use Claude's `run_in_background: true` for it.
 - `/gemini:review` is native-review only. It does not take custom focus text.
 - For an adversarial review that challenges design decisions, use `/gemini:adversarial-review`.
 - `--timeout <seconds>` is not only how long the run may take: it is also a ceiling on how much output can be produced, because a turn that cannot finish emitting inside the window is killed. Raise it for a large scope or a batch; the AGY default is 120 seconds.

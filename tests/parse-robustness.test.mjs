@@ -87,3 +87,33 @@ test("isTransientReviewFailure: a real prose review mentioning HTTP codes is NOT
   const prose = "The handler returns a 500 and ignores the rate limit; it is unavailable under load.";
   assert.equal(isTransientReviewFailure({ reviewJson: null, reviewText: prose, stderr: "" }), false);
 });
+
+// ---------------------------------------------------------------------------
+// Quota is not a flake. `429` and `resource_exhausted` are in the transport
+// heuristic because a passing rate limit says them — but so does a project over
+// its spend cap, and retrying that spends wall-clock to reach the same refusal
+// three times. classifyCliFailure is the tiebreak: it ranks `quota`
+// (retryable:false) ahead of `rate-limit` (retryable:true), and these pin that
+// the retry wrapper actually consults it.
+// ---------------------------------------------------------------------------
+
+test("isTransientReviewFailure: an exhausted spend cap is NOT transient", () => {
+  const stderr =
+    '{"type":"Error","message":"Your project has exceeded its monthly spending cap. Please go to AI Studio to manage your project spend cap.","code":429}';
+  assert.equal(isTransientReviewFailure({ reviewJson: null, reviewText: "", stderr }), false);
+});
+
+test("isTransientReviewFailure: RESOURCE_EXHAUSTED is NOT transient", () => {
+  assert.equal(
+    isTransientReviewFailure({ reviewJson: null, reviewText: "", stderr: "RESOURCE_EXHAUSTED: quota exceeded" }),
+    false
+  );
+});
+
+test("isTransientReviewFailure: a plain rate limit with no quota wording stays transient", () => {
+  // The guard must not swallow the case the retry was built for.
+  assert.equal(
+    isTransientReviewFailure({ reviewJson: null, reviewText: "", stderr: "429 Too Many Requests" }),
+    true
+  );
+});

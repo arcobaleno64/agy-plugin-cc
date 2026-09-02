@@ -196,7 +196,10 @@ test("renderStoredJobResult falls back to result.gemini.stdout and appends the r
   );
   assert.match(out, /RAW OUTPUT/);
   assert.match(out, /Gemini session ID: sess-1/);
-  assert.match(out, /Resume in Gemini: gemini --resume sess-1/);
+  // Not a runnable command: gemini's `--resume` takes only "latest" or an
+  // index, so a session id can never be handed to it. The id is still shown.
+  assert.match(out, /Resume in Gemini: gemini --resume takes only "latest" or an index, not this id/);
+  assert.doesNotMatch(out, /Resume in Gemini: gemini --resume sess-1/);
 });
 
 test("renderStoredJobResult uses the AGY conversation resume hint for agy jobs", () => {
@@ -215,7 +218,8 @@ test("renderStoredJobResult defaults to the gemini resume hint when no engine is
     { id: "task-4", status: "completed", title: "Task" },
     { threadId: "sess-2", result: { rawOutput: "OUT" } }
   );
-  assert.match(out, /Resume in Gemini: gemini --resume sess-2/);
+  assert.match(out, /Resume in Gemini: gemini --resume takes only "latest" or an index, not this id/);
+  assert.doesNotMatch(out, /gemini --resume sess-2/);
 });
 
 test("renderStoredJobResult reads engine from the index job when the stored file lacks it", () => {

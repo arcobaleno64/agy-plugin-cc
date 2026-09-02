@@ -189,13 +189,19 @@ export function generateJobId(prefix = "job") {
 // Merge a patch into the job's own file. Nothing else is touched, so two
 // workers patching two different jobs cannot interfere at all, and a worker
 // patching its own job is the only writer of that file.
-export function upsertJob(cwd, jobPatch) {
+// `touch: false` records a patch WITHOUT moving `updatedAt`. listJobs sorts by
+// `updatedAt` descending and pruneJobStore evicts everything past MAX_JOBS, so a
+// bookkeeping write on an old job would promote it to the head of the list and
+// evict a NEWER finished result in its place. Only for patches that record
+// something about a job rather than something the job did — the stop gate's
+// review mark is the case this exists for.
+export function upsertJob(cwd, jobPatch, { touch = true } = {}) {
   ensureStateDir(cwd);
   const jobFile = resolveJobFile(cwd, jobPatch.id);
   const existing = fs.existsSync(jobFile) ? readJobFile(jobFile) : null;
   const timestamp = nowIso();
   const next = existing
-    ? { ...existing, ...jobPatch, updatedAt: timestamp }
+    ? { ...existing, ...jobPatch, updatedAt: touch ? timestamp : (existing.updatedAt ?? timestamp) }
     : { createdAt: timestamp, ...jobPatch, updatedAt: timestamp };
   atomicWriteJson(jobFile, next);
   return next;

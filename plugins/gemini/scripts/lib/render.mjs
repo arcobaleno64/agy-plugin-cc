@@ -127,7 +127,25 @@ function resumeInfo(engine, threadId) {
   if (engine === "agy") {
     return { idLabel: "AGY conversation ID", resumeLabel: "Resume in AGY", command: `agy --conversation ${threadId}` };
   }
-  return { idLabel: "Gemini session ID", resumeLabel: "Resume in Gemini", command: `gemini --resume ${threadId}` };
+  // No command for gemini: its `--resume` accepts only "latest" or an index
+  // number, never a session id, so `gemini --resume <uuid>` is a command that
+  // cannot work. The id is still worth showing (it identifies the run in
+  // gemini's own history); what is not worth showing is a paste-ready line that
+  // fails. `--resume-last` is the supported route, and it is refused with
+  // `--write` for the reason engine.mjs states.
+  return {
+    idLabel: "Gemini session ID",
+    resumeLabel: "Resume in Gemini",
+    command: null,
+    note: "gemini --resume takes only \"latest\" or an index, not this id — use /gemini:rescue --resume-last (not available with --write)."
+  };
+}
+
+// The resume line, for engines that can be resumed by id and for the one that
+// cannot. gemini has no addressable resume, so it carries a `note` instead of a
+// `command`; printing `resume.command` unguarded rendered the literal "null".
+function resumeLine(resume) {
+  return `${resume.resumeLabel}: ${resume.command ?? resume.note}`;
 }
 
 function appendActiveJobsTable(lines, jobs) {
@@ -163,7 +181,7 @@ function pushJobDetails(lines, job, options = {}) {
   const resume = resumeInfo(job.engine, job.threadId);
   if (resume) {
     lines.push(`  ${resume.idLabel}: ${job.threadId}`);
-    lines.push(`  ${resume.resumeLabel}: ${resume.command}`);
+    lines.push(`  ${resumeLine(resume)}`);
   }
   if (job.logFile && options.showLog) {
     lines.push(`  Log: ${job.logFile}`);
@@ -427,7 +445,7 @@ export function renderStatusReport(report) {
 
   if (report.needsReview) {
     lines.push("The stop-time review gate is enabled.");
-    lines.push("Ending the session will trigger a fresh Gemini adversarial review and block if it finds issues.");
+    lines.push("Each turn that ends will trigger a fresh Gemini adversarial review and block if it finds issues.");
   }
 
   return `${lines.join("\n").trimEnd()}\n`;
@@ -474,7 +492,7 @@ export function renderStoredJobResult(job, storedJob) {
     if (!resume) {
       return output;
     }
-    return `${output}\n${resume.idLabel}: ${threadId}\n${resume.resumeLabel}: ${resume.command}\n`;
+    return `${output}\n${resume.idLabel}: ${threadId}\n${resumeLine(resume)}\n`;
   }
 
   const rawOutput =
@@ -489,7 +507,7 @@ export function renderStoredJobResult(job, storedJob) {
     if (!resume) {
       return `${output}${failureOutput}`;
     }
-    return `${output}${failureOutput}\n${resume.idLabel}: ${threadId}\n${resume.resumeLabel}: ${resume.command}\n`;
+    return `${output}${failureOutput}\n${resume.idLabel}: ${threadId}\n${resumeLine(resume)}\n`;
   }
 
   if (storedJob?.rendered) {
@@ -497,7 +515,7 @@ export function renderStoredJobResult(job, storedJob) {
     if (!resume) {
       return output;
     }
-    return `${output}\n${resume.idLabel}: ${threadId}\n${resume.resumeLabel}: ${resume.command}\n`;
+    return `${output}\n${resume.idLabel}: ${threadId}\n${resumeLine(resume)}\n`;
   }
 
   const lines = [
@@ -509,7 +527,7 @@ export function renderStoredJobResult(job, storedJob) {
 
   if (resume) {
     lines.push(`${resume.idLabel}: ${threadId}`);
-    lines.push(`${resume.resumeLabel}: ${resume.command}`);
+    lines.push(resumeLine(resume));
   }
 
   if (job.summary) {
