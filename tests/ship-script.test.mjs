@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { EXIT, bumpedFiles, npmCliCandidates, insertChangelogEntry, parseArgs, summariseTests, tail } from "../scripts/ship.mjs";
+import { EXIT, bumpedFiles, hasChangelogHeading, npmCliCandidates, insertChangelogEntry, parseArgs, summariseTests, tail } from "../scripts/ship.mjs";
 
 // The script's own steps spawn git, npm and gh, so they are exercised by running
 // it. What is unit-tested here is the part that decides WHERE prose lands and
@@ -19,6 +19,15 @@ test("insertChangelogEntry puts the new entry above the newest one", () => {
 test("insertChangelogEntry keeps the title above the first heading", () => {
   const next = insertChangelogEntry(CHANGELOG, "## 0.24.4 - x");
   assert.equal(next.split("\n")[0], "# Changelog");
+});
+
+// Joining the preceding lines and letting the entry supply the break swallows
+// the blank line under the title, gluing the new heading to it -- and every
+// later release inherits the damage. Asserting only that line 0 is still the
+// title passes either way, which is how the first version of this shipped.
+test("insertChangelogEntry keeps the blank line under the title", () => {
+  const next = insertChangelogEntry(CHANGELOG, "## 0.24.4 - x");
+  assert.deepEqual(next.split("\n").slice(0, 3), ["# Changelog", "", "## 0.24.4 - x"]);
 });
 
 // A fragment appended to the END of a newest-first changelog is invisible to
@@ -41,6 +50,29 @@ test("insertChangelogEntry refuses a changelog with no heading to anchor on", ()
     assert.equal(error.code, EXIT.changelogInsertFailed);
     return true;
   });
+});
+
+// The first version built `new RegExp("^## v?" + version.replace(/\./g, "\\."))`
+// and CodeQL flagged it twice, high: an unescaped backslash, and a pattern built
+// from a command-line argument. The fix is not a better escape; it is comparing
+// tokens so no pattern is built at all.
+test("hasChangelogHeading matches the version and its v-prefixed form", () => {
+  assert.equal(hasChangelogHeading(CHANGELOG, "0.24.3"), true);
+  assert.equal(hasChangelogHeading("## v1.2.3 - x", "1.2.3"), true);
+  assert.equal(hasChangelogHeading(CHANGELOG, "0.24.4"), false);
+});
+
+test("hasChangelogHeading does not treat a version as a pattern", () => {
+  const text = "## 1x2x3 - x\n";
+  // `.` as a wildcard would match here; a token comparison does not.
+  assert.equal(hasChangelogHeading(text, "1.2.3"), false);
+  // A backslash in the argument must not be able to reach a regex engine.
+  assert.doesNotThrow(() => hasChangelogHeading(text, "1.2.3\\"));
+  assert.equal(hasChangelogHeading(text, "("), false);
+});
+
+test("hasChangelogHeading ignores a version mentioned in prose", () => {
+  assert.equal(hasChangelogHeading("- fixed in 0.24.4, see notes\n", "0.24.4"), false);
 });
 
 test("parseArgs reads every documented flag", () => {

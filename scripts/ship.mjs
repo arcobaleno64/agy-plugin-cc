@@ -115,9 +115,26 @@ export function insertChangelogEntry(existing, fragment) {
     );
   }
   const eol = existing.includes("\r\n") ? "\r\n" : "\n";
-  const before = lines.slice(0, index).join("\n");
+  // Each preceding line keeps its own terminator. Joining them and relying on
+  // `entry` to supply the break swallows the blank line under the title, gluing
+  // the new heading to it -- and every later release inherits the damage.
+  const before = lines.slice(0, index).map((line) => `${line}\n`).join("");
   const after = lines.slice(index).join("\n");
   return `${before}${entry}\n${after}`.split(/\r?\n/).join(eol);
+}
+
+// Compared token by token rather than by a regex built from the version. Escaping
+// `.` and leaving `\` unescaped is a real hole (CodeQL js/incomplete-sanitization
+// and js/regex-injection, both high, on the first version of this), and the
+// answer here is not a better escape -- it is not building a pattern out of an
+// argument at all. Matches bump-version --check, which splits on whitespace and
+// compares the second token.
+export function hasChangelogHeading(text, version) {
+  return text.split(/\r?\n/).some((line) => {
+    if (!line.startsWith("## ")) return false;
+    const token = line.split(/\s+/)[1];
+    return token === version || token === `v${version}`;
+  });
 }
 
 export function summariseTests(output) {
@@ -196,6 +213,15 @@ function step(label) {
 function preflight(options) {
   step("preflight");
   const branch = mustRun(EXIT.usage, "Not a git repository.", "git", ["branch", "--show-current"], options).stdout;
+  // Detached HEAD prints an empty name and exits 0. Left unchecked the run
+  // reaches `git push -u origin ""` and fails there -- after a commit that is
+  // orphaned the moment the user checks out a branch.
+  if (!branch) {
+    throw new ShipError(
+      EXIT.onDefaultBranch,
+      "HEAD is detached, so there is no branch to push. Check out a branch first; a commit made here is orphaned as soon as you leave it."
+    );
+  }
   if (DEFAULT_BRANCHES.has(branch)) {
     throw new ShipError(
       EXIT.onDefaultBranch,
@@ -218,7 +244,20 @@ function preflight(options) {
   if (options.prFile && !run("gh", ["auth", "status"], options).ok) {
     throw new ShipError(EXIT.ghUnavailable, "gh is not authenticated, so the PR step would fail after the push. Run `gh auth login`.");
   }
+  // The gates run against the working tree; the commit is the index. An unstaged
+  // edit can hold the tests green for a commit that is red in CI, and this script
+  // will not stage it for you -- so say so rather than reporting a green run that
+  // tested something other than what was pushed.
+  const unstaged = run("git", ["diff", "--name-only"], options).stdout.split("\n").filter((line) => line.trim());
   console.log(`branch ${branch}, ${stagedFiles.length} staged file(s)`);
+  if (unstaged.length > 0) {
+    console.log(
+      `warning: ${unstaged.length} unstaged change(s) -- the gates below test the working tree, `
+      + `but the commit is the index, so a green run here does not prove the pushed commit is green:\n  `
+      + unstaged.slice(0, 10).join("\n  ")
+      + (unstaged.length > 10 ? `\n  ...and ${unstaged.length - 10} more` : "")
+    );
+  }
   return { branch };
 }
 
@@ -228,17 +267,22 @@ function applyChangelog(options) {
   const fragment = readInput(options.root, options.changelogFile, "changelog");
   const target = path.resolve(options.root, CHANGELOG_FILE);
   const existing = fs.readFileSync(target, "utf8");
-  if (new RegExp(`^## v?${options.version.replace(/\./g, "\\.")}\\b`, "m").test(existing)) {
+  if (hasChangelogHeading(existing, options.version)) {
     console.log(`already has a \`## ${options.version}\` heading; leaving it alone`);
     return [];
   }
   const next = insertChangelogEntry(existing, fragment);
   if (options.dryRun) {
     console.log(`would insert ${fragment.split("\n").length} line(s) into ${CHANGELOG_FILE}`);
-    return;
+    return [];
   }
   fs.writeFileSync(target, next, "utf8");
   console.log(`inserted into ${CHANGELOG_FILE}`);
+  // Returned so commit() stages it. bump-version rewrites only the four JSON
+  // manifests and never the changelog, so nothing else would, and check-version
+  // reads the working tree rather than the index -- a release commit could go out
+  // with the entry written on disk and absent from the diff.
+  return [CHANGELOG_FILE];
 }
 
 function bump(options) {
@@ -347,7 +391,17 @@ function pullRequest(options, branch, subject) {
   readInput(options.root, options.prFile, "PR body");
   const bodyFile = path.resolve(options.root, options.prFile);
   const existing = run("gh", ["pr", "list", "--head", branch, "--json", "number", "--jq", ".[].number"], options);
-  const number = existing.ok ? existing.stdout.split("\n")[0]?.trim() : "";
+  // A gh failure here is not "no PR exists". Treating it as one makes the script
+  // call `gh pr create` on a branch that already has an open PR, which fails --
+  // after the push has already landed.
+  if (!existing.ok) {
+    throw new ShipError(
+      EXIT.prFailed,
+      `Could not list PRs for ${branch}, so it is unknown whether one is already open. The push succeeded; open or comment on the PR by hand.`,
+      existing.stderr
+    );
+  }
+  const number = existing.stdout.split("\n")[0]?.trim();
   if (options.dryRun) {
     console.log(number ? `would comment on PR #${number}` : `would open a PR titled ${JSON.stringify(options.title ?? subject ?? "")}`);
     return null;
