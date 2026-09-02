@@ -27,3 +27,9 @@ Thumbs.db
 # Editor
 .vscode/
 *.swp
+
+# Ship inputs (changelog / commit / PR prose handed to scripts/ship.mjs)
+.ship/
+
+# Scratch working notes
+scratch/

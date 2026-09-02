@@ -61,6 +61,7 @@ function usage() {
     "",
     "Options:",
     "  --check       Verify manifest versions. Uses package.json when version is omitted.",
+    "  --list-targets Print every file this script can rewrite, one per line.",
     "  --root <dir>  Run against a different repository root.",
     "  --help        Print this help."
   ].join("\n");
@@ -73,6 +74,8 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg === "--check") {
       options.check = true;
+    } else if (arg === "--list-targets") {
+      options.listTargets = true;
     } else if (arg === "--root") {
       const root = argv[i + 1];
       if (!root) {
@@ -196,6 +199,17 @@ function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.help) {
     console.log(usage());
+    return;
+  }
+
+  // Named so a caller can stage exactly what a bump rewrites without keeping a
+  // second copy of this list. A bump that changes nothing (a re-run at the same
+  // version) reports no files, and a caller relying on that report would then
+  // stage nothing at all.
+  if (options.listTargets) {
+    for (const target of TARGETS) {
+      console.log(target.file);
+    }
     return;
   }
 
