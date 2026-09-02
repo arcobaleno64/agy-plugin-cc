@@ -10,11 +10,60 @@ test("classifyCliFailure identifies auth failures", () => {
   assert.match(failure.nextStep, /authenticate/i);
 });
 
-test("classifyCliFailure identifies quota failures", () => {
-  const failure = classifyCliFailure({ stderr: "RESOURCE_EXHAUSTED: quota exceeded for project" });
+// The two wordings below are one sentence apart and neither is derivable from
+// the other, so both are pinned. Getting the split wrong is silent in each
+// direction: call the per-minute limit durable and a recoverable review dies at
+// attempt 1; call the spend cap transient and it burns three attempts reaching
+// the same refusal.
+test("classifyCliFailure identifies a durable spend cap as quota", () => {
+  const failure = classifyCliFailure({
+    stderr: "Your project has exceeded its monthly spending cap. Please go to AI Studio to manage your project spend cap."
+  });
   assert.equal(failure.category, "quota");
   assert.equal(failure.retryable, false);
   assert.match(failure.nextStep, /quota|billing|later/i);
+});
+
+test("classifyCliFailure treats the free-tier per-minute limit as a retryable rate limit", () => {
+  // Google's verbatim wording. It says both `quota` and `billing`, which is why
+  // neither word can be a durable-quota marker — see failures.mjs.
+  const failure = classifyCliFailure({
+    stderr: "429 RESOURCE_EXHAUSTED: You exceeded your current quota, please check your plan and billing details"
+  });
+  assert.equal(failure.category, "rate-limit");
+  assert.equal(failure.retryable, true);
+});
+
+// Google names the period in the quota metric / limit id, and it puts that period
+// AFTER the noun. An earlier draft matched `(daily|per.?day) (quota|limit)`, the
+// wrong word order, so it never fired and every per-day refusal was retried three
+// times at minutes per attempt. These two pin the word order in both directions.
+test("classifyCliFailure treats a per-day quota id as durable quota", () => {
+  const failure = classifyCliFailure({
+    stderr:
+      "429 RESOURCE_EXHAUSTED: Quota exceeded for quota metric 'generate_content_free_tier_requests', " +
+      "quota_id: GenerateRequestsPerDayPerProjectPerModel-FreeTier"
+  });
+  assert.equal(failure.category, "quota");
+  assert.equal(failure.retryable, false);
+});
+
+test("classifyCliFailure treats a per-minute limit id as a retryable rate limit", () => {
+  const failure = classifyCliFailure({
+    stderr:
+      "429 RESOURCE_EXHAUSTED: Quota exceeded for quota metric 'Generate Content API requests per minute' " +
+      "and limit 'GenerateContent request limit per minute per project per region'"
+  });
+  assert.equal(failure.category, "rate-limit");
+  assert.equal(failure.retryable, true);
+});
+
+test("classifyCliFailure keeps a bare RESOURCE_EXHAUSTED retryable rather than unknown", () => {
+  // No 429 in the text: without RESOURCE_EXHAUSTED in the rate-limit branch this
+  // would fall past every category to `unknown`.
+  const failure = classifyCliFailure({ stderr: "RESOURCE_EXHAUSTED: quota exceeded for project" });
+  assert.equal(failure.category, "rate-limit");
+  assert.equal(failure.retryable, true);
 });
 
 test("classifyCliFailure identifies 429 rate limits as retryable", () => {

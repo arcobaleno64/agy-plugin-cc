@@ -18,6 +18,16 @@ import {
   quoteForWindowsShell,
   resetSpawnTargetCacheForTesting
 } from "../plugins/gemini/scripts/lib/process.mjs";
+
+// Returns as soon as the condition holds, or gives up at the ceiling and lets
+// the caller's own assertion report the failure. Never assert in here: a helper
+// that throws its own message hides which test wanted what.
+async function waitFor(condition, timeoutMs, intervalMs = 50) {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition() && Date.now() < deadline) {
+    await delay(intervalMs);
+  }
+}
 import { makeTempDir } from "./helpers.mjs";
 
 test("terminateProcessTree uses taskkill on Windows", () => {
@@ -652,7 +662,12 @@ test("a child is still findable through the pid of a parent that is already dead
 
   // No /T: the child must outlive its parent for there to be anything to find.
   runCommand("taskkill", ["/PID", String(parentPid), "/F"]);
-  await delay(800);
+  // `taskkill /F` returns once the kill is requested; Windows reaps the process
+  // asynchronously. A fixed wait is a guess at how long that takes, and on a
+  // loaded CI runner the guess was wrong (#139). Polling keeps the test fast on
+  // an idle machine and makes a real regression — the parent never dying — fail
+  // on the assertion below rather than on a timing coincidence.
+  await waitFor(() => !isPidAlive(parentPid), 10_000);
   assert.equal(isPidAlive(parentPid), false, "the parent is gone");
   assert.equal(isPidAlive(childPid), true, "the child outlived it");
 
@@ -684,5 +699,10 @@ test("a cancel kills a real engine the tree walk never saw", {
   assert.equal(outcome.delivered, true, "the worker is gone");
   assert.deepEqual(outcome.orphansKilled, [childPid], "and so is what it left behind");
   assert.ok(!outcome.treeIncomplete, "with nothing left to warn about");
+  // Same reap race as the test above: terminateProcessTree returns once the kills
+  // are requested, so asserting the child's death immediately is a race on a
+  // loaded runner. This one had not been seen to flake, which is not evidence
+  // that it cannot.
+  await waitFor(() => !isPidAlive(childPid), 10_000);
   assert.equal(isPidAlive(childPid), false);
 });

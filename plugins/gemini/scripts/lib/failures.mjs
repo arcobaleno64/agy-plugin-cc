@@ -222,14 +222,47 @@ export function classifyCliFailure(input = {}) {
   ) {
     return normalizeFailure("auth", data);
   }
-  // `spend(ing) cap` is matched explicitly: it is the wording Google actually
-  // returns for a project over its monthly limit, it arrives with code 429, and
-  // none of the other three words appear in it — so without this it fell through
-  // to `rate-limit` and was reported (and retried) as a passing flake.
-  if (/quota|billing|RESOURCE_EXHAUSTED|spend(ing)? cap/i.test(structuredText)) {
+  // `quota` splits two failures that read almost identically and want opposite
+  // handling. The durable one — a project over its spend cap or its monthly
+  // allowance — cannot be retried into success, and 0.24.2 widened this branch to
+  // catch it after it was being reported as a passing flake. The transient one is
+  // Google's standard free-tier per-minute limit, whose entire wording is:
+  //
+  //   429 RESOURCE_EXHAUSTED: You exceeded your current quota, please check your
+  //   plan and billing details
+  //
+  // That message is the free tier's generic refusal. It carries no period at all,
+  // so it cannot be classified from its own words — but the refusals that DO name
+  // a period say so in a quota metric or limit id, and those are matched directly:
+  //
+  //   ... limit 'GenerateContent request limit per minute per project'
+  //   ... quota_id: GenerateRequestsPerDayPerProjectPerModel-FreeTier
+  //
+  // `per day` / `PerDay` is durable on any horizon a review cares about (it
+  // resets at midnight Pacific); `per minute` is transient. Matching the period
+  // positively is why this is not a guess: an earlier draft wrote the day case as
+  // `(daily|per.?day) (quota|limit)`, which is the wrong word order — Google puts
+  // the period AFTER the noun (`limit ... per day`), so that alternative could
+  // never fire and every per-day refusal was retried three times.
+  //
+  // `billing` is deliberately NOT a durable marker despite being in the 0.24.2
+  // set: the generic message above says `billing details`, so keeping it would
+  // leave exactly the bug this split exists to fix. Only `billing account`
+  // survives, which appears in the disabled-account wording and not in that one.
+  //
+  // The period-less generic message therefore falls through to `rate-limit` and
+  // is retried. That is a choice made without knowing which limit it is, and the
+  // asymmetry is what decides it: a hard failure on a transient limit throws away
+  // a review that would have succeeded, while retrying a durable one wastes
+  // wall-clock and ends at the same refusal. Note that the cost of being wrong
+  // here is NOT small — the 0.24.2 measurement was 10m46s for three attempts to
+  // reach the same refusal, so each wasted attempt is minutes, not seconds. It is
+  // accepted because the periods that are nameable are now named above, leaving
+  // only the genuinely ambiguous case in this branch.
+  if (/spend(ing)? cap|billing account|monthly (spend|quota|limit)|per.?day|daily (quota|limit)|exceeded your (monthly|daily)/i.test(structuredText)) {
     return normalizeFailure("quota", data);
   }
-  if (/\b429\b|too many requests|rate.?limit/i.test(structuredText)) {
+  if (/\b429\b|too many requests|rate.?limit|quota|RESOURCE_EXHAUSTED/i.test(structuredText)) {
     return normalizeFailure("rate-limit", data);
   }
   // AGY words a bad model as `invalid model selection (--model "x"): model x is

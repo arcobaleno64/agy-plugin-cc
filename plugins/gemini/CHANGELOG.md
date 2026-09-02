@@ -16,6 +16,30 @@
   wide test turns the 503 case red, deleting the guard turns the spend-cap
   cases red. (#132)
 
+- **A per-minute rate limit is no longer reported as an exhausted quota.** The
+  same over-match as above, one layer down: the `quota` branch matched the bare
+  words `quota`, `billing` and `RESOURCE_EXHAUSTED`, and Google's standard
+  free-tier refusal is `429 RESOURCE_EXHAUSTED: You exceeded your current quota,
+  please check your plan and billing details` — which contains two of them. A
+  limit that clears in sixty seconds was classified `quota` (`retryable: false`)
+  and ended the review on attempt 1. The branch now matches only the durable
+  wordings: a spend cap, a billing account, a monthly allowance, or a limit id
+  naming `per day`. `billing` alone is gone, because the transient message says
+  `billing details`. Anything still carrying `quota` or `RESOURCE_EXHAUSTED`
+  falls through to `rate-limit`, which is retryable — and `rate-limit` gained
+  both words, so a bare `RESOURCE_EXHAUSTED` with no `429` no longer falls past
+  every category to `unknown`. Google names the period after the noun
+  (`limit ... per day`), so the day and minute wordings are pinned by tests in
+  both directions; a first draft had the word order reversed and could never
+  have matched. (#136)
+
+- **A Windows process test no longer guesses how long a kill takes.** `taskkill
+  /F` returns once the kill is requested, and Windows reaps asynchronously, so
+  the fixed 800ms wait before asserting the parent was gone failed on a loaded
+  CI runner. Both that test and its sibling now poll to a 10s ceiling, which
+  keeps them fast on an idle machine and makes a real regression fail on the
+  assertion rather than on timing. (#139)
+
 ## 0.24.2 - 2026-09-02 - The stop gate stops re-arming, and a spend cap stops being retried
 
 - **A write task now arms the stop-review gate once, not on every turn forever.**
