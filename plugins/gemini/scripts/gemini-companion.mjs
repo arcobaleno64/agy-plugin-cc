@@ -56,6 +56,7 @@ import {
 import {
   runGeminiTurn,
   runGeminiReviewResilient,
+  AGY_RATE_LIMIT_MAX_WAIT_MS,
   getGeminiAvailability,
   getAgyAvailability,
   getGeminiLoginStatus,
@@ -753,6 +754,10 @@ async function executeReviewRun(request) {
     deep: Boolean(request.deep),
     timeoutSeconds: request.timeoutSeconds ?? null,
     onProgress: request.onProgress
+  }, {
+    // Only a detached worker can afford to sleep out an AGY rate limit; see the
+    // note on request.detached in runStoredJobWorker.
+    rateLimitWaitBudgetMs: request.detached ? AGY_RATE_LIMIT_MAX_WAIT_MS : 0
   });
 
   const parsed = result.reviewJson
@@ -1452,6 +1457,12 @@ async function runStoredJobWorker(argv, { executor, label }) {
   if (!request || typeof request !== "object") {
     throw new Error(`Stored job ${options["job-id"]} is missing its request payload.`);
   }
+  // Marks the run as detached, which is what makes a blocking rate-limit wait
+  // affordable: a foreground review is a single Bash call under the host's
+  // default 120s timeout, so sleeping there converts a clean "rate limited" into
+  // a killed command that reports nothing. A worker has no such ceiling — it is
+  // polled through /gemini:status — so it is the only caller allowed to wait.
+  request.detached = true;
 
   const { logFile, progress } = createTrackedProgress(
     {

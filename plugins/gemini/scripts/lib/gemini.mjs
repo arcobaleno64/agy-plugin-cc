@@ -981,8 +981,17 @@ export function isTransientReviewFailure({ reviewJson, reviewText, stderr } = {}
 export const AGY_RATE_LIMIT_MAX_WAIT_MS = 90_000;
 
 export function parseRateLimitResetMs(text) {
-  const match = /resets? in\s+(\d+)\s*(s|sec|secs|seconds?|m|min|mins|minutes?)\b/i.exec(String(text ?? ""));
+  const source = String(text ?? "");
+  const match = /resets? in\s+(\d+)\s*(s|sec|secs|seconds?|m|min|mins|minutes?)\b/i.exec(source);
   if (!match) return null;
+  // A compound duration is refused rather than half-read. `Resets in 1m 30s`
+  // matched only the leading `1m` and returned 61s, so the retry fired 29 seconds
+  // early, was refused again, and burned an attempt plus a full minute of wall
+  // clock — precisely the "retry into a limit that has not cleared" failure the
+  // no-guess rule above exists to prevent. Reading only the first unit is a guess
+  // wearing a measurement's clothes.
+  const rest = source.slice(match.index + match[0].length);
+  if (/^\s*\d+\s*(s|sec|secs|seconds?|m|min|mins|minutes?)\b/i.test(rest)) return null;
   const value = Number(match[1]);
   if (!Number.isFinite(value) || value <= 0) return null;
   const ms = /^m/i.test(match[2]) ? value * 60_000 : value * 1000;
@@ -1029,17 +1038,45 @@ export async function runGeminiReviewResilient(cwd, options = {}, deps = {}) {
   // The spawn seams are forwarded rather than dropped: without this the wrapper's
   // own retry decisions -- the part with the branching -- could only be tested by
   // spawning a real engine, which is why they were not tested at all.
-  const { maxAttempts = 3, sleepFn = null, ...reviewDeps } = deps;
+  const { maxAttempts = 3, sleepFn = null, rateLimitWaitBudgetMs = 0, ...reviewDeps } = deps;
   const sleep = sleepFn ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  // Default 0: no caller waits unless it says it can afford to. Worst case for a
+  // caller that opts in is this budget in total sleep, plus the spawns.
+  let waitBudgetMs = rateLimitWaitBudgetMs;
   let last = null;
   let prevText = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     last = await runGeminiReview(cwd, options, reviewDeps);
     if (last.engine === "agy") {
-      const waitMs = last.failure?.category === "rate-limit"
-        ? parseRateLimitResetMs(last.failure?.detail ?? last.stderr)
+      // Output first, exactly like every other branch here. Under stream-json an
+      // ERROR envelope with an empty `response` still yields salvaged partial
+      // text, which runGeminiReview turns into reviewText and can parse into
+      // reviewJson — while `failure` stays non-null because the exit was non-zero.
+      // So a run CAN come back rate-limited mid-stream with the findings already
+      // in hand, and retrying would throw away a usable review to wait a minute
+      // for a bare refusal. isTransientReviewFailure returns false the moment
+      // reviewJson exists; this branch has to make the same check itself.
+      // reviewJson ONLY. Measured: on a pure AGY failure `reviewText` holds the
+      // raw envelope JSON rather than a review, so treating non-empty text as
+      // "we got something" suppresses every retry — the fix disabling itself.
+      // Parsed findings are the one signal that means a review actually exists,
+      // which is why isTransientReviewFailure keys on the same thing.
+      const produced = Boolean(last.reviewJson);
+      const waitMs = !produced && last.failure?.category === "rate-limit"
+        // Both channels, not `detail ?? stderr`: `??` only falls back when detail
+        // is nullish, and a detail truncated at 2000 characters is non-null while
+        // possibly having lost the sentence naming the reset.
+        ? parseRateLimitResetMs(`${last.failure?.detail ?? ""}\n${last.stderr ?? ""}`)
         : null;
-      if (waitMs === null || attempt >= maxAttempts) return { ...last, attempts: attempt };
+      // The wait is opt-in and budgeted across the WHOLE call, not per attempt.
+      // A foreground `/gemini:review` is one Bash call under the host's default
+      // 120s timeout, so sleeping there turns a clean six-second "rate limited"
+      // into a killed command that reports nothing — strictly worse than the
+      // failure this change set out to improve. Only a detached run, which has no
+      // such ceiling, passes a budget.
+      const affordable = waitMs !== null && waitMs <= waitBudgetMs;
+      if (!affordable || attempt >= maxAttempts) return { ...last, attempts: attempt };
+      waitBudgetMs -= waitMs;
       options.onProgress?.({
         message: `AGY rate limit; it reports clearing in ${Math.round((waitMs - 1000) / 1000)}s (attempt ${attempt}/${maxAttempts}). Waiting, then retrying...`,
         phase: "reviewing"
