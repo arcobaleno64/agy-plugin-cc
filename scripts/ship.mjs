@@ -145,10 +145,26 @@ function run(command, args, { root, shell = false } = {}) {
   };
 }
 
-// npm is a .cmd on Windows, which node will not spawn without a shell. The
-// argument lists here are constants defined in this file -- nothing from the
-// caller reaches the shell.
+// npm is a .cmd on Windows, which node refuses to spawn without a shell, and
+// passing args through a shell is deprecated (DEP0190) because they are
+// concatenated rather than escaped. Running npm's own entry script under this
+// node avoids both: no shell, no .cmd, and the same npm that is on PATH.
+export function npmCliCandidates(execPath, env = {}) {
+  const dir = path.dirname(execPath);
+  return [
+    // Set when ship itself was started by an npm script.
+    env.npm_execpath && env.npm_execpath.endsWith(".js") ? env.npm_execpath : null,
+    path.join(dir, "node_modules", "npm", "bin", "npm-cli.js"),          // Windows layout
+    path.join(dir, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js") // POSIX prefix layout
+  ].filter(Boolean);
+}
+
 function runNpm(args, options) {
+  const cli = npmCliCandidates(process.execPath, process.env).find((candidate) => fs.existsSync(candidate));
+  if (cli) return run(process.execPath, [cli, ...args], options);
+  // No npm entry script where it should be -- an unusual install rather than a
+  // broken one, so fall back rather than fail. The argument lists are constants
+  // defined in this file; nothing from the caller reaches the shell.
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
   return run(npm, args, { ...options, shell: process.platform === "win32" });
 }
@@ -263,7 +279,10 @@ function gates(options) {
   const test = runNpm(["test"], options);
   if (!test.ok) {
     const output = `${test.stdout}\n${test.stderr}`;
-    const hint = /COMPARISON/i.test(output)
+    // Matched on the test's own name, not on the filename: the string
+    // "docs/COMPARISON.md" appears in other suites' captured output, and a hint
+    // pointing at the wrong file is worse than none.
+    const hint = /comparison and parity docs/i.test(output)
       ? "\n\nHint: docs/COMPARISON.md pins this project's release row. Refresh the version AND the date in that row -- both are asserted, and a stale date is the easier one to miss."
       : "";
     throw new ShipError(EXIT.testsFailed, `Tests failed.${hint}`, tail(output, 40).slice(-4000));

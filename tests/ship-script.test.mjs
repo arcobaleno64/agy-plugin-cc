@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { EXIT, bumpedFiles, insertChangelogEntry, parseArgs, summariseTests, tail } from "../scripts/ship.mjs";
+import { EXIT, bumpedFiles, npmCliCandidates, insertChangelogEntry, parseArgs, summariseTests, tail } from "../scripts/ship.mjs";
 
 // The script's own steps spawn git, npm and gh, so they are exercised by running
 // it. What is unit-tested here is the part that decides WHERE prose lands and
@@ -116,4 +116,24 @@ test("bumpedFiles returns nothing when bump-version changed nothing", () => {
 
 test("bumpedFiles returns nothing for unrecognised output", () => {
   assert.deepEqual(bumpedFiles("something else entirely"), []);
+});
+
+// Running npm's entry script under this node is what keeps the gates off a
+// shell: node will not spawn npm.cmd without one, and shell args are
+// concatenated rather than escaped (DEP0190). A candidate list that missed the
+// real install would fall back to exactly the shell this avoids.
+test("npmCliCandidates prefers an npm_execpath handed down by npm itself", () => {
+  const candidates = npmCliCandidates("/usr/bin/node", { npm_execpath: "/opt/npm/bin/npm-cli.js" });
+  assert.equal(candidates[0], "/opt/npm/bin/npm-cli.js");
+});
+
+test("npmCliCandidates ignores an npm_execpath that is not a script", () => {
+  const candidates = npmCliCandidates("/usr/bin/node", { npm_execpath: "/opt/npm/bin/npm.cmd" });
+  assert.ok(!candidates.includes("/opt/npm/bin/npm.cmd"));
+});
+
+test("npmCliCandidates covers both the Windows and POSIX install layouts", () => {
+  const candidates = npmCliCandidates("/usr/bin/node", {}).map((p) => p.split("\\").join("/"));
+  assert.ok(candidates.some((p) => p.endsWith("/usr/bin/node_modules/npm/bin/npm-cli.js")), candidates.join(" | "));
+  assert.ok(candidates.some((p) => p.endsWith("/usr/lib/node_modules/npm/bin/npm-cli.js")), candidates.join(" | "));
 });
