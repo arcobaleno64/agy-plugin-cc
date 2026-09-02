@@ -104,6 +104,15 @@ function pushFailureDetails(lines, failure, indent = "") {
   if (failure.nextStep) {
     lines.push(`${indent}Next step: ${failure.nextStep}`);
   }
+  // Last, and multi-line: this is the engine's own wording, and it is the part
+  // that names specifics `summary` and `nextStep` cannot. Indented as a block so
+  // a model list or a stack does not read as more plugin prose.
+  if (failure.detail) {
+    lines.push(`${indent}Engine said:`);
+    for (const line of String(failure.detail).split(/\r?\n/)) {
+      lines.push(`${indent}  ${line}`);
+    }
+  }
 }
 
 function escapeMarkdownCell(value) {

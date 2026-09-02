@@ -313,3 +313,21 @@ test("a cancel counts what it could not kill, and still says it could not", () =
   assert.equal(described, "terminated the running process; 1 process it started could not be killed");
   assert.match(described, /could not be killed/, "the phrase this report has always used is kept");
 });
+
+test("a rendered failure shows the engine's message, not only the plugin's summary", () => {
+  // The user-visible half of #141: detail exists on the failure object, and the
+  // renderer has to actually print it or the field changes nothing.
+  const said = 'invalid model selection (--model "gemini-3-pro")\nAvailable models:\n  Gemini 3.1 Pro (High)';
+  const text = renderStoredJobResult(
+    { id: "j1", kind: "task", status: "failed" },
+    { result: { status: 1, rawOutput: "", failure: {
+      category: "model-unavailable", retryable: false,
+      summary: "The requested model is unavailable to this CLI.",
+      nextStep: "Use a supported model, omit `--model`, or use the default Gemini engine mapping.",
+      detail: said
+    } } }
+  );
+  assert.match(text, /Engine said:/);
+  assert.match(text, /Available models:/);
+  assert.match(text, /Gemini 3\.1 Pro \(High\)/);
+});

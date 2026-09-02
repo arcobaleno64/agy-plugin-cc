@@ -149,6 +149,26 @@ function combinedTrustedText(input) {
     .join("\n");
 }
 
+// What the engine itself said, kept verbatim. `summary` and `nextStep` are this
+// plugin's words for a category; they are chosen from a fixed table and cannot
+// name anything specific to the run. The engine's own message can, and it is
+// routinely the only place the actionable part exists — AGY answers a rejected
+// `--model` with the full list of ids it would have accepted, and before this
+// field that text was read by the classifier and then dropped, leaving the user
+// told to "use a supported model" with no way to learn which ones those are.
+//
+// Capped because it is engine output, not a fixed string: the model list is a few
+// hundred bytes, but nothing upstream promises a bound, and this travels into job
+// records that are written to disk and re-rendered.
+const MAX_FAILURE_DETAIL = 2000;
+
+function normalizeDetail(value) {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) return null;
+  if (text.length <= MAX_FAILURE_DETAIL) return text;
+  return `${text.slice(0, MAX_FAILURE_DETAIL)}\n… (truncated; ${text.length} characters total)`;
+}
+
 function normalizeFailure(category, input = {}) {
   const defaults = DEFAULTS[category] ?? DEFAULTS.unknown;
   const summary = input.summary ?? firstLine(input.errorMessage);
@@ -156,7 +176,8 @@ function normalizeFailure(category, input = {}) {
     category,
     retryable: Boolean(input.retryable ?? defaults.retryable),
     summary: String(summary || defaults.summary),
-    nextStep: String(input.nextStep ?? defaults.nextStep)
+    nextStep: String(input.nextStep ?? defaults.nextStep),
+    detail: normalizeDetail(input.detail)
   };
 }
 

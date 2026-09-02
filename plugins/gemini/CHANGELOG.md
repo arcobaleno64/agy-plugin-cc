@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.24.4 - Unreleased
+
+- **A failed engine run now shows what the engine said.** `classifyCliFailure`
+  read AGY's structured `error` to pick a category and then dropped it, so the
+  rendered failure carried only this plugin's own words — which come from a table
+  keyed by category and cannot name anything specific to the run. Measured on AGY
+  1.1.24: a rejected `--model` is answered with the eleven model ids AGY would
+  have accepted, and the user was shown "Use a supported model" with that list
+  discarded and `rawOutput` empty. Failures gained a `detail` field carrying the
+  engine's message verbatim (capped at 2000 characters, since it is engine output
+  written to job records on disk), and the renderer prints it under
+  `Engine said:`. The same field now also surfaces when a rate limit says when it
+  resets. (#141)
+
 ## 0.24.3 - 2026-09-02 - A 503 is a flake again
 
 - **A transport 503 that names the model is retried again.** 0.24.2 stopped a

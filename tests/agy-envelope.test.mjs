@@ -76,6 +76,13 @@ test("AGY 1.1.10 turn classifies an ERROR envelope from its error string", async
   // The envelope's `error` reaches the classifier; AGY leaves stderr empty here.
   assert.equal(result.failure.category, "model-unavailable");
   assert.equal(result.failure.retryable, false);
+  // ...and it must survive the classification rather than only inform it. AGY
+  // answers a rejected --model with the ids it would have accepted, which is the
+  // only place that list exists; `summary` and `nextStep` come from a fixed table
+  // and cannot name a single one of them. Measured on 1.1.24: the text was read
+  // by the classifier and then dropped, and the user was told to "use a supported
+  // model" with no route to which. (#141)
+  assert.equal(result.failure.detail, ERROR_ENVELOPE.error);
 });
 
 // Review finding on #30: conversation_id identifies the conversation, not the
