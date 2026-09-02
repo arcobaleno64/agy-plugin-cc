@@ -4,7 +4,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 
-import { run } from "./helpers.mjs";
+import { makeTempDir, run } from "./helpers.mjs";
+import { waitForJob, waitForRunningJob } from "../scripts/reviewer-demo.mjs";
+
+// A pid that cannot be running: the kernel reserves 0, and process.kill(0, 0)
+// addresses the calling process group rather than a process, so a real-looking
+// but unused high pid is used instead and checked once here.
+const DEAD_PID = 0x7ffffffe;
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT = path.join(ROOT, "scripts", "reviewer-demo.mjs");
@@ -53,6 +59,35 @@ function findJobLog(kept, marker) {
     if (body.includes(marker)) return body;
   }
   return null;}
+
+// The waits poll the job file rather than spawning `status` per iteration
+// (#138). Two things that command did for free now have to be done here, and
+// both are failure paths a normal run never takes -- so they are exercised
+// directly rather than hoped for.
+
+test("waitForRunningJob gives up when the worker's pid is gone", () => {
+  const dir = makeTempDir();
+  fs.writeFileSync(
+    path.join(dir, "task-dead.json"),
+    JSON.stringify({ id: "task-dead", status: "running", phase: "starting", pid: DEAD_PID })
+  );
+  const started = Date.now();
+  assert.equal(waitForRunningJob(dir, "task-dead", 10_000), "worker");
+  assert.ok(Date.now() - started < 5_000, "it waited out the budget instead of noticing the dead pid");
+});
+
+test("waitForJob reports a corrupt job file instead of waiting out its budget", () => {
+  const dir = makeTempDir();
+  fs.writeFileSync(path.join(dir, "task-corrupt.json"), "{ this is not json");
+  const started = Date.now();
+  assert.equal(waitForJob(dir, "task-corrupt", 10_000), "unreadable");
+  assert.ok(Date.now() - started < 5_000, "it waited out the budget instead of reporting the corrupt file");
+});
+
+test("waitForJob keeps waiting while the job file does not exist yet", () => {
+  const dir = makeTempDir();
+  assert.equal(waitForJob(dir, "task-absent", 500), "timed-out");
+});
 
 test("reviewer-demo lists its steps without running anything", () => {
   const result = run("node", [SCRIPT, "--list"], { cwd: ROOT });
