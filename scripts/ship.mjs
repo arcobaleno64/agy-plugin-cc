@@ -266,10 +266,18 @@ function applyChangelog(options) {
   step(`changelog entry for ${options.version}`);
   const fragment = readInput(options.root, options.changelogFile, "changelog");
   const target = path.resolve(options.root, CHANGELOG_FILE);
+  if (!fs.existsSync(target)) {
+    // Reachable through --root. Without this the run dies on a raw ENOENT with
+    // exit 1, outside the per-step set the header tells callers they can branch on.
+    throw new ShipError(EXIT.missingInput, `No changelog to insert into: ${CHANGELOG_FILE} does not exist under ${options.root}.`);
+  }
   const existing = fs.readFileSync(target, "utf8");
   if (hasChangelogHeading(existing, options.version)) {
+    // Still returned for staging. This is the retry case -- run 1 wrote the entry
+    // and then failed a gate -- and the edit is sitting unstaged in the tree. A
+    // release commit that omits it passes every gate, because they read the tree.
     console.log(`already has a \`## ${options.version}\` heading; leaving it alone`);
-    return [];
+    return [CHANGELOG_FILE];
   }
   const next = insertChangelogEntry(existing, fragment);
   if (options.dryRun) {
@@ -299,7 +307,15 @@ function bump(options) {
   const result = mustRun(EXIT.bumpFailed, `bump-version rejected ${options.version}.`,
     process.execPath, ["scripts/bump-version.mjs", options.version], options);
   console.log(result.stdout);
-  return bumpedFiles(result.stdout);
+  // Every manifest a bump can touch, not the ones this run happened to change.
+  // A retry after a failed gate finds the manifests already at the target version
+  // and reports "no files changed", so staging the report would produce a release
+  // commit with no version bump in it -- and check-version reads the working tree,
+  // so every gate would still pass. Same reason applyChangelog returns the
+  // changelog even when the entry is already there.
+  const targets = mustRun(EXIT.bumpFailed, "bump-version could not list its targets.",
+    process.execPath, ["scripts/bump-version.mjs", "--list-targets"], options);
+  return targets.stdout.split("\n").map((line) => line.trim()).filter(Boolean);
 }
 
 // bump-version names the manifests it rewrote. Parsing that beats keeping a
@@ -433,6 +449,11 @@ function main() {
   }
   if (!options.commitFile) {
     throw new ShipError(EXIT.usage, `Missing --commit.\n\n${usage()}`);
+  }
+  // Silently doing nothing with --pr reads as "no --pr was given" in the summary,
+  // and preflight has already spent a gh check on it.
+  if (options.noPush && options.prFile) {
+    throw new ShipError(EXIT.usage, "--pr needs the push: a PR cannot be opened or commented on a branch origin has not seen. Drop one of --no-push and --pr.");
   }
   if (options.version && !options.changelogFile) {
     throw new ShipError(EXIT.usage, "--version needs --changelog: a release with no entry tells the user nothing about what changed.");

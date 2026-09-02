@@ -62,10 +62,15 @@ function makeRepo(t) {
   fs.writeFileSync(path.join(dir, "scripts", "bump-version.mjs"), [
     "import fs from 'node:fs';",
     "const version = process.argv[2];",
+    "if (process.argv.includes('--list-targets')) { console.log('package.json'); process.exit(0); }",
     "const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));",
+    // Reports only what it actually changed, exactly as the real bump-version
+    // does. A stub that always claims a rewrite hides the retry case, where the
+    // manifests already hold the target version and the report is empty.
+    "const changed = pkg.version !== version;",
     "pkg.version = version;",
-    "fs.writeFileSync('package.json', `${JSON.stringify(pkg, null, 2)}\\n`);",
-    "console.log(`Set version metadata to ${version}: package.json.`);"
+    "if (changed) fs.writeFileSync('package.json', `${JSON.stringify(pkg, null, 2)}\\n`);",
+    "console.log(`Set version metadata to ${version}: ${changed ? 'package.json' : 'no files changed'}.`);"
   ].join("\n"), "utf8");
   git(dir, "add", "-A");
   git(dir, "commit", "-qm", "init");
@@ -90,6 +95,25 @@ test("a --version dry run reaches the end instead of throwing", (t) => {
   assert.equal(result.status, 0);
   // A dry run that edited the file would be a dry run in name only.
   assert.match(fs.readFileSync(path.join(dir, "plugins", "gemini", "CHANGELOG.md"), "utf8"), /^# Changelog\n\n## 0\.1\.0/);
+});
+
+// ship stages this list rather than the one a bump reports, so the two must not
+// drift: a target missing here is a manifest that silently stays out of release
+// commits made on a retry.
+test("bump-version --list-targets names every manifest it can rewrite", () => {
+  const result = spawnSync(process.execPath, [path.join(ROOT, "scripts", "bump-version.mjs"), "--list-targets"],
+    { cwd: ROOT, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  const listed = result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  assert.deepEqual(listed, [
+    "package.json",
+    "package-lock.json",
+    "plugins/gemini/.claude-plugin/plugin.json",
+    ".claude-plugin/marketplace.json"
+  ]);
+  for (const file of listed) {
+    assert.ok(fs.existsSync(path.join(ROOT, file)), `${file} is listed but does not exist`);
+  }
 });
 
 test("preflight refuses a detached HEAD before anything is written", (t) => {
@@ -153,4 +177,57 @@ test("a second run does not insert the same version twice", (t) => {
   ship(dir, args);
   const changelog = fs.readFileSync(path.join(dir, "plugins", "gemini", "CHANGELOG.md"), "utf8");
   assert.equal(changelog.match(/## 0\.2\.0/g)?.length, 1, changelog);
+});
+
+// The retry after a failed gate is the dangerous run, and it is dangerous
+// precisely because it looks fine: run 1 wrote the changelog and bumped the
+// manifests, then died at a gate, leaving both unstaged. On the retry the
+// changelog entry is already present and bump-version reports "no files
+// changed", so a script that stages what THIS run wrote stages neither -- and
+// every gate still passes, because they read the working tree rather than the
+// index. The result is a release commit containing only the caller's code.
+test("a retry after a failed gate still commits the release, not just the code", (t) => {
+  const dir = makeRepo(t);
+  fs.writeFileSync(path.join(dir, "code.txt"), "after\n", "utf8");
+  git(dir, "add", "code.txt");
+  const args = ["--commit", ".ship-commit", "--changelog", ".ship-changelog", "--version", "0.2.0", "--no-push"];
+
+  const pkg = path.join(dir, "package.json");
+  const original = fs.readFileSync(pkg, "utf8");
+  const failing = JSON.parse(original);
+  failing.scripts.test = "node -e \"process.exit(1)\"";
+  fs.writeFileSync(pkg, `${JSON.stringify(failing, null, 2)}\n`, "utf8");
+
+  const first = ship(dir, args);
+  assert.equal(first.status, 30, `expected the gate to fail: ${first.stdout}${first.stderr}`);
+  assert.equal(git(dir, "log", "--oneline").split("\n").length, 1, "nothing is committed on a failed gate");
+
+  // Repair the gate the way a caller would, leaving run 1's release edits in the
+  // tree, and let the version stay bumped as run 1 left it.
+  const repaired = JSON.parse(fs.readFileSync(pkg, "utf8"));
+  repaired.scripts.test = JSON.parse(original).scripts.test;
+  fs.writeFileSync(pkg, `${JSON.stringify(repaired, null, 2)}\n`, "utf8");
+
+  const second = ship(dir, args);
+  assert.equal(second.status, 0, `${second.stdout}${second.stderr}`);
+  const committed = git(dir, "show", "--pretty=", "--name-only", "HEAD").split("\n");
+  assert.ok(committed.includes("plugins/gemini/CHANGELOG.md"), `retry commit lost the changelog: ${committed.join(", ")}`);
+  assert.ok(committed.includes("package.json"), `retry commit lost the bump: ${committed.join(", ")}`);
+  assert.equal(git(dir, "status", "--porcelain", "plugins/gemini/CHANGELOG.md"), "", "and left nothing behind unstaged");
+});
+
+test("--pr with --no-push is refused rather than silently skipped", (t) => {
+  const dir = makeRepo(t);
+  fs.writeFileSync(path.join(dir, ".ship-pr"), "body\n", "utf8");
+  const result = ship(dir, ["--commit", ".ship-commit", "--pr", ".ship-pr", "--no-push"]);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /--no-push/);
+});
+
+test("a missing changelog fails with a documented exit code, not a raw ENOENT", (t) => {
+  const dir = makeRepo(t);
+  fs.rmSync(path.join(dir, "plugins", "gemini", "CHANGELOG.md"));
+  const result = ship(dir, ["--commit", ".ship-commit", "--changelog", ".ship-changelog", "--version", "0.2.0", "--no-push"]);
+  assert.equal(result.status, 12);
+  assert.doesNotMatch(result.stderr, /ENOENT/);
 });
