@@ -952,6 +952,13 @@ export function isTransientReviewFailure({ reviewJson, reviewText, stderr } = {}
   // IS the transport flake this wrapper exists to absorb (issue #132). Only the
   // account-state and input-shape refusals belong here; every category outside
   // this set stays subject to the heuristics below.
+  //
+  // `tool-permission-denied` and brain-root `transcript-missing` are also outside
+  // the set, and that is safe only because both are AGY-only and
+  // runGeminiReviewResilient returns on `engine === "agy"` before this function is
+  // ever reached. Neither refusal is fixed by a retry, so if AGY retry is ever
+  // enabled they must be added here -- the heuristics below name nothing that
+  // would catch them.
   if (err && ACCOUNT_STATE_FAILURES.has(classifyCliFailure({ stderr: err }).category)) return false;
   if (!out && !err) return true;                              // empty stdout+stderr — nothing usable
   if (ENVELOPE_REVIEW_RE.test(`${out}\n${err}`)) return true; // envelope — trusted on either channel
