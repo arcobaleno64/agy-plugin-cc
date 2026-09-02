@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.24.4 - Unreleased
+## 0.24.4 - 2026-09-03 - Four things only using it could find
 
 - **The reviewer walkthrough stops competing with the job it is waiting for.**
   `waitForRunningJob` and `waitForJob` in `scripts/reviewer-demo.mjs` polled by
