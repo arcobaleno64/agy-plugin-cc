@@ -91,7 +91,12 @@ function formatJobLine(job) {
   return parts.join(" | ");
 }
 
-function pushFailureDetails(lines, failure, indent = "") {
+// `showDetail` is off by default because this is shared with the job listings.
+// A status report renders up to 8 jobs (unbounded under --all), and an engine
+// detail is up to 2000 characters each — repeating one model list per failed job
+// would bury the three lines the listing exists to show. The result view, where
+// the user asked about one job, opts in.
+function pushFailureDetails(lines, failure, indent = "", { showDetail = false } = {}) {
   if (!failure || typeof failure !== "object") {
     return;
   }
@@ -103,6 +108,15 @@ function pushFailureDetails(lines, failure, indent = "") {
   }
   if (failure.nextStep) {
     lines.push(`${indent}Next step: ${failure.nextStep}`);
+  }
+  // Last, and multi-line: this is the engine's own wording, and it is the part
+  // that names specifics `summary` and `nextStep` cannot. Indented as a block so
+  // a model list or a stack does not read as more plugin prose.
+  if (showDetail && failure.detail) {
+    lines.push(`${indent}Engine said:`);
+    for (const line of String(failure.detail).split(/\r?\n/)) {
+      lines.push(`${indent}  ${line}`);
+    }
   }
 }
 
@@ -369,7 +383,7 @@ export function renderTaskResult(parsedResult, meta) {
       return frameDelegatedOutput(output);
     }
     const lines = [output.trimEnd(), ""];
-    pushFailureDetails(lines, parsedResult.failure);
+    pushFailureDetails(lines, parsedResult.failure, "", { showDetail: true });
     return frameDelegatedOutput(`${lines.join("\n").trimEnd()}\n`);
   }
 
@@ -378,8 +392,14 @@ export function renderTaskResult(parsedResult, meta) {
     return `${message}\n`;
   }
   const lines = [message, ""];
-  pushFailureDetails(lines, parsedResult.failure);
-  return `${lines.join("\n").trimEnd()}\n`;
+  pushFailureDetails(lines, parsedResult.failure, "", { showDetail: true });
+  const text = `${lines.join("\n").trimEnd()}\n`;
+  // This branch used to emit plugin-authored text only, so leaving it unmarked
+  // cost nothing. `failure.detail` is engine-controlled, and this is the branch a
+  // failed run takes — so once a detail is present the positional marker THREAT-
+  // MODEL 7.3 names for the task path has to be here too, not only on the branch
+  // that happens to have rawOutput.
+  return parsedResult.failure.detail ? frameDelegatedOutput(text) : text;
 }
 
 // A group cancel is several terminations, and which of them reached a live

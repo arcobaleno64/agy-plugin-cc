@@ -394,6 +394,10 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
           // wording the classifier already matches on, and stderr is empty here.
           stdout: envelope.error ?? rawStdout,
           stderr: envelope.error ?? rawStderr,
+          // The same text, kept for the user rather than only for the match. It
+          // is the only place a rejected `--model` names the ids AGY accepts, and
+          // the only place a rate limit says when it resets.
+          detail: envelope.error ?? null,
           noOutput: !text
         })
   };

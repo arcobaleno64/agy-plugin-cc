@@ -242,3 +242,56 @@ test("the default prompt-too-long advice belongs to no engine", () => {
   assert.doesNotMatch(failure.nextStep, /--engine/, "a context window is not an engine's fault");
   assert.match(failure.nextStep, /scope|split/i, "and the remedy is to send less");
 });
+
+// ---------------------------------------------------------------------------
+// `detail` carries the engine's own words. `summary` and `nextStep` are chosen
+// from a fixed table keyed by category, so neither can name anything specific to
+// the run — the model that was rejected, the ids that would have worked, when a
+// limit resets. Before this field the engine's message was read by the
+// classifier and then discarded. (#141)
+// ---------------------------------------------------------------------------
+
+test("classifyCliFailure keeps the engine's own message as detail", () => {
+  const said = 'invalid model selection (--model "gemini-3-pro" --effort ""): model gemini-3-pro is not recognized\nAvailable models:\n  Gemini 3.1 Pro (High)';
+  const failure = classifyCliFailure({ engine: "agy", status: 1, stdout: said, stderr: said, detail: said });
+  assert.equal(failure.category, "model-unavailable");
+  assert.equal(failure.detail, said);
+  // The specifics live only in detail: the table-driven fields cannot carry them.
+  assert.ok(!failure.summary.includes("gemini-3-pro"));
+  assert.ok(!failure.nextStep.includes("Gemini 3.1 Pro"));
+});
+
+test("classifyCliFailure reports no detail as null rather than an empty string", () => {
+  assert.equal(classifyCliFailure({ stderr: "429 Too Many Requests" }).detail, null);
+  assert.equal(classifyCliFailure({ stderr: "429 Too Many Requests", detail: "   " }).detail, null);
+});
+
+test("classifyCliFailure caps a runaway detail instead of storing it whole", () => {
+  // Engine output, not a fixed string, and it is written to job records on disk.
+  const failure = classifyCliFailure({ stderr: "boom", detail: "x".repeat(5000) });
+  assert.ok(failure.detail.length < 2200, `detail was ${failure.detail.length} characters`);
+  assert.match(failure.detail, /truncated; 5000 characters total/);
+});
+
+test("a failure that is re-normalized does not lose its detail", () => {
+  // Job records are stored and re-read, and an already-classified failure takes
+  // the explicitFailure path rather than the text matchers.
+  const first = classifyCliFailure({ stderr: "boom", detail: "the engine said this" });
+  const second = classifyCliFailure({ failure: first });
+  assert.equal(second.detail, "the engine said this");
+  assert.equal(second.category, first.category);
+});
+
+// Review finding on #144. A stored failure is re-normalized every time a job
+// record is read back, and the first version appended the marker AFTER slicing
+// to the full budget — so the result exceeded the cap, the second pass sliced the
+// marker off, and the replacement reported the truncated length. The original
+// size was lost and another 37 characters of real message with it. The
+// re-normalization test above uses a 20-character detail, so it cannot see this.
+test("truncating an already-truncated detail is a no-op, and keeps the real total", () => {
+  const once = classifyCliFailure({ stderr: "boom", detail: "x".repeat(5000) });
+  const twice = classifyCliFailure({ failure: once });
+  assert.equal(twice.detail, once.detail, "a second pass must not re-truncate");
+  assert.match(twice.detail, /truncated; 5000 characters total/, "the engine's real size, not the truncated one");
+  assert.ok(once.detail.length <= 2000, `marker must fit inside the cap, got ${once.detail.length}`);
+});
