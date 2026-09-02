@@ -117,3 +117,20 @@ test("isTransientReviewFailure: a plain rate limit with no quota wording stays t
     true
   );
 });
+
+// Regression, issue #132: the guard above was first written as
+// `classifyCliFailure(...).retryable === false`, which also caught
+// `model-unavailable` -- and that category matches on the bare word
+// `unavailable`, which is exactly what a 503 says. Measured on the broad guard:
+// this stderr returned false (no retry) on the first attempt, losing the flake
+// absorption the resilient wrapper exists for.
+test("isTransientReviewFailure: a 503 naming the model is still a transport flake", () => {
+  assert.equal(
+    isTransientReviewFailure({
+      reviewJson: null,
+      reviewText: "",
+      stderr: "503: model gemini-3-pro is temporarily unavailable, try again later"
+    }),
+    true
+  );
+});

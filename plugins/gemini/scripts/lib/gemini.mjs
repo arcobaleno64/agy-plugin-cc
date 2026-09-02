@@ -928,6 +928,11 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
 const ENVELOPE_REVIEW_RE = /invalid stream|malformed tool call|empty response|no response/i;
 const TRANSPORT_REVIEW_RE = /resource[_ ]?exhausted|unavailable|deadline|temporarily|try again|rate.?limit|\b(429|500|502|503|504)\b|econnreset|socket hang|stream closed/i;
 
+// Refusals that come from the account or the input rather than the wire: no
+// number of re-runs changes the answer, so a review must not spend attempts on
+// them. Deliberately excludes `model-unavailable` -- see the note below.
+const ACCOUNT_STATE_FAILURES = new Set(["quota", "auth", "binary-missing", "prompt-too-long"]);
+
 export function isTransientReviewFailure({ reviewJson, reviewText, stderr } = {}) {
   if (reviewJson != null) return false;                       // got structured findings — success
   const out = (reviewText ?? "").trim();
@@ -940,7 +945,21 @@ export function isTransientReviewFailure({ reviewJson, reviewText, stderr } = {}
   // tested ahead of `rate-limit`), so defer to it rather than keeping a second
   // opinion here. Measured: a project over its monthly spend cap burned three full
   // review attempts over 10m46s before reporting a non-retryable failure.
-  if (err && classifyCliFailure({ stderr: err }).retryable === false) return false;
+  //
+  // Named categories, NOT `retryable === false`: the broad test also caught
+  // `model-unavailable`, which matches on `unavailable` / `404` -- the same words
+  // `503: model X is temporarily unavailable, try again later` carries, and that
+  // IS the transport flake this wrapper exists to absorb (issue #132). Only the
+  // account-state and input-shape refusals belong here; every category outside
+  // this set stays subject to the heuristics below.
+  //
+  // `tool-permission-denied` and brain-root `transcript-missing` are also outside
+  // the set, and that is safe only because both are AGY-only and
+  // runGeminiReviewResilient returns on `engine === "agy"` before this function is
+  // ever reached. Neither refusal is fixed by a retry, so if AGY retry is ever
+  // enabled they must be added here -- the heuristics below name nothing that
+  // would catch them.
+  if (err && ACCOUNT_STATE_FAILURES.has(classifyCliFailure({ stderr: err }).category)) return false;
   if (!out && !err) return true;                              // empty stdout+stderr — nothing usable
   if (ENVELOPE_REVIEW_RE.test(`${out}\n${err}`)) return true; // envelope — trusted on either channel
   if (TRANSPORT_REVIEW_RE.test(err)) return true;             // transport flake — trusted on stderr only
