@@ -33,3 +33,11 @@ Thumbs.db
 
 # Scratch working notes
 scratch/
+
+# Claude Code project settings. `settings.json` is the shared half and is
+# committed; these two are per-machine and must not be. `settings.local.json`
+# accumulates permission grants as one person works, so committing it would hand
+# every clone whatever that person happened to approve -- here, entries as wide
+# as `Bash(git push *)` and absolute paths under one user's home.
+.claude/settings.local.json
+.claude/worktrees/
