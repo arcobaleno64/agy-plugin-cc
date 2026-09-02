@@ -2,6 +2,22 @@
 
 ## 0.24.4 - Unreleased
 
+- **An AGY review survives a rate limit that clears in under a minute.**
+  `runGeminiReviewResilient` returned on `engine === "agy"` unconditionally, so a
+  limit AGY itself reports as `Resets in 58s` ended the review outright. Two of
+  the three reasons for that blanket exclusion still hold; the one that was meant
+  to cover this case does not — a fail-fast timeout answers a hang, and a rate
+  limit is a clean ERROR envelope arriving in six seconds with every token count
+  at zero (measured, AGY 1.1.24). The exclusion is now an **allowlist**: agy
+  retries on `rate-limit` and nothing else, which keeps `tool-permission-denied`
+  and brain-root `transcript-missing` unreachable — neither is in
+  `ACCOUNT_STATE_FAILURES` and no heuristic names them, so a denylist would have
+  exposed both. A retry happens only when AGY states when the limit clears, and
+  waits that long (ceiling 90s, one-second grace); with no stated reset there is
+  no retry, because this wrapper has no backoff and three immediate attempts
+  would finish in seconds at the same refusal. The wrapper also now forwards its
+  spawn seams, without which its own branching could not be tested at all. (#142)
+
 - **A failed AGY turn now shows what AGY said.** `classifyCliFailure` read AGY's
   structured `error` to pick a category and then dropped it, so the rendered
   failure carried only this plugin's own words — which come from a table keyed by

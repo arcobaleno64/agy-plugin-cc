@@ -970,24 +970,83 @@ export function isTransientReviewFailure({ reviewJson, reviewText, stderr } = {}
   return false;                                               // real non-transient output (e.g. prose review) — keep it
 }
 
+// AGY states when a rate limit clears, in its own words: `Individual quota
+// reached. Please upgrade your subscription to increase your limits. Resets in
+// 58s.` (measured on 1.1.24). That sentence is the whole reason an AGY retry can
+// be safe -- it turns "retry and hope" into "wait exactly this long, then retry
+// once". Returns null when no reset is stated, and the caller must then NOT
+// retry: an immediate re-run against a limit that has not cleared burns the
+// attempts in seconds and reports the same refusal, which is worse than failing
+// once. Deliberately no default guess.
+export const AGY_RATE_LIMIT_MAX_WAIT_MS = 90_000;
+
+export function parseRateLimitResetMs(text) {
+  const match = /resets? in\s+(\d+)\s*(s|sec|secs|seconds?|m|min|mins|minutes?)\b/i.exec(String(text ?? ""));
+  if (!match) return null;
+  const value = Number(match[1]);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const ms = /^m/i.test(match[2]) ? value * 60_000 : value * 1000;
+  // A grace second: the reset is reported as a whole number and a retry that
+  // lands on the same tick is refused again for no reason.
+  const waitMs = ms + 1000;
+  return waitMs > AGY_RATE_LIMIT_MAX_WAIT_MS ? null : waitMs;
+}
+
 // Resilient wrapper around runGeminiReview: a READ-ONLY adversarial review is
 // idempotent (no side effects), so a transient empty / `Invalid stream` envelope is
 // safe to re-run. The gemini CLI flakes intermittently on this in practice
 // (observed needing 2-3 attempts for the SAME input); retrying here removes that
-// flakiness from the caller. agy is NOT retried — its fail-fast timeout handles its
-// distinct failure mode and re-spawning it is costly. (The original rationale also
-// cited agy's transcript-recovery path; that no longer applies from AGY 1.1.8 on,
-// where `supportsAgyStructuredOutput` routes to the native JSON envelope and the
-// transcript path never runs. The remaining two reasons are what holds it up now.)
-// Composes with runGeminiReview's inline GA-fallback (model-not-found) retry: that
-// fixes a deterministic wrong-model error within a single attempt; this re-runs the
-// whole review only when no usable result came back at all.
-export async function runGeminiReviewResilient(cwd, options = {}, { maxAttempts = 3 } = {}) {
+// flakiness from the caller. Composes with runGeminiReview's inline GA-fallback
+// (model-not-found) retry: that fixes a deterministic wrong-model error within a
+// single attempt; this re-runs the whole review only when no usable result came
+// back at all.
+//
+// agy is still not subject to the heuristics above, and the reasons are worth
+// keeping straight, because one of the two that used to hold up a blanket
+// exclusion turned out not to cover the case that motivated #142:
+//
+//   - "its fail-fast timeout handles its distinct failure mode" — true, and it
+//     covers a hang. It does not cover a clean structured ERROR envelope that
+//     arrives in six seconds, which is what a rate limit is.
+//   - "re-spawning it is costly" — true of a review that runs; a refusal came
+//     back in 6s and 11s with every token count at zero (measured, AGY 1.1.24).
+//   - (a third, agy's transcript-recovery path, stopped applying at AGY 1.1.8,
+//     where supportsAgyStructuredOutput routes to the native JSON envelope.)
+//
+// So the exclusion is narrowed rather than removed, and narrowed by ALLOWLIST:
+// agy retries on `rate-limit` and nothing else. That matters for the warning in
+// isTransientReviewFailure — `tool-permission-denied` and brain-root
+// `transcript-missing` sit outside ACCOUNT_STATE_FAILURES and are caught by none
+// of the heuristics, and they were safe only because agy returned before reaching
+// them. An allowlist keeps them unreachable; a denylist would have exposed both.
+// Widening this set means adding them to ACCOUNT_STATE_FAILURES first.
+//
+// And it retries only when AGY says when the limit clears, waiting that long.
+// Without a stated reset there is no retry: this wrapper has no backoff, so three
+// immediate attempts against a 58-second limit finish in seconds and report the
+// same refusal — worse than failing once.
+export async function runGeminiReviewResilient(cwd, options = {}, deps = {}) {
+  // The spawn seams are forwarded rather than dropped: without this the wrapper's
+  // own retry decisions -- the part with the branching -- could only be tested by
+  // spawning a real engine, which is why they were not tested at all.
+  const { maxAttempts = 3, sleepFn = null, ...reviewDeps } = deps;
+  const sleep = sleepFn ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   let last = null;
   let prevText = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    last = await runGeminiReview(cwd, options);
-    if (last.engine === "agy") return { ...last, attempts: attempt };
+    last = await runGeminiReview(cwd, options, reviewDeps);
+    if (last.engine === "agy") {
+      const waitMs = last.failure?.category === "rate-limit"
+        ? parseRateLimitResetMs(last.failure?.detail ?? last.stderr)
+        : null;
+      if (waitMs === null || attempt >= maxAttempts) return { ...last, attempts: attempt };
+      options.onProgress?.({
+        message: `AGY rate limit; it reports clearing in ${Math.round((waitMs - 1000) / 1000)}s (attempt ${attempt}/${maxAttempts}). Waiting, then retrying...`,
+        phase: "reviewing"
+      });
+      await sleep(waitMs);
+      continue;
+    }
     if (!isTransientReviewFailure(last)) return { ...last, attempts: attempt };
     // Backstop for a residual stderr-side false positive: identical non-empty review
     // text across attempts is deterministic output that merely tripped the heuristic,

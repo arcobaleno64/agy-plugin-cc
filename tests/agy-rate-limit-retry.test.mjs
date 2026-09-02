@@ -1,0 +1,159 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  parseRateLimitResetMs,
+  AGY_RATE_LIMIT_MAX_WAIT_MS,
+  runGeminiReviewResilient
+} from "../plugins/gemini/scripts/lib/gemini.mjs";
+
+// AGY's verbatim wording, measured on 1.1.24. The retry in #142 is safe only
+// because this sentence exists: it turns "retry and hope" into "wait exactly this
+// long, then retry".
+const AGY_RATE_LIMIT =
+  "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 58s.";
+
+test("the reset AGY states is read out of its own message", () => {
+  // 58s plus the one-second grace: a retry landing on the same tick is refused
+  // again for nothing.
+  assert.equal(parseRateLimitResetMs(AGY_RATE_LIMIT), 59_000);
+  assert.equal(parseRateLimitResetMs("Resets in 8s."), 9_000);
+  assert.equal(parseRateLimitResetMs("resets in 1 minute"), 61_000);
+});
+
+// The whole design rests on not guessing. This wrapper has no backoff, so an
+// immediate retry against a limit that has not cleared burns every attempt in
+// seconds and reports the same refusal -- worse than failing once.
+test("a message that does not say when it clears yields no wait, not a default", () => {
+  assert.equal(parseRateLimitResetMs("Individual quota reached."), null);
+  assert.equal(parseRateLimitResetMs("429 Too Many Requests"), null);
+  assert.equal(parseRateLimitResetMs(""), null);
+  assert.equal(parseRateLimitResetMs(null), null);
+  assert.equal(parseRateLimitResetMs("Resets in 0s"), null);
+});
+
+test("a reset further out than the ceiling is not waited for", () => {
+  assert.equal(parseRateLimitResetMs("Resets in 3600s"), null);
+  assert.equal(parseRateLimitResetMs("Resets in 30 minutes"), null);
+  // And the ceiling is a real bound, not a comment.
+  const justUnder = parseRateLimitResetMs(`Resets in ${Math.floor((AGY_RATE_LIMIT_MAX_WAIT_MS - 1000) / 1000)}s`);
+  assert.ok(justUnder !== null && justUnder <= AGY_RATE_LIMIT_MAX_WAIT_MS, `got ${justUnder}`);
+});
+
+// ---------------------------------------------------------------------------
+// The wrapper's own branching. Before #142 an AGY review returned on attempt 1
+// unconditionally, so a limit AGY itself said would clear in 58 seconds ended the
+// review outright. These pin both halves of the narrowed exclusion: it retries
+// the rate limit, and it still retries nothing else.
+// ---------------------------------------------------------------------------
+
+function agyEnvelope(error) {
+  return `${JSON.stringify({
+    conversation_id: "", status: "ERROR", response: "", error,
+    duration_seconds: 0, num_turns: 0,
+    usage: { input_tokens: 0, output_tokens: 0, thinking_tokens: 0, cache_read_tokens: 0, total_tokens: 0 }
+  })}\n`;
+}
+
+function stubAgy(errors) {
+  const calls = [];
+  return {
+    calls,
+    detectEngineFn: () => ({ engine: "agy", binary: "/fake/agy.exe", version: "1.1.24" }),
+    runCommandFn: (binary, args) => {
+      calls.push(args);
+      const error = errors[Math.min(calls.length - 1, errors.length - 1)];
+      return { status: 1, stdout: agyEnvelope(error), stderr: "", signal: null, error: null };
+    }
+  };
+}
+
+const RATE_LIMIT = "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 58s.";
+const NO_RESET = "Individual quota reached. Please upgrade your subscription to increase your limits.";
+const BAD_MODEL = 'invalid model selection (--model "x"): model x is not recognized as a known model or custom model in settings';
+
+test("an AGY rate limit that states its reset is waited out and retried", async () => {
+  const stub = stubAgy([RATE_LIMIT]);
+  const waits = [];
+  const result = await runGeminiReviewResilient("/repo", { prompt: "p", engine: "agy" }, {
+    ...stub, maxAttempts: 3, sleepFn: async (ms) => { waits.push(ms); }
+  });
+  assert.equal(stub.calls.length, 3, "all three attempts are used");
+  assert.deepEqual(waits, [59_000, 59_000], "and each retry waits the stated reset, not zero");
+  assert.equal(result.attempts, 3);
+});
+
+test("an AGY rate limit with no stated reset is not retried", async () => {
+  // No backoff exists here, so retrying without a stated reset burns the attempts
+  // in seconds and reaches the same refusal.
+  const stub = stubAgy([NO_RESET]);
+  const waits = [];
+  const result = await runGeminiReviewResilient("/repo", { prompt: "p", engine: "agy" }, {
+    ...stub, maxAttempts: 3, sleepFn: async (ms) => { waits.push(ms); }
+  });
+  assert.equal(stub.calls.length, 1);
+  assert.deepEqual(waits, []);
+  assert.equal(result.attempts, 1);
+});
+
+test("AGY still fails fast on everything that is not a rate limit", async () => {
+  // The allowlist is what keeps `tool-permission-denied` and brain-root
+  // `transcript-missing` unreachable -- neither is in ACCOUNT_STATE_FAILURES and
+  // none of the heuristics name them, so a denylist would have exposed both.
+  const stub = stubAgy([BAD_MODEL]);
+  const result = await runGeminiReviewResilient("/repo", { prompt: "p", engine: "agy" }, {
+    ...stub, maxAttempts: 3, sleepFn: async () => { throw new Error("must not wait"); }
+  });
+  assert.equal(stub.calls.length, 1, "no retry for a deterministic refusal");
+  assert.equal(result.failure.category, "model-unavailable");
+});
+
+test("a rate-limited AGY review that clears returns the review, not the refusal", async () => {
+  const stub = stubAgy([RATE_LIMIT]);
+  let call = 0;
+  stub.runCommandFn = (binary, args) => {
+    stub.calls.push(args);
+    call += 1;
+    if (call === 1) return { status: 1, stdout: agyEnvelope(RATE_LIMIT), stderr: "", signal: null, error: null };
+    return {
+      status: 0, stderr: "", signal: null, error: null,
+      stdout: `${JSON.stringify({
+        conversation_id: "c1", status: "SUCCESS",
+        response: JSON.stringify({ verdict: "pass", summary: "ok", findings: [] }),
+        duration_seconds: 1, num_turns: 1,
+        usage: { input_tokens: 1, output_tokens: 1, thinking_tokens: 0, cache_read_tokens: 0, total_tokens: 2 }
+      })}\n`
+    };
+  };
+  const result = await runGeminiReviewResilient("/repo", { prompt: "p", engine: "agy" }, {
+    ...stub, maxAttempts: 3, sleepFn: async () => {}
+  });
+  assert.equal(result.attempts, 2, "the second attempt is the one that counts");
+  assert.equal(result.status, 0);
+  assert.ok(result.reviewJson, "and the review it produced is what comes back");
+});
+
+// This is the test that actually pins the allowlist, and it exists because the
+// first version of this file did not. Mutating `category === "rate-limit"` into a
+// condition that admits every category left the suite green: the only fixture for
+// "not a rate limit" was a bad-model message, which carries no reset either, so
+// the RESET PARSER was doing the rejecting and the allowlist was never exercised.
+//
+// A refusal that both is outside the allowlist and states a reset separates them.
+// `tool-permission-denied` is the case the fence in isTransientReviewFailure names
+// by hand: it is outside ACCOUNT_STATE_FAILURES, no heuristic matches it, and it
+// was safe only while agy returned before any of that was consulted. Retrying it
+// never helps -- the permission cannot be granted headlessly, so a wait changes
+// nothing and costs a minute.
+test("a non-rate-limit refusal is not retried even when it states a reset", async () => {
+  const stub = stubAgy([
+    "A tool was auto-denied: headless mode cannot prompt for permission. Resets in 30s."
+  ]);
+  const waits = [];
+  const result = await runGeminiReviewResilient("/repo", { prompt: "p", engine: "agy" }, {
+    ...stub, maxAttempts: 3, sleepFn: async (ms) => { waits.push(ms); }
+  });
+  assert.equal(result.failure.category, "tool-permission-denied", "fixture must hit the category under test");
+  assert.equal(stub.calls.length, 1, "the allowlist, not the reset parser, must stop this");
+  assert.deepEqual(waits, []);
+});
