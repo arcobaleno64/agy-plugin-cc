@@ -19,6 +19,16 @@
   and the degraded path prints "the worker never reported a running process",
   which reads as a broken plugin rather than a busy machine.
 
+  Two things the `status` command did for free had to move here, both found by
+  adversarial review of the first commit: it reconciled a job whose worker had
+  died into `failed`, and it turned an unreadable file into a terminal state. A
+  plain file read has neither, so a dead worker or a corrupt file would have
+  stalled to the full budget where they used to end at once. The waits now check
+  pid liveness with the same predicate the runtime reconciles on, and treat a
+  present-but-unparseable file as terminal after a five-poll grace — absent
+  still means "not written yet". Both paths are unit-tested rather than hoped
+  for; each test fails when its check is removed.
+
   Honest about what was verified: the original failure is load-dependent and
   did **not** reproduce here — five runs under a full-suite load passed both
   with and without the change, so that experiment discriminates nothing. The

@@ -39,6 +39,7 @@ import process from "node:process";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import { isPidAlive } from "../plugins/gemini/scripts/lib/process.mjs";
 import { resolveJobsDir } from "../plugins/gemini/scripts/lib/state.mjs";
 import { installFakeGemini } from "../tests/fake-gemini-fixture.mjs";
 import { initGitRepo } from "../tests/helpers.mjs";
@@ -211,22 +212,53 @@ function resolveDemoJobsDir(dataDir, cwd) {
 }
 
 // Deliberately NOT state.mjs's readJobFile: that one turns an unreadable file
-// into a synthetic `failed` job, which a poller would read as a terminal state
-// and stop on. A half-written file means "not yet", so this returns null and
-// the caller keeps waiting.
+// into a synthetic `failed` job, and a poller would read that as a terminal
+// state and stop on it mid-write.
+//
+// But "unreadable" and "not there yet" are not the same answer, and collapsing
+// them into null would trade a fast failure for a full-budget stall whenever a
+// file is genuinely corrupt. Absent means not yet; present-but-unparseable is
+// reported as such, and the callers give it a short grace before believing it,
+// because a rename can be observed mid-flight.
+const UNREADABLE = Symbol("unreadable job file");
+const UNREADABLE_GRACE_POLLS = 5;
+
 function readDemoJob(jobsDir, jobId) {
+  let raw;
   try {
-    return JSON.parse(fs.readFileSync(path.join(jobsDir, `${jobId}.json`), "utf8"));
+    raw = fs.readFileSync(path.join(jobsDir, `${jobId}.json`), "utf8");
   } catch {
     return null;
   }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return UNREADABLE;
+  }
 }
 
-function waitForJob(jobsDir, jobId, timeoutMs = 60_000) {
+// The one thing the `status` command did that a file read does not: it
+// reconciles an active job whose worker is gone, marking it failed. Without
+// that, a worker that dies without recording a terminal state leaves the file
+// saying `running` forever, and a wait that used to end in a moment would sit
+// out its whole budget before reaching the same verdict. So check liveness
+// here, with the same predicate the runtime reconciles on. A job with no pid
+// yet is not dead — it has not started.
+function workerIsGone(job) {
+  return Boolean(job) && job !== UNREADABLE && Number.isFinite(job.pid) && !isPidAlive(job.pid);
+}
+
+export function waitForJob(jobsDir, jobId, timeoutMs = 60_000) {
   const deadline = Date.now() + timeoutMs;
+  let unreadable = 0;
   while (Date.now() < deadline) {
     const job = readDemoJob(jobsDir, jobId);
-    if (job && ["completed", "failed", "cancelled", "canceled"].includes(String(job.status))) return job.status;
+    unreadable = job === UNREADABLE ? unreadable + 1 : 0;
+    if (unreadable >= UNREADABLE_GRACE_POLLS) return "unreadable";
+    if (job && job !== UNREADABLE && ["completed", "failed", "cancelled", "canceled"].includes(String(job.status))) {
+      return job.status;
+    }
+    if (workerIsGone(job)) return "abandoned";
     sleep(100);
   }
   return "timed-out";
@@ -256,11 +288,15 @@ function waitForJob(jobsDir, jobId, timeoutMs = 60_000) {
 // "worker" — a worker is up but its engine never reported in; cancel still has
 // something to terminate, and the step says so rather than pretending.
 // "none"   — nothing to go on.
-function waitForRunningJob(jobsDir, jobId, timeoutMs = 60_000) {
+export function waitForRunningJob(jobsDir, jobId, timeoutMs = 60_000) {
   const deadline = Date.now() + timeoutMs;
   let sawWorker = false;
+  let unreadable = 0;
   while (Date.now() < deadline) {
-    const job = readDemoJob(jobsDir, jobId);
+    const raw = readDemoJob(jobsDir, jobId);
+    unreadable = raw === UNREADABLE ? unreadable + 1 : 0;
+    if (unreadable >= UNREADABLE_GRACE_POLLS) return sawWorker ? "worker" : "none";
+    const job = raw === UNREADABLE ? null : raw;
     const status = String(job?.status ?? "");
     const phase = String(job?.phase ?? "");
     if (status === "running" && job.pid) {
@@ -272,6 +308,7 @@ function waitForRunningJob(jobsDir, jobId, timeoutMs = 60_000) {
     // list of terminal states, which would need updating every time the
     // runtime gains one.
     if (status && status !== "queued" && status !== "running") return sawWorker ? "worker" : "none";
+    if (workerIsGone(job)) return sawWorker ? "worker" : "none";
     sleep(100);
   }
   return sawWorker ? "worker" : "none";
@@ -423,4 +460,8 @@ function main() {
   }
 }
 
-main();
+// Guarded so the waits above can be imported and tested directly. Without it,
+// importing this module to reach one function would run the entire walkthrough.
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
+}
