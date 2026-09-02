@@ -162,11 +162,21 @@ function combinedTrustedText(input) {
 // records that are written to disk and re-rendered.
 const MAX_FAILURE_DETAIL = 2000;
 
+// Truncation has to be idempotent, because a stored failure is re-normalized
+// every time a job record is read back (`explicitFailure`). A first version
+// appended the marker AFTER slicing to the full budget, so the result was longer
+// than the budget, and a second pass sliced the marker off and replaced it with
+// one reporting the truncated length — the original size was lost and another 37
+// characters of real message went with it. The marker is budgeted inside the cap,
+// and text already carrying one is returned untouched.
+const TRUNCATION_MARKER = /\n… \(truncated; \d+ characters total\)$/;
+
 function normalizeDetail(value) {
   const text = typeof value === "string" ? value.trim() : "";
   if (!text) return null;
-  if (text.length <= MAX_FAILURE_DETAIL) return text;
-  return `${text.slice(0, MAX_FAILURE_DETAIL)}\n… (truncated; ${text.length} characters total)`;
+  if (text.length <= MAX_FAILURE_DETAIL || TRUNCATION_MARKER.test(text)) return text;
+  const marker = `\n… (truncated; ${text.length} characters total)`;
+  return `${text.slice(0, MAX_FAILURE_DETAIL - marker.length)}${marker}`;
 }
 
 function normalizeFailure(category, input = {}) {

@@ -281,3 +281,17 @@ test("a failure that is re-normalized does not lose its detail", () => {
   assert.equal(second.detail, "the engine said this");
   assert.equal(second.category, first.category);
 });
+
+// Review finding on #144. A stored failure is re-normalized every time a job
+// record is read back, and the first version appended the marker AFTER slicing
+// to the full budget — so the result exceeded the cap, the second pass sliced the
+// marker off, and the replacement reported the truncated length. The original
+// size was lost and another 37 characters of real message with it. The
+// re-normalization test above uses a 20-character detail, so it cannot see this.
+test("truncating an already-truncated detail is a no-op, and keeps the real total", () => {
+  const once = classifyCliFailure({ stderr: "boom", detail: "x".repeat(5000) });
+  const twice = classifyCliFailure({ failure: once });
+  assert.equal(twice.detail, once.detail, "a second pass must not re-truncate");
+  assert.match(twice.detail, /truncated; 5000 characters total/, "the engine's real size, not the truncated one");
+  assert.ok(once.detail.length <= 2000, `marker must fit inside the cap, got ${once.detail.length}`);
+});
