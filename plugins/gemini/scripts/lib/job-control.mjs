@@ -421,12 +421,21 @@ export function resolveResultJob(cwd, reference, options = {}) {
     throw new Error(`No finished job found for "${reference}". Run /gemini:status to inspect active jobs.`);
   }
 
-  // Scope honestly: the candidates were filtered to THIS session, so a finished
-  // job from ANOTHER session exists in the repository and is reachable with
-  // --all. Claiming the repository has none sends the user looking for a
-  // job-store problem that is not there. MCP-queued jobs are NOT among the
-  // hidden ones: filterJobsForCurrentSession includes untagged jobs by default
-  // (`includeUnattributed !== false`), so they are already listed here.
+  // Scope honestly: without --all the candidates were filtered to THIS session,
+  // so a finished job from ANOTHER session exists in the repository and is
+  // reachable with --all. Claiming the repository has none sends the user
+  // looking for a job-store problem that is not there. MCP-queued jobs are NOT
+  // among the hidden ones: filterJobsForCurrentSession includes untagged jobs
+  // by default (`includeUnattributed !== false`), so they are already listed
+  // here.
+  //
+  // Under --all there is nothing left to widen to: every session's jobs were
+  // already searched. Advising the flag the user just passed, and calling the
+  // scope "this session" when it was the whole workspace, is the same defect
+  // the old repository-wide wording had in reverse.
+  if (options.all) {
+    throw new Error("No finished Gemini jobs found in this workspace yet.");
+  }
   throw new Error(
     "No finished Gemini jobs found for this session yet. Another session's jobs are not listed here — run `/gemini:result --all` to include them."
   );

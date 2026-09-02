@@ -2,6 +2,13 @@
 
 ## 0.24.4 - Unreleased
 
+- **`/gemini:result --all` no longer advises `--all`.** With an empty job store
+  the message was unconditional, so a user who had just passed the flag was told
+  to pass it, and told the search covered "this session" when it had covered
+  every session in the workspace. Under `--all` the message now says the
+  workspace is empty and stops there — there is nothing left to widen to. The
+  session-scoped message is unchanged, because that advice is still true.
+
 - **An AGY review survives a rate limit that clears in under a minute.**
   `runGeminiReviewResilient` returned on `engine === "agy"` unconditionally, so a
   limit AGY itself reports as `Resets in 58s` ended the review outright. Two of

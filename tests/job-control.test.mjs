@@ -260,6 +260,31 @@ test("resolveResultJob says a running job is still running, not missing", () => 
   );
 });
 
+// The empty-store message is advice, and advice that names the flag the user
+// just passed is worse than none: it sends them round the same loop and
+// misreports the scope that was actually searched. --all already searched every
+// session in the workspace, so there is nothing left to widen to.
+// ---------------------------------------------------------------------------
+
+test("resolveResultJob points an empty session-scoped store at --all", () => {
+  const cwd = makeTempDir();
+  assert.throws(
+    () => resolveResultJob(cwd, null, {}),
+    (error) => /for this session/.test(error.message) && /--all/.test(error.message)
+  );
+});
+
+test("resolveResultJob does not advise --all when --all was already passed", () => {
+  const cwd = makeTempDir();
+  assert.throws(
+    () => resolveResultJob(cwd, null, { all: true }),
+    (error) =>
+      /in this workspace/.test(error.message) &&
+      !/--all/.test(error.message) &&
+      !/this session/.test(error.message)
+  );
+});
+
 test("resolveResultJob still reports a genuinely absent id as not found", () => {
   const cwd = makeTempDir();
   assert.throws(() => resolveResultJob(cwd, "task-nope", { all: true }), /No finished job found for "task-nope"/);
