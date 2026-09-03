@@ -145,6 +145,59 @@ test("detectEngine runs a supported AGY, and flags an unreadable version instead
   assert.equal(odd.versionUnverified, true);
 });
 
+// A version string is not a bag of numbers. Both of these were reported by
+// adversarial review as misreadings of the unanchored match: the first was
+// certified as AGY 18.2.1, the second refused as 1.1. Unreadable is the right
+// answer for both, because unreadable fails open and a wrong reading does not.
+test("a number in build metadata is not mistaken for the AGY version", () => {
+  assert.equal(agyMeetsFloor("antigravity (node 18.2.1)"), "unreadable");
+  assert.equal(agyMeetsFloor("agy 2 (build 1.1)"), "unreadable");
+  assert.equal(agyMeetsFloor("built from 99.9.9 sources"), "unreadable");
+});
+
+// The shapes AGY actually prints. 1.1.25 answers `--version` with a bare
+// version; the test stand-in prefixes it. Both must be read, or the floor is
+// enforced against nobody.
+test("the versions AGY really prints are read, prefix or none", () => {
+  assert.equal(agyMeetsFloor("1.1.25"), "ok");
+  assert.equal(agyMeetsFloor("agy 1.1.24"), "ok");
+  assert.equal(agyMeetsFloor("v1.1.24"), "ok");
+  assert.equal(agyMeetsFloor("antigravity 1.1.24"), "ok");
+});
+
+// `1.0.x` is unambiguously below the floor even though its patch is a wildcard,
+// and a prerelease of the floor itself is not the floor.
+test("a wildcard patch is still decidable, and a prerelease is still not the release", () => {
+  assert.equal(agyMeetsFloor("1.0.x"), "too-old");
+  assert.equal(agyMeetsFloor(`${AGY_MINIMUM_VERSION}-rc.1`), "too-old");
+});
+
+// Under auto, this refusal is reached *because* gemini had no usable
+// credential, so telling the user to switch to gemini sends them into a second
+// failure. The explicit route keeps that suggestion, because there it works.
+test("the auto refusal does not offer gemini as the way out", () => {
+  const absolute = process.platform === "win32" ? "C:/fake/agy.exe" : "/fake/agy";
+  let autoMessage = "";
+  try {
+    detectEngine("auto", {
+      binaryAvailableImpl: (binary) =>
+        String(binary).includes("gemini")
+          ? { available: true, detail: "0.53.1" }
+          : { available: true, detail: "1.1.9" },
+      hasGeminiCredentialsImpl: () => false,
+      resolveBinaryPathImpl: () => absolute
+    });
+    assert.fail("a sub-floor AGY under auto must be refused");
+  } catch (error) {
+    autoMessage = error.message;
+  }
+  assert.match(autoMessage, /agy update/);
+  assert.match(autoMessage, /no usable credential either/);
+  assert.doesNotMatch(autoMessage, /or use `--engine gemini`/);
+
+  assert.match(agyFloorRefusal("1.1.9"), /or use `--engine gemini`/);
+});
+
 test("the refusal names the detected version, the floor, and the fix", () => {
   const message = agyFloorRefusal("1.1.9");
   assert.match(message, /1\.1\.9/);

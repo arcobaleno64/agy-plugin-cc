@@ -415,8 +415,13 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
   // The floor is a readiness fact, and setup is where a user asks whether this
   // is ready. Saying it here means an unsupported AGY is named before the first
   // command fails on it, rather than after.
-  if (agyStatus.available && agyFloor === "too-old") {
-    nextSteps.push(agyFloorRefusal(agyStatus.detail));
+  // Only when AGY is the engine that would run. A sub-floor AGY sitting on PATH
+  // beside a working gemini is not the user's problem, and reporting it produced
+  // a self-contradicting report: readyState "ready" with a refusal in nextSteps
+  // telling them to update an engine they had not selected.
+  const agyWouldRun = agySelected || !geminiReady;
+  if (agyWouldRun && agyStatus.available && agyFloor === "too-old") {
+    nextSteps.push(agyFloorRefusal(agyStatus.detail, { geminiUsable: geminiReady }));
   } else if (agySelected && agyStatus.available && agyFloor === "unreadable") {
     nextSteps.push(AGY_VERSION_UNVERIFIED_NOTICE);
   }

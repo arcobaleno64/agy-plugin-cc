@@ -133,29 +133,42 @@ const AGY_MINIMUM_PATCH = 12;
 // once, and the plugin has no way to tell that apart from a genuinely odd
 // build. The floor is enforced against versions that are readable and too old,
 // never against silence.
+// The version has to be the version, not the first pair of numbers on the line.
+// An unanchored match reads `antigravity (node 18.2.1)` as AGY 18.2.1 and
+// certifies it, and reads `agy 2 (build 1.1)` as 1.1 and refuses a build newer
+// than the floor. Anchoring costs nothing on the real output — AGY 1.1.25 prints
+// a bare `1.1.25`, and the test stand-in prints `agy 1.1.24` — and turns both
+// misreadings into "unreadable", which is the direction that fails open. The
+// whole match is handed to agyVersionAtLeast rather than its digits, so a
+// prerelease suffix still disqualifies the build.
+const AGY_VERSION_AT_START = /^(?:agy|antigravity)?[ \t]*(?:version[ \t]*)?v?(\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?)/i;
+
 export function agyMeetsFloor(version) {
-  const text = String(version ?? "").trim();
+  const found = AGY_VERSION_AT_START.exec(String(version ?? "").trim());
+  if (!found) return "unreadable";
   // A two-segment version is a version, not an unreadable string: "1.1" is
   // decidably below 1.1.12 and must be refused rather than waved through as
-  // "could not tell". Normalised to X.Y.0 before the comparison, which is the
-  // lowest patch it could mean and therefore the safe reading.
-  const twoSegment = /(?<![.\d])(\d+)\.(\d+)(?![.\d])/.exec(text);
-  const normalized = /(\d+)\.(\d+)\.(\d+)/.test(text)
-    ? text
-    : twoSegment
-      ? `${twoSegment[1]}.${twoSegment[2]}.0`
-      : null;
-  if (normalized === null) return "unreadable";
+  // "could not tell". Padded to X.Y.0, the lowest patch it could mean and
+  // therefore the safe reading.
+  const candidate = found[1];
+  const normalized = /^\d+\.\d+$/.test(candidate) ? candidate + ".0" : candidate;
   return agyVersionAtLeast(normalized, AGY_MINIMUM_MINOR, AGY_MINIMUM_PATCH) ? "ok" : "too-old";
 }
 
-export function agyFloorRefusal(version) {
+// `--engine gemini` is only a way out when gemini can actually run. Under `auto`
+// this refusal is reached precisely because gemini had no usable credential, so
+// offering it there sends the user to a second failure. Reported by adversarial
+// review: the refusal was hiding the other half of the problem.
+export function agyFloorRefusal(version, { geminiUsable = true } = {}) {
   return (
     `AGY ${String(version ?? "").trim() || "(unknown)"} is older than this plugin supports. ` +
     `agy-plugin-cc requires AGY ${AGY_MINIMUM_VERSION} or newer: below it, --model and --effort are ` +
     "accepted and then ignored in headless runs, slash commands in a prompt are executed rather than " +
-    "read, and there is no JSON envelope to take the response from. Run `agy update`, or use " +
-    "`--engine gemini`."
+    "read, and there is no JSON envelope to take the response from. Run `agy update`" +
+    (geminiUsable
+      ? ", or use `--engine gemini`."
+      : ". Gemini CLI is not a way out here: it has no usable credential either, which is why routing " +
+        "reached AGY at all. Run `gemini` to authenticate it, or set GEMINI_API_KEY. See `/gemini:setup`.")
   );
 }
 
@@ -223,7 +236,7 @@ export function detectEngine(requestedEngine = null, options = {}) {
     // it would silently ignore --model and read slash commands out of the prompt.
     const agyVersion = agyStatus.detail ?? "unknown";
     const agyFloor = agyMeetsFloor(agyVersion);
-    if (agyFloor === "too-old") throw new Error(agyFloorRefusal(agyVersion));
+    if (agyFloor === "too-old") throw new Error(agyFloorRefusal(agyVersion, { geminiUsable: false }));
     return { engine: "agy", binary: agyBinary, version: agyVersion, versionUnverified: agyFloor === "unreadable" };
   }
 

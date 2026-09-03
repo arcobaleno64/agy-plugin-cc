@@ -44,6 +44,34 @@ function stubRun({ stdout = "", stderr = "", status = 0 } = {}) {
   return fn;
 }
 
+// Failing open on a version the floor could not read is only defensible if the
+// user learns the check did not happen — otherwise silence reads as "checked and
+// fine". Said through onProgress alone: createTrackedProgress already mirrors it
+// to stderr for a foreground run and into the job log for a background one, so a
+// second direct write would be a duplicate for the caller who can see it and
+// noise for the one who asked for JSON.
+test("a turn on an unreadable AGY version says the floor was not checked, once", async () => {
+  const seen = [];
+  const result = await runGeminiTurn("/repo", { prompt: "hi", write: false, onProgress: (p) => seen.push(p) }, {
+    runCommandFn: stubRun({ stdout: `${JSON.stringify(SUCCESS_ENVELOPE)}\n` }),
+    detectEngineFn: () => ({ engine: "agy", binary: "/fake/agy.exe", version: "wobble", versionUnverified: true })
+  });
+
+  assert.equal(result.status, 0, "an unreadable version must not block the run");
+  const notices = seen.filter((p) => /Could not read the AGY version/.test(p.message ?? ""));
+  assert.equal(notices.length, 1, "the notice is said exactly once per run");
+});
+
+test("a turn on a readable AGY version says nothing about the version", async () => {
+  const seen = [];
+  await runGeminiTurn("/repo", { prompt: "hi", write: false, onProgress: (p) => seen.push(p) }, {
+    runCommandFn: stubRun({ stdout: `${JSON.stringify(SUCCESS_ENVELOPE)}\n` }),
+    detectEngineFn: agyEngine()
+  });
+
+  assert.deepEqual(seen.filter((p) => /Could not read the AGY version/.test(p.message ?? "")), []);
+});
+
 test("an AGY turn takes response and conversation id from the envelope", async () => {
   const runCommandFn = stubRun({ stdout: `${JSON.stringify(SUCCESS_ENVELOPE)}\n` });
 

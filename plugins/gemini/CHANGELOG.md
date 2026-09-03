@@ -37,6 +37,15 @@
   `auto` reaches AGY exactly when gemini has no usable credential, so an
   unsupported AGY there is not a soft fallback — it is the engine, and it is
   refused by name rather than run with `--model` silently dropped.
+  On that route the refusal does not offer `--engine gemini` as the way out:
+  routing only reached AGY because gemini had no usable credential, so it names
+  both problems instead of sending the user to a second failure. A sub-floor AGY
+  merely sitting on PATH beside a working gemini is not reported at all.
+
+  The version is read from the start of `agy --version` (bare `1.1.25`, or a
+  `agy`/`antigravity`/`v` prefix), not from the first pair of numbers anywhere in
+  the line. An unanchored match read `antigravity (node 18.2.1)` as AGY 18.2.1
+  and certified it; both misreadings are now `unreadable`, which fails open.
 
 - **The AGY transcript is no longer a version fallback, and `PRIVACY.md` narrows
   to match.** Removing the 1.1.8 gate was going to delete

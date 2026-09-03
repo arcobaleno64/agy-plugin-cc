@@ -6,12 +6,15 @@ import process from "node:process";
 import { agyMeetsFloor, AGY_VERSION_UNVERIFIED_NOTICE, buildCliArgs, detectEngine, ENGINE_ENV, formatAgyTimeout, mapEffortToModel, normalizeAgyEffort, normalizeAgyRequestedModel, normalizeRequestedModel } from "./engine.mjs";
 
 // The floor fails open on a version it cannot read, which is only defensible if
-// the user is told the check did not happen. Said once per run, through the
-// progress channel a background job records and on stderr for a foreground one.
+// the user is told the check did not happen. Said once per run through the
+// progress channel alone: createTrackedProgress already mirrors progress to
+// stderr for a foreground run and into the job log for a background one, so the
+// direct stderr write this used to add was a duplicate in the first case,
+// unrequested noise under --json, and discarded by the detached worker in the
+// third.
 function noticeUnverifiedAgy(engineInfo, onProgress) {
   if (!engineInfo?.versionUnverified) return;
   onProgress?.({ message: AGY_VERSION_UNVERIFIED_NOTICE, phase: "starting", engine: engineInfo.engine });
-  process.stderr.write(`[gemini-companion] ${AGY_VERSION_UNVERIFIED_NOTICE}\n`);
 }
 import { classifyCliFailure } from "./failures.mjs";
 import { binaryAvailable, runCommand } from "./process.mjs";

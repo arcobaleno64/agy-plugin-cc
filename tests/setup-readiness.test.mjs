@@ -8,6 +8,7 @@ import {
   probeAgyLogin,
   probeGeminiLogin
 } from "../plugins/gemini/scripts/lib/gemini.mjs";
+import { AGY_MINIMUM_VERSION } from "../plugins/gemini/scripts/lib/engine.mjs";
 import { renderSetupReport } from "../plugins/gemini/scripts/lib/render.mjs";
 import { makeTempDir } from "./helpers.mjs";
 import fs from "node:fs";
@@ -133,6 +134,36 @@ test("a verified AGY reaches ready, the state --engine agy could never hold", ()
 // The floor is a readiness fact, so setup answers it before the first command
 // fails on it. An AGY below the floor is named with its version; one whose
 // version cannot be read is reported as unchecked, never as unsupported.
+// A sub-floor AGY sitting on PATH beside a working gemini is not the user's
+// problem. Reporting it produced a report that contradicted itself: ready, with
+// a refusal in nextSteps about an engine the user had not selected.
+test("a stale AGY beside a working gemini is not reported as the user's problem", () => {
+  const report = buildSetupReport(makeTempDir(), [], {
+    engine: "gemini",
+    geminiAvailabilityFn: () => ({ available: true, detail: "0.53.1" }),
+    geminiLoginStatusFn: () => ({ loggedIn: true, state: "verified", detail: "ok" }),
+    agyAvailabilityFn: () => ({ available: true, detail: "1.1.9" }),
+    agyLoginStatusFn: () => agyStatus("unknown")
+  });
+
+  assert.equal(report.readyState, "ready");
+  assert.deepEqual(report.nextSteps, [], "a ready report must not carry a refusal about an unselected engine");
+});
+
+// The probe boundary, asserted at the two versions that decide it rather than
+// only at a version comfortably above both.
+test("the probe runs at the floor and declines one release below it", () => {
+  const atFloor = stubRun({ stdout: JSON.stringify(AGY_ENVELOPE) });
+  assert.equal(probeAgyLogin({ runCommandFn: atFloor, detectEngineFn: agyEngine(AGY_MINIMUM_VERSION) }).state, "verified");
+  assert.equal(atFloor.calls.length, 1);
+
+  const belowFloor = stubRun({ stdout: JSON.stringify(AGY_ENVELOPE) });
+  const declined = probeAgyLogin({ runCommandFn: belowFloor, detectEngineFn: agyEngine("1.1.11") });
+  assert.equal(declined.state, "unknown");
+  assert.equal(declined.verifiable, false);
+  assert.deepEqual(belowFloor.calls, [], "a sub-floor AGY must not be spawned for a probe");
+});
+
 test("setup names an AGY below the floor, with the version it found", () => {
   const report = buildSetupReport(makeTempDir(), [], {
     engine: "agy",
