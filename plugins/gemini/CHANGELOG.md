@@ -192,6 +192,20 @@
   `README.md:182,208` document it — but the half it got right is the half that
   matters, and it is not one a self-assessment was going to find.
 
+- **`auto` no longer calls a refused AGY a missing one.** `detectEngine`'s auto
+  branch wrapped AGY path resolution in a bare `catch`, which collapsed two
+  opposite facts into one: AGY absent, and AGY present but refused. On Windows an
+  npm-installed `agy.cmd` resolves, is rejected on purpose (CVE-2024-27980), and
+  the user was then told no AGY binary was found — advised to install what they
+  already had. Absence is still swallowed, because for that one the existing
+  message is right; a refusal is now spoken, and it names why gemini is not the
+  way out (unauthenticated, or not installed at all) rather than offering
+  `--engine gemini` on a route that only reached AGY because gemini was unusable.
+  Which failure occurred travels as a `code` on the error rather than being
+  re-derived from its text.
+
+  Also reported by AGY's independent scoring pass.
+
 ## 0.24.4 - 2026-09-03 - Four things only using it could find
 
 - **The reviewer walkthrough stops competing with the job it is waiting for.**

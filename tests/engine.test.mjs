@@ -597,6 +597,42 @@ test("auto keeps the plain not-installed message when neither engine is present"
   );
 });
 
+// `auto` used to swallow every resolution failure alike, which turned a refusal
+// into a denial: an npm-installed `agy.cmd` on Windows resolves, is rejected on
+// purpose, and the user was told no AGY binary was found — advised to install
+// what they already had. Absence stays swallowed; a refusal is now spoken.
+// `requireExe` is what the two fixtures below differ on, because that is exactly
+// what the real resolver asks and what a .cmd fails.
+const AGY_CMD_ONLY = (_binary, options) => (options?.requireExe ? null : "C:/npm/agy.cmd");
+
+test("auto names the AGY it refused to spawn instead of calling it missing", () => {
+  assert.throws(
+    () => detectEngine("auto", {
+      binaryAvailableImpl: stubBinaries({ gemini: AVAILABLE, agy: MISSING }),
+      hasGeminiCredentialsImpl: () => false,
+      resolveBinaryPathImpl: AGY_CMD_ONLY
+    }),
+    (error) => {
+      assert.match(error.message, /not an executable \.exe[\s\S]*argv injection/, "the refusal is stated");
+      assert.match(error.message, /no usable credential/, "and so is why gemini is not the way out");
+      assert.doesNotMatch(error.message, /no AGY binary was found/, "an installed AGY must not be called missing");
+      assert.doesNotMatch(error.message, /use --engine gemini/, "gemini has no credential, so it is not an escape");
+      return true;
+    }
+  );
+});
+
+test("auto with no gemini at all says so alongside the AGY refusal", () => {
+  assert.throws(
+    () => detectEngine("auto", {
+      binaryAvailableImpl: stubBinaries({}),
+      hasGeminiCredentialsImpl: () => false,
+      resolveBinaryPathImpl: AGY_CMD_ONLY
+    }),
+    /not an executable \.exe[\s\S]*Gemini CLI is not installed either/
+  );
+});
+
 // An explicit --engine gemini must still work: the user asked for it, and the
 // credential check is an auto-routing heuristic, not an authorization gate.
 test("explicit gemini selection ignores the credential check", () => {

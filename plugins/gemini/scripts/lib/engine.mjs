@@ -14,11 +14,37 @@ export const AGY_EFFORT_LEVELS = new Set(["low", "medium", "high"]);
 // not an .exe — for the far more common "not installed", it explained a threat
 // model to someone who just needed an install command. On Windows the friendly
 // message below was unreachable, because path resolution throws first.
-const AGY_EXECUTABLE_PATH_ERROR =
-  "AGY resolved to a path that is not an executable .exe; the plugin refuses to spawn it via the shell to avoid argv injection on Windows. Reinstall AGY so `agy` resolves to agy.exe, or use --engine gemini.";
+const AGY_EXECUTABLE_PATH_REFUSAL =
+  "AGY resolved to a path that is not an executable .exe; the plugin refuses to spawn it via the shell to avoid argv injection on Windows. Reinstall AGY so `agy` resolves to agy.exe";
+
+// The way out depends on what else this machine has, because under `auto` there
+// is no `--engine gemini` to offer: routing only reached AGY because gemini was
+// not usable, so naming it as the fix sends the user to a second failure. Same
+// rule as agyFloorRefusal, for the same reason.
+function agyExecutablePathRefusal(geminiState = "usable") {
+  if (geminiState === "unauthenticated") {
+    return `${AGY_EXECUTABLE_PATH_REFUSAL}. Gemini CLI is installed but has no usable credential, so there is nothing to fall back to: run \`gemini\` to authenticate, or set GEMINI_API_KEY.`;
+  }
+  if (geminiState === "missing") {
+    return `${AGY_EXECUTABLE_PATH_REFUSAL}. Gemini CLI is not installed either, so no engine is available.`;
+  }
+  return `${AGY_EXECUTABLE_PATH_REFUSAL}, or use --engine gemini.`;
+}
 
 const AGY_NOT_INSTALLED_ERROR =
   "AGY engine requested but no `agy` binary was found on PATH. Install it with `curl -fsSL https://antigravity.google/cli/install.sh | bash`, or use --engine gemini. See `/gemini:setup`.";
+
+// Which of the two resolution failures happened, kept on the error rather than
+// re-derived by matching its text. `auto` has to tell them apart: one means AGY
+// is absent, the other means it is present and this plugin will not run it.
+export const AGY_NOT_EXECUTABLE = "AGY_NOT_EXECUTABLE";
+export const AGY_NOT_INSTALLED = "AGY_NOT_INSTALLED";
+
+function agyResolutionError(message, code) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
 
 // Model aliases and effort tiers live in model-map.mjs (single source of truth,
 // verified against the README table). Re-exported here for existing importers.
@@ -64,7 +90,9 @@ function resolveAgyExecutablePath({ resolveBinaryPathImpl = resolveBinaryPath } 
     // its shape; nothing came back, so it is simply not on PATH and the user
     // needs an install command rather than a threat model.
     const anyPath = resolveBinaryPathImpl("agy", { requireExe: false });
-    throw new Error(anyPath ? AGY_EXECUTABLE_PATH_ERROR : AGY_NOT_INSTALLED_ERROR);
+    throw anyPath
+      ? agyResolutionError(agyExecutablePathRefusal(), AGY_NOT_EXECUTABLE)
+      : agyResolutionError(AGY_NOT_INSTALLED_ERROR, AGY_NOT_INSTALLED);
   }
   return resolved;
 }
@@ -241,10 +269,18 @@ export function detectEngine(requestedEngine = null, options = {}) {
   }
 
   let agyBinary = null;
+  // A bare `catch` here reported an AGY the plugin had *refused* as an AGY that
+  // did not exist: on Windows an npm-installed `agy.cmd` resolves fine, is
+  // rejected on purpose (CVE-2024-27980), and the user was then told no AGY
+  // binary was found — sent to reinstall something already installed. Absence is
+  // the only failure `auto` may swallow, because for that one the message below
+  // is already the right answer.
+  let agyRefused = false;
   try {
     agyBinary = resolveAgyExecutablePath(options);
-  } catch {
+  } catch (error) {
     agyBinary = null;
+    agyRefused = error?.code === AGY_NOT_EXECUTABLE;
   }
   const agyStatus = agyBinary ? binaryAvailableFn(agyBinary, ["--version"]) : { available: false };
   if (agyStatus.available) {
@@ -261,6 +297,9 @@ export function detectEngine(requestedEngine = null, options = {}) {
   // Nothing usable. Distinguish "no engine installed" from "gemini installed but
   // unauthenticated", because the fix differs and the second case used to be
   // reported as a confusing downstream API error.
+  if (agyRefused) {
+    throw new Error(agyExecutablePathRefusal(geminiStatus.available ? "unauthenticated" : "missing"));
+  }
   if (geminiStatus.available) {
     throw new Error(
       "Gemini CLI is installed but has no usable credential, and no AGY binary was found. Run `gemini` to authenticate, set GEMINI_API_KEY, or install AGY. See `/gemini:setup`."
