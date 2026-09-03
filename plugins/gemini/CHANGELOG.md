@@ -47,6 +47,14 @@
   the line. An unanchored match read `antigravity (node 18.2.1)` as AGY 18.2.1
   and certified it; both misreadings are now `unreadable`, which fails open.
 
+- **A missing AGY is now reported as missing.** Three different problems shared
+  one message, and on Windows the likeliest of them — AGY simply not installed —
+  was answered with a lecture about argv injection, because path resolution
+  throws before the friendly "not available" line is ever reached. The security
+  refusal now fires only when `agy` resolves to something that is not an `.exe`,
+  a binary that resolves but cannot run names its path and what it printed, and
+  a missing one gets the install command.
+
 - **The AGY transcript is no longer a version fallback, and `PRIVACY.md` narrows
   to match.** Removing the 1.1.8 gate was going to delete
   `scripts/lib/agy-transcript.mjs` outright. It survived because reading the

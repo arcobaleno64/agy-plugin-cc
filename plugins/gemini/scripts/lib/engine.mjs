@@ -10,8 +10,16 @@ export const ENGINE_ENV = "GEMINI_ENGINE";
 export const AGY_POSITIONAL_PROMPT_SAFE_LIMIT = 24_000;
 export const AGY_EFFORT_LEVELS = new Set(["low", "medium", "high"]);
 
+// Two different problems that used to share one message. The security refusal is
+// only the right answer when agy IS installed and resolves to something that is
+// not an .exe — for the far more common "not installed", it explained a threat
+// model to someone who just needed an install command. On Windows the friendly
+// message below was unreachable, because path resolution throws first.
 const AGY_EXECUTABLE_PATH_ERROR =
-  "AGY could not be resolved to an executable .exe path; the plugin refuses to spawn it via the shell to avoid argv injection on Windows. Ensure agy is on PATH or use --engine gemini.";
+  "AGY resolved to a path that is not an executable .exe; the plugin refuses to spawn it via the shell to avoid argv injection on Windows. Reinstall AGY so `agy` resolves to agy.exe, or use --engine gemini.";
+
+const AGY_NOT_INSTALLED_ERROR =
+  "AGY engine requested but no `agy` binary was found on PATH. Install it with `curl -fsSL https://antigravity.google/cli/install.sh | bash`, or use --engine gemini. See `/gemini:setup`.";
 
 // Model aliases and effort tiers live in model-map.mjs (single source of truth,
 // verified against the README table). Re-exported here for existing importers.
@@ -52,7 +60,12 @@ function resolveAgyExecutablePath({ resolveBinaryPathImpl = resolveBinaryPath } 
   const isAbsolute = typeof resolved === "string" && path.isAbsolute(resolved);
   const isExecutable = process.platform !== "win32" || path.extname(resolved ?? "").toLowerCase() === ".exe";
   if (!isAbsolute || !isExecutable) {
-    throw new Error(AGY_EXECUTABLE_PATH_ERROR);
+    // Ask again without the .exe requirement, purely to tell the two cases
+    // apart: something came back, so AGY is installed and the refusal is about
+    // its shape; nothing came back, so it is simply not on PATH and the user
+    // needs an install command rather than a threat model.
+    const anyPath = resolveBinaryPathImpl("agy", { requireExe: false });
+    throw new Error(anyPath ? AGY_EXECUTABLE_PATH_ERROR : AGY_NOT_INSTALLED_ERROR);
   }
   return resolved;
 }
@@ -192,7 +205,13 @@ export function detectEngine(requestedEngine = null, options = {}) {
   if (normalized === "agy") {
     const binary = resolveAgyExecutablePath(options);
     const status = binaryAvailableFn(binary, ["--version"]);
-    if (!status.available) throw new Error("AGY engine requested but agy binary is not available.");
+    // Reached when agy resolves but cannot answer --version: present on PATH,
+    // not runnable. Distinct again from "not installed", which never gets here.
+    if (!status.available) {
+      throw new Error(
+        `AGY was found at ${binary} but could not run: ${status.detail ?? "no output"}. Reinstall AGY, or use --engine gemini.`
+      );
+    }
     const version = status.detail ?? "unknown";
     const floor = agyMeetsFloor(version);
     if (floor === "too-old") throw new Error(agyFloorRefusal(version));

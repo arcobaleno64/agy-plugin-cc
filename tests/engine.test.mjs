@@ -61,7 +61,7 @@ test("unknown / explicit model strings pass through unchanged", () => {
 test("detectEngine fails closed when agy resolves only to a bare non-.exe path", () => {
   assert.throws(
     () => detectEngine("agy", { resolveBinaryPathImpl: () => "agy.cmd" }),
-    /AGY could not be resolved to an executable \.exe path; the plugin refuses to spawn it via the shell to avoid argv injection on Windows\./
+    /AGY resolved to a path that is not an executable \.exe; the plugin refuses to spawn it via the shell to avoid argv injection on Windows\./
   );
 });
 
@@ -69,8 +69,10 @@ test("detectEngine fails closed when agy resolves only to an absolute .cmd shim 
   // An absolute .cmd path would still re-enter cmd.exe on pre-patch Node even
   // under shell:false, so requireExe must reject it, not just bare names.
   assert.throws(
-    () => detectEngine("agy", { resolveBinaryPathImpl: () => (process.platform === "win32" ? "C:\\tools\\agy.cmd" : null) }),
-    /AGY could not be resolved to an executable \.exe path/
+    // Returned on every platform: the point is that requireExe rejects a .cmd,
+    // and on POSIX this path is simply not absolute, which fails the same way.
+    () => detectEngine("agy", { resolveBinaryPathImpl: () => "C:\\tools\\agy.cmd" }),
+    /AGY resolved to a path that is not an executable \.exe/
   );
 });
 
@@ -482,6 +484,47 @@ test("no gemini turn passes --approval-mode, which weakens the read-only shape",
       `flag appeared for ${JSON.stringify(options)}`
     );
   }
+});
+
+// Three different problems used to share one message, and on Windows the only
+// one a user was likely to hit — AGY simply not installed — was answered with a
+// lecture about argv injection, because path resolution throws before the
+// friendly "not available" line is reached. Each case now says its own thing.
+test("a missing AGY is reported as missing, not as a security refusal", () => {
+  assert.throws(
+    () => detectEngine("agy", {
+      resolveBinaryPathImpl: () => null,
+      binaryAvailableImpl: () => ({ available: false })
+    }),
+    (error) => {
+      assert.match(error.message, /no `agy` binary was found on PATH/);
+      assert.match(error.message, /install\.sh/);
+      assert.doesNotMatch(error.message, /argv injection/);
+      return true;
+    }
+  );
+});
+
+// The security refusal keeps its own case: agy IS installed, and resolves to
+// something the plugin will not hand to a shell (CVE-2024-27980).
+test("an AGY that resolves to a non-.exe still gets the security refusal", () => {
+  assert.throws(
+    () => detectEngine("agy", {
+      resolveBinaryPathImpl: (_binary, options) => (options?.requireExe ? null : "C:/npm/agy.cmd"),
+      binaryAvailableImpl: () => ({ available: true, detail: "1.1.25" })
+    }),
+    /not an executable \.exe[\s\S]*argv injection/
+  );
+});
+
+test("an AGY that resolves but cannot run names the path and what it said", () => {
+  assert.throws(
+    () => detectEngine("agy", {
+      resolveBinaryPathImpl: () => "C:/tools/agy.exe",
+      binaryAvailableImpl: () => ({ available: false, detail: "exit 127" })
+    }),
+    /found at C:\/tools\/agy\.exe but could not run: exit 127/
+  );
 });
 
 // --- auto routing ---
