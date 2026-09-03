@@ -921,9 +921,10 @@ test("task rejects an unknown engine", () => {
   assert.match(result.stderr, /Unknown engine/i);
 });
 
-// A prompt far past AGY_POSITIONAL_PROMPT_SAFE_LIMIT must never reach argv,
-// where a platform limit truncates it silently. It goes on stdin, and the
-// response comes from the envelope.
+// A prompt far past any platform argv limit must never reach argv, where it is
+// truncated silently. It goes on stdin, and the response comes from the
+// envelope. There is no longer a positional path to fall back to, which is what
+// makes this the only behaviour to pin.
 test("an AGY task sends a long prompt only on stdin", { skip: process.platform === "win32" }, () => {
   const repo = makeTempDir();
   const binDir = makeTempDir();

@@ -7,7 +7,6 @@ import { EFFORT_MODEL_MAP, MODEL_ALIASES, VALID_EFFORT_LEVELS } from "./model-ma
 import { hasGeminiCredentials } from "./gemini-auth.mjs";
 
 export const ENGINE_ENV = "GEMINI_ENGINE";
-export const AGY_POSITIONAL_PROMPT_SAFE_LIMIT = 24_000;
 export const AGY_EFFORT_LEVELS = new Set(["low", "medium", "high"]);
 
 // Two different problems that used to share one message. The security refusal is
@@ -284,43 +283,21 @@ export function formatAgyTimeout(timeoutMs) {
   return `${Math.max(1, Math.round(timeoutMs / 1000))}s`;
 }
 
-function assertAgyPromptSafe(prompt) {
-  const value = String(prompt ?? "");
-  if (value.includes("\0")) {
-    throw createFailureError({
-      promptNul: true,
-      engine: "agy",
-      summary: "AGY prompt contains a NUL byte and cannot be passed as a positional argument.",
-      nextStep: "Remove NUL bytes from the prompt or use `--engine gemini`, which sends prompts over stdin."
-    });
-  }
-  if (value.length > AGY_POSITIONAL_PROMPT_SAFE_LIMIT) {
-    throw createFailureError({
-      promptTooLong: true,
-      engine: "agy",
-      summary: `AGY positional prompt is ${value.length} characters, above the ${AGY_POSITIONAL_PROMPT_SAFE_LIMIT.toLocaleString("en-US")} character safe limit.`,
-      nextStep: "Shorten the prompt or use `--engine gemini`, which sends prompts over stdin."
-    });
-  }
-}
-
 export function buildCliArgs(engine, options = {}) {
-  const { prompt = "", model, effort, write = false, resumeLast = false, resumeThreadId = null, outputJson = false, timeoutMs, useStdin = false, agyVersion = null, workspaceDir = null } = options;
+  const { prompt = "", model, effort, write = false, resumeLast = false, resumeThreadId = null, outputJson = false, timeoutMs, agyVersion = null, workspaceDir = null } = options;
 
   if (engine === "agy") {
-    // AGY >=1.1.2 auto-enters print mode when a prompt is piped on stdin; adding
-    // --print would consume the following flag as its own prompt argument. Older
-    // versions retain the positional form and its Windows argv safety checks.
-    const args = [];
-    if (!useStdin) {
-      assertAgyPromptSafe(prompt);
-      args.push("--print", prompt);
-    }
-    // The prompt is raw user text at position 0, so opt out of AGY's print-mode
-    // slash-command and skill expansion wherever the flag exists (1.1.9+).
-    {
-      args.push("--disable-slash-commands");
-    }
+    // The prompt is always piped on stdin, so there is no positional form left to
+    // build: AGY auto-enters print mode when it reads one, and adding --print
+    // would consume the following flag as its own prompt argument. The positional
+    // branch this used to carry — with its NUL-byte and 24,000-character argv
+    // guards — existed for AGY below 1.1.2, which the declared floor rules out.
+    // Every production caller already passed useStdin: true, so the guards ran
+    // for nobody and only the tests could reach them.
+    //
+    // The prompt is untrusted text, so opt out of AGY's print-mode slash-command
+    // and skill expansion.
+    const args = ["--disable-slash-commands"];
     const agyModel = normalizeAgyRequestedModel(model);
     const agyEffort = normalizeAgyEffort(effort);
     // AGY accepts each flag, but the locally reported model IDs reject the
@@ -398,8 +375,8 @@ export function buildCliArgs(engine, options = {}) {
     return args;
   }
 
-  // gemini — when useStdin is true the caller passes prompt via stdin; omit -p here
-  const args = useStdin ? [] : ["-p", prompt];
+  // gemini — the prompt is piped on stdin too, so no -p is built here either.
+  const args = [];
   if (model) args.push("-m", model);
   // --yolo IS a real gate here, unlike AGY's --dangerously-skip-permissions —
   // measured on gemini CLI 0.53.1, 2026-08-05. Without it a headless run is not

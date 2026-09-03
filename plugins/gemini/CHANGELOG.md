@@ -77,6 +77,26 @@
     version. Everything before it tests the working copy the workflow was
     handed; this is the only step that tests what a user gets.
 
+- **The AGY positional prompt path is gone, and with it a guard that protected
+  nobody.** `buildCliArgs` carried a branch that put the prompt in argv, plus
+  `assertAgyPromptSafe` refusing a NUL byte or anything above 24,000 characters
+  before it did. That branch existed for AGY below 1.1.2, which the floor now
+  rules out — and every production caller already passed `useStdin: true`, so
+  the guard ran for no one. Only the tests could reach it, through the same
+  injection seam that makes the code testable, which is why a green suite said
+  nothing about it.
+
+  Found by asking a different question of the whole codebase: replace every
+  user-facing message with a sentinel, run the suite, and see which ones no
+  test names. Of 59 messages on the engine, setup and job paths, 28 are held by
+  a test. This was the first of the rest to be judged, and it was dead.
+
+  The three tests that covered it are replaced by the property that made the
+  guard unnecessary: a prompt is never in argv, whatever it contains. The
+  `prompt-too-long` failure category stays — an engine can still say a prompt
+  exceeds its context window — but its `promptNul`/`promptTooLong` flag inputs
+  and the `NUL byte`/`positional prompt` text patterns go with their producer.
+
 - **The AGY transcript is no longer a version fallback, and `PRIVACY.md` narrows
   to match.** Removing the 1.1.8 gate was going to delete
   `scripts/lib/agy-transcript.mjs` outright. It survived because reading the

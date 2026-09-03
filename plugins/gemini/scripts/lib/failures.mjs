@@ -54,13 +54,12 @@ const DEFAULTS = {
   "prompt-too-long": {
     retryable: false,
     summary: "The prompt cannot be sent safely to the selected engine.",
-    // Engine-neutral on purpose. The argv-limit and NUL-byte cases -- the ones an
-    // engine can be at fault for -- never reach this default: assertAgyPromptSafe
-    // throws with its own nextStep, and normalizeFailure prefers an explicit one.
-    // What is left arriving here is the text-matched arm (`context length`, `token
-    // limit`), which is a model's context window rather than an engine's argv, and
-    // is most often gemini. An earlier draft of this line described AGY argv
-    // handling and shipped that to exactly those users.
+    // Engine-neutral on purpose. This is now the only arm: the argv-limit and
+    // NUL-byte preflight that used to throw with its own nextStep is gone with
+    // the positional prompt path it guarded. What arrives here is text-matched
+    // (`context length`, `token limit`) — a model's context window rather than an
+    // engine's argv, and most often gemini. An earlier draft of this line
+    // described AGY argv handling and shipped that to exactly those users.
     nextStep: "Shorten the prompt, narrow the review scope, or split the diff into smaller runs."
   },
   "no-output": {
@@ -236,7 +235,10 @@ export function classifyCliFailure(input = {}) {
   if (code === "ENOENT" || /command not found|not recognized as .*command|binary .*not (found|available)|No Gemini or AGY engine found|engine requested but .*binary is not available/i.test(structuredText)) {
     return normalizeFailure("binary-missing", data);
   }
-  if (data.promptTooLong || data.promptNul || /prompt .*too long|context length|token limit|NUL byte|positional prompt/i.test(structuredText)) {
+  // `NUL byte` and `positional prompt` are gone from this pattern with the
+  // preflight that produced them; what remains matches what an engine says about
+  // a context window, not what the plugin used to say about argv.
+  if (/prompt .*too long|context length|token limit/i.test(structuredText)) {
     return normalizeFailure("prompt-too-long", data);
   }
   // `api key not valid` and `API_KEY_INVALID` are Google's actual wording, and

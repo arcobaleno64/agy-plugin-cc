@@ -470,7 +470,6 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
   // Both engines take the prompt on stdin and answer in a JSON envelope. AGY
   // has done so since 1.1.2 and 1.1.8 respectively, which the declared floor
   // (AGY_MINIMUM_VERSION) now guarantees, so neither is conditional any more.
-  const useStdin = true;
   const agyStructured = engineInfo.engine === "agy";
   const useJson = true;
   const spawnTimeoutMs = resolveSpawnTimeoutMs(engineInfo.engine, timeoutSeconds);
@@ -501,7 +500,6 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
     resumeThreadId,
     timeoutMs: engineInfo.engine === "agy" ? agyPrintTimeoutMs : spawnTimeoutMs,
     agyVersion: engineInfo.version,
-    useStdin,
     outputJson: useJson,
     // Orients a read-only AGY turn on this repository. A write turn is already
     // oriented by --new-project; buildCliArgs picks between them.
@@ -517,7 +515,7 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
 
   const result = runCommandFn(engineInfo.binary, args, {
     cwd,
-    input: useStdin ? prompt : undefined,
+    input: prompt,
     maxBuffer: MAX_BUFFER,
     timeout: spawnTimeoutMs, // hard kill — grace-later than agy's --print-timeout
   });
@@ -545,10 +543,9 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
       write,
       resumeLast,
       timeoutMs: spawnTimeoutMs,
-      useStdin,
       outputJson: useJson,
     });
-    const fbResult = runCommandFn(engineInfo.binary, fbArgs, { cwd, input: useStdin ? prompt : undefined, maxBuffer: MAX_BUFFER, timeout: spawnTimeoutMs });
+    const fbResult = runCommandFn(engineInfo.binary, fbArgs, { cwd, input: prompt, maxBuffer: MAX_BUFFER, timeout: spawnTimeoutMs });
     rawStdout = stripAnsi(fbResult.stdout ?? "");
     rawStderr = stripAnsi(fbResult.stderr ?? "");
     exitCode = fbResult.status ?? (fbResult.error ? 1 : 0);
@@ -694,7 +691,6 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
     model = normalizeRequestedModel(model ?? requestedModel) ?? "gemini-2.5-flash";
   }
 
-  const useStdin = true;
   const spawnTimeoutMs = resolveSpawnTimeoutMs(engineInfo.engine, timeoutSeconds);
 
   // AGY returns the review in a stdout envelope. The transcript snapshot stays
@@ -721,7 +717,6 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
     outputJson: useJson,
     timeoutMs: engineInfo.engine === "agy" ? agyPrintTimeoutMs : spawnTimeoutMs,
     agyVersion: engineInfo.version,
-    useStdin,
     // Only --deep gets a workspace, and it needs one to mean anything. A default
     // review is single-shot from a diff already inside the prompt; --deep tells
     // the model to go and read dependency manifests, callers and untracked files.
@@ -744,7 +739,7 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
 
   const result = runCommandFn(engineInfo.binary, args, {
     cwd,
-    input: useStdin ? prompt : undefined,
+    input: prompt,
     maxBuffer: MAX_BUFFER,
     timeout: spawnTimeoutMs, // hard kill — grace-later than agy's --print-timeout
   });
@@ -766,9 +761,8 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
       write: false,
       outputJson: useJson,
       timeoutMs: spawnTimeoutMs,
-      useStdin,
     });
-    const fbResult = runCommandFn(engineInfo.binary, fbArgs, { cwd, input: useStdin ? prompt : undefined, maxBuffer: MAX_BUFFER, timeout: spawnTimeoutMs });
+    const fbResult = runCommandFn(engineInfo.binary, fbArgs, { cwd, input: prompt, maxBuffer: MAX_BUFFER, timeout: spawnTimeoutMs });
     rawStdout = stripAnsi(fbResult.stdout ?? "");
     rawStderr = stripAnsi(fbResult.stderr ?? "");
     exitCode = fbResult.status ?? (fbResult.error ? 1 : 0);
@@ -1203,7 +1197,7 @@ export function probeGeminiLogin(cwd = undefined, { runCommandFn = runCommand, d
   const version = engineInfo.version ?? "(unknown version)";
   // Shortest possible request, over the same stdin transport a real turn uses,
   // so what the probe proves is what a real turn would do.
-  const args = buildCliArgs("gemini", { prompt: GEMINI_PROBE_PROMPT, useStdin: true, outputJson: true });
+  const args = buildCliArgs("gemini", { prompt: GEMINI_PROBE_PROMPT, outputJson: true });
   const result = runCommandFn(engineInfo.binary, args, {
     input: GEMINI_PROBE_PROMPT,
     cwd,

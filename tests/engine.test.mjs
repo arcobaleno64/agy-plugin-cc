@@ -220,37 +220,22 @@ test("AGY accepts only its documented effort levels", () => {
   assert.throws(() => normalizeAgyEffort("xhigh"), /AGY supports --effort values/);
 });
 
-test("agy positional prompt rejects NUL bytes before argv construction", () => {
-  assert.throws(
-    () => buildCliArgs("agy", { prompt: "hello\0world" }),
-    (error) => error.failure?.category === "prompt-too-long" && /NUL/i.test(error.message)
-  );
-});
-
-test("agy positional prompt rejects prompts above the safe Windows argv limit", () => {
-  assert.throws(
-    () => buildCliArgs("agy", { prompt: "x".repeat(24_001) }),
-    (error) => error.failure?.category === "prompt-too-long" && /24,000|24000/.test(error.message)
-  );
-});
-
-// The advice for these two lives at the throw site, not in the DEFAULTS table, so a
-// rewrite of the default cannot reach it -- and a test against the default cannot
-// catch a regression in it. Pinned where it is produced. The wording is engine-named
-// on purpose and correct here: this path runs only when AGY takes the prompt as a
-// command-line argument, which is AGY older than 1.1.2, and gemini genuinely is the
-// way out of it.
-test("the argv-limit advice names the escape it actually has", () => {
-  for (const prompt of ["hello\u0000world", "x".repeat(24_001)]) {
-    assert.throws(
-      () => buildCliArgs("agy", { prompt }),
-      (error) => {
-        assert.equal(error.failure?.category, "prompt-too-long");
-        assert.match(error.failure.nextStep, /--engine gemini/, "gemini is the way off the argv path");
-        assert.match(error.failure.nextStep, /stdin/, "and the reason it works is stated");
-        return true;
-      }
+// These three used to assert a preflight that refused a NUL byte or a prompt
+// above 24,000 characters before argv was built. That preflight guarded the
+// positional prompt, which the AGY floor retired: the prompt is piped on stdin
+// on every path, so the guard protected nothing and only a test could reach it.
+// What replaces them is the property that made the guard unnecessary — a prompt
+// no argv could carry is never put in argv, whatever is in it.
+test("no prompt reaches argv, however long or however hostile", () => {
+  for (const prompt of ["hello\u0000world", "x".repeat(24_001), "/quota"]) {
+    const args = buildCliArgs("agy", { prompt, outputJson: true });
+    assert.ok(!args.includes(prompt), "the prompt itself must not be an argument");
+    assert.ok(!args.includes("--print"), "--print would consume the next flag as its prompt");
+    assert.ok(
+      args.every((arg) => !arg.includes("\u0000")),
+      "nothing derived from the prompt may carry a NUL into argv"
     );
+    assert.ok(args.includes("--disable-slash-commands"), "a prompt that looks like a slash command stays text");
   }
 });
 
@@ -258,7 +243,6 @@ test("AGY stdin mode omits --print and prompt while preserving execution flags",
   const prompt = "x".repeat(24_001);
   const args = buildCliArgs("agy", {
     prompt,
-    useStdin: true,
     write: true,
     timeoutMs: 105_000
   });
@@ -271,15 +255,15 @@ test("AGY stdin mode omits --print and prompt while preserving execution flags",
 });
 
 test("AGY forwards an explicit model ID or effort as literal argv", () => {
-  const modelArgs = buildCliArgs("agy", { prompt: "hello", useStdin: true, model: "gemini-3.6-flash-high" });
-  const effortArgs = buildCliArgs("agy", { prompt: "hello", useStdin: true, effort: "high" });
+  const modelArgs = buildCliArgs("agy", { prompt: "hello", model: "gemini-3.6-flash-high" });
+  const effortArgs = buildCliArgs("agy", { prompt: "hello", effort: "high" });
   // By position of the flag, not by position in argv: --disable-slash-commands is
   // unconditional since the version floor, so a slice(0, 2) here was asserting
   // where the flag sits rather than that it carries its value.
   assert.deepEqual(modelArgs.slice(modelArgs.indexOf("--model"), modelArgs.indexOf("--model") + 2), ["--model", "gemini-3.6-flash-high"]);
   assert.deepEqual(effortArgs.slice(effortArgs.indexOf("--effort"), effortArgs.indexOf("--effort") + 2), ["--effort", "high"]);
   assert.throws(
-    () => buildCliArgs("agy", { prompt: "hello", useStdin: true, model: "gemini-3.6-flash-high", effort: "high" }),
+    () => buildCliArgs("agy", { prompt: "hello", model: "gemini-3.6-flash-high", effort: "high" }),
     /cannot combine --model with --effort/
   );
 });
@@ -292,7 +276,7 @@ test("agy always opts out of print-mode slash expansion", () => {
   // every supported AGY understands the flag that says so. The version is passed
   // here only to prove it no longer decides.
   for (const agyVersion of ["1.1.12", "1.1.24", null, "unknown"]) {
-    const args = buildCliArgs("agy", { prompt: "/clear the cache logic", useStdin: true, agyVersion });
+    const args = buildCliArgs("agy", { prompt: "/clear the cache logic", agyVersion });
     assert.ok(args.includes("--disable-slash-commands"), `AGY ${agyVersion} must still receive the opt-out`);
   }
 });
@@ -301,13 +285,13 @@ test("agy asks for stream-json whenever structured output is requested", () => {
   // stream-json, not json: it is a superset, and it is what makes a run killed
   // mid-answer report how far it got. Unconditional since the floor.
   for (const agyVersion of ["1.1.12", "1.1.24", null, "unknown"]) {
-    const args = buildCliArgs("agy", { prompt: "hello", useStdin: true, outputJson: true, agyVersion });
+    const args = buildCliArgs("agy", { prompt: "hello", outputJson: true, agyVersion });
     const at = args.indexOf("--output-format");
     assert.deepEqual(args.slice(at, at + 2), ["--output-format", "stream-json"], `AGY ${agyVersion}`);
   }
 
   // Never requested when the caller did not ask for structured output.
-  const plain = buildCliArgs("agy", { prompt: "hello", useStdin: true, agyVersion: "1.1.24" });
+  const plain = buildCliArgs("agy", { prompt: "hello", agyVersion: "1.1.24" });
   assert.ok(!plain.includes("--output-format"));
 });
 
@@ -423,8 +407,8 @@ test("no workspace dir means no --add-dir, whatever the version", () => {
 // no counterpart there and must not appear.
 test("the gemini engine never receives --add-dir", () => {
   for (const options of [
-    { prompt: "hello", useStdin: true, workspaceDir: "C:/repo" },
-    { prompt: "hello", useStdin: true, workspaceDir: "C:/repo", write: true }
+    { prompt: "hello", workspaceDir: "C:/repo" },
+    { prompt: "hello", workspaceDir: "C:/repo", write: true }
   ]) {
     assert.ok(!buildCliArgs("gemini", options).includes("--add-dir"));
   }
@@ -439,7 +423,7 @@ test("no agy turn passes --dangerously-skip-permissions", () => {
     { prompt: "hello" },
     { prompt: "hello", write: true },
     { prompt: "hello", write: true, resumeLast: true, resumeThreadId: "conv-abc" },
-    { prompt: "hello", write: true, useStdin: true, agyVersion: "1.1.10" }
+    { prompt: "hello", write: true, agyVersion: "1.1.10" }
   ]) {
     const args = buildCliArgs("agy", options);
     assert.ok(
@@ -464,8 +448,8 @@ test("no agy turn passes --sandbox, which is not a path boundary", () => {
 // offered no write or shell tools at all. Pinned in both directions so neither
 // half is dropped by analogy with the agy path.
 test("gemini write turn passes --yolo and a read-only turn does not", () => {
-  assert.ok(buildCliArgs("gemini", { prompt: "hello", write: true, useStdin: true }).includes("--yolo"));
-  assert.ok(!buildCliArgs("gemini", { prompt: "hello", useStdin: true }).includes("--yolo"));
+  assert.ok(buildCliArgs("gemini", { prompt: "hello", write: true }).includes("--yolo"));
+  assert.ok(!buildCliArgs("gemini", { prompt: "hello" }).includes("--yolo"));
 });
 
 // --approval-mode plan does run headless over stdin, but it re-declares
@@ -474,10 +458,10 @@ test("gemini write turn passes --yolo and a read-only turn does not", () => {
 // read-only shape. Pinned so plan mode is not adopted for sounding safer.
 test("no gemini turn passes --approval-mode, which weakens the read-only shape", () => {
   for (const options of [
-    { prompt: "hello", useStdin: true },
-    { prompt: "hello", useStdin: true, write: true },
-    { prompt: "hello", useStdin: true, outputJson: true },
-    { prompt: "hello", useStdin: true, resumeLast: true }
+    { prompt: "hello" },
+    { prompt: "hello", write: true },
+    { prompt: "hello", outputJson: true },
+    { prompt: "hello", resumeLast: true }
   ]) {
     assert.ok(
       !buildCliArgs("gemini", options).includes("--approval-mode"),
