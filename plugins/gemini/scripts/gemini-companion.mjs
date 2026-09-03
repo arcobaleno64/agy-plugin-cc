@@ -7,7 +7,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { parseArgs, normalizeArgv } from "./lib/args.mjs";
-import { detectEngine, ENGINE_ENV, normalizeAgyEffort, normalizeAgyRequestedModel, normalizeRequestedModel, supportsAgyModelSelection, VALID_EFFORT_LEVELS } from "./lib/engine.mjs";
+import { agyFloorRefusal, agyMeetsFloor, AGY_MINIMUM_VERSION, AGY_VERSION_UNVERIFIED_NOTICE, detectEngine, ENGINE_ENV, normalizeAgyEffort, normalizeAgyRequestedModel, normalizeRequestedModel, VALID_EFFORT_LEVELS } from "./lib/engine.mjs";
 import { collectReviewContext, describeReviewTarget, ensureGitRepository, resolveReviewTarget } from "./lib/git.mjs";
 import { readStdinIfPiped } from "./lib/fs.mjs";
 import { binaryAvailable, terminateProcessTree } from "./lib/process.mjs";
@@ -405,6 +405,14 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
     nextSteps.push(
       "AGY was requested via `--engine agy` but is not installed. Install it with `curl -fsSL https://antigravity.google/cli/install.sh | bash`, or drop `--engine agy` to use the default Gemini CLI."
     );
+  }
+  // The floor is a readiness fact, and setup is where a user asks whether this
+  // is ready. Saying it here means an unsupported AGY is named before the first
+  // command fails on it, rather than after.
+  if (agySelected && agyStatus.available) {
+    const floor = agyMeetsFloor(agyStatus.detail);
+    if (floor === "too-old") nextSteps.push(agyFloorRefusal(agyStatus.detail));
+    else if (floor === "unreadable") nextSteps.push(AGY_VERSION_UNVERIFIED_NOTICE);
   }
   if (agySelected && agyStatus.available && agyLoggedOut) {
     nextSteps.push(
@@ -1093,9 +1101,6 @@ function prepareEngineSelection(engineInfo, model, effort) {
   if (!requestedModel && !requestedEffort) return { model: requestedModel, effort: requestedEffort };
 
   if (engineInfo.engine === "agy") {
-    if (!supportsAgyModelSelection(engineInfo.version)) {
-      throw new Error(`AGY ${engineInfo.version} does not support --model/--effort. AGY 1.1.5 through 1.1.9 accept the flags but ignore them in headless runs. Upgrade to AGY 1.1.10 or newer, or select --engine gemini.`);
-    }
     const agyModel = normalizeAgyRequestedModel(requestedModel);
     const agyEffort = normalizeAgyEffort(requestedEffort);
     if (agyModel && agyEffort) {

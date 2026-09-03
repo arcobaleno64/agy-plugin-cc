@@ -28,7 +28,7 @@ const ERROR_ENVELOPE = {
   usage: { input_tokens: 0, output_tokens: 0, thinking_tokens: 0, cache_read_tokens: 0, total_tokens: 0 }
 };
 
-function agyEngine(version = "1.1.10") {
+function agyEngine(version = "1.1.24") {
   return () => ({ engine: "agy", binary: "/fake/agy.exe", version });
 }
 
@@ -44,7 +44,7 @@ function stubRun({ stdout = "", stderr = "", status = 0 } = {}) {
   return fn;
 }
 
-test("AGY 1.1.10 turn takes response and conversation id from the envelope", async () => {
+test("an AGY turn takes response and conversation id from the envelope", async () => {
   const runCommandFn = stubRun({ stdout: `${JSON.stringify(SUCCESS_ENVELOPE)}\n` });
 
   const result = await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
@@ -60,7 +60,7 @@ test("AGY 1.1.10 turn takes response and conversation id from the envelope", asy
   const [call] = runCommandFn.calls;
   assert.deepEqual(
     call.args.slice(call.args.indexOf("--output-format"), call.args.indexOf("--output-format") + 2),
-    ["--output-format", "json"]
+    ["--output-format", "stream-json"]
   );
 });
 
@@ -183,24 +183,10 @@ test("AGY 1.1.10 turn delivers a large well-formed envelope intact", async () =>
   assert.equal(result.finalMessage.length, response.length);
 });
 
-test("AGY 1.1.7 never requests the envelope", async () => {
-  const runCommandFn = stubRun({ stdout: "ignored\n" });
-
-  // Transcript recovery finds nothing here and reports a failure rather than
-  // throwing, so the run completes and the argv is all this test needs.
-  await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
-    runCommandFn,
-    detectEngineFn: agyEngine("1.1.7")
-  });
-
-  const [call] = runCommandFn.calls;
-  assert.ok(!call.args.includes("--output-format"), "1.1.7 predates the JSON envelope");
-});
-
 // The review path does something the task path does not: it parses findings JSON
 // out of the envelope's `response`. That nesting — JSON inside the envelope's
 // string field — is where a naive "just parse stdout" would go wrong.
-test("AGY 1.1.10 review parses findings JSON out of the envelope response", async () => {
+test("an AGY review parses findings JSON out of the envelope response", async () => {
   const findings = { verdict: "changes-requested", findings: [{ file: "src/app.js", line: 2, summary: "off-by-one" }] };
   const runCommandFn = stubRun({
     stdout: JSON.stringify({ ...SUCCESS_ENVELOPE, response: JSON.stringify(findings) })

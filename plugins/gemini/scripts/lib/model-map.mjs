@@ -50,8 +50,8 @@ export const MODEL_ALIASES = new Map(MODEL_ALIAS_ENTRIES.map((entry) => [entry.a
 // Gemini aliases outright. The structural reason is what matters and does not
 // change: AGY encodes the effort tier into the id (`gemini-3.7-flash-high`),
 // while this map keeps model and effort separate, so no AGY id is ever a valid
-// value here. AGY 1.1.10+ also accepts native --effort low|medium|high; see
-// supportsAgyModelSelection in engine.mjs.
+// value here. AGY also accepts native --effort low|medium|high, which the
+// declared version floor (AGY_MINIMUM_VERSION in engine.mjs) guarantees.
 //
 // This comment used to enumerate the AGY ids as of 1.1.10, and by 1.1.13 the
 // listing had gained three that it did not mention. Nothing depended on the

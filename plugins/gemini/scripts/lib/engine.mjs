@@ -4,7 +4,6 @@ import path from "node:path";
 import { createFailureError } from "./failures.mjs";
 import { binaryAvailable, resolveBinaryPath } from "./process.mjs";
 import { EFFORT_MODEL_MAP, MODEL_ALIASES, VALID_EFFORT_LEVELS } from "./model-map.mjs";
-import { resolveAgyBrainRoot } from "./agy-transcript.mjs";
 import { hasGeminiCredentials } from "./gemini-auth.mjs";
 
 export const ENGINE_ENV = "GEMINI_ENGINE";
@@ -97,75 +96,62 @@ function agyVersionAtLeast(version, minMinor, minPatch) {
   return major > 1 || (major === 1 && (minor > minMinor || (minor === minMinor && patch >= minPatch)));
 }
 
-export function supportsAgyStdinPrompt(version) {
-  return agyVersionAtLeast(version, 1, 2);
-}
-
-// AGY 1.1.5 accepts --model and --effort, but through 1.1.9 it applied them
-// after model configuration had already been initialized, so a headless `-p`
-// run silently fell back to the persisted or default model. AGY 1.1.10 fixed
-// that; anything older is treated as not supporting selection at all rather
-// than reporting a selection the run will not honor.
-export function supportsAgyModelSelection(version) {
-  return agyVersionAtLeast(version, 1, 10);
-}
-
-// AGY 1.1.9 expands slash commands and skills in print mode. Plugin prompts
-// carry raw user text at position 0, so a task beginning with "/" would be
-// executed as an AGY command instead of read as instructions.
-export function supportsAgySlashCommandOptOut(version) {
-  return agyVersionAtLeast(version, 1, 9);
-}
-
-// AGY 1.1.8 added --output-format json: a stdout envelope carrying the response,
-// the conversation id, and a terminal status. Before it, the on-disk transcript
-// was the only reliable source for all three.
-export function supportsAgyStructuredOutput(version) {
-  return agyVersionAtLeast(version, 1, 8);
-}
-
-// `--output-format stream-json` emits one JSON object per line as the turn
-// happens, instead of a single envelope at the end. That is the difference
-// between a timed-out run reporting nothing and one reporting how far it got —
-// and, when the timeout lands while the answer is being written, keeping that
-// part of it.
+// THE AGY FLOOR
+// -------------
+// This used to be seven capability gates, one per AGY release that changed what
+// the plugin could ask for: stdin prompts (1.1.2), the JSON envelope (1.1.8),
+// slash-command opt-out (1.1.9), model selection and --add-dir (1.1.10),
+// read-only slash commands (1.1.11), stream-json (1.1.12). Each carried a
+// fallback for the versions below it.
 //
-// Gated at 1.1.12 because that is the version it was measured on: `--help`
-// lists stream-json among --output-format's values there, and a real turn was
-// captured to confirm the event shape. `--output-format` itself arrived in
-// 1.1.8, but which of its values existed when is not something this repository
-// can check, and the existing convention here is to fail closed rather than
-// assume an upstream capability. A version below this keeps plain json, which
-// still works.
-export function supportsAgyStreamJson(version) {
-  return agyVersionAtLeast(version, 1, 12);
+// They are gone, and the reason is not tidiness. Those fallbacks ran only for
+// users this project cannot see, and they were the only code the maintainer
+// could not exercise locally: the Windows AGY stand-in reports Node's version,
+// so six of the suite's eight skipped tests were exactly the old-version paths.
+// Least-run code, least-tested code, same code.
+//
+// One of them was worse than untested. AGY 1.1.5 through 1.1.9 accept --model
+// and then ignore it in headless runs, so below that gate the plugin quietly
+// ran a model the user did not choose. A declared floor turns that into a
+// refusal that names the fix.
+//
+// 1.1.12 is the highest floor that removes anything and the lowest that removes
+// everything: every gate sat at or below it, and no post-1.1.12 behaviour the
+// plugin depends on is version-branched (AGY 1.1.20's exit-code change is
+// absorbed by failedExit in gemini.mjs, without asking the version).
+export const AGY_MINIMUM_VERSION = "1.1.12";
+const AGY_MINIMUM_MINOR = 1;
+const AGY_MINIMUM_PATCH = 12;
+
+// Three states, not a boolean, because "too old" and "cannot tell" call for
+// opposite answers. agyVersionAtLeast returns false for both, which is why the
+// floor cannot be expressed with it alone: an unreadable version string would
+// be refused exactly like a real 1.1.0.
+//
+// A version that cannot be parsed does NOT block the run. The alternative makes
+// an upstream cosmetic change to `agy --version` an outage for every user at
+// once, and the plugin has no way to tell that apart from a genuinely odd
+// build. The floor is enforced against versions that are readable and too old,
+// never against silence.
+export function agyMeetsFloor(version) {
+  const text = String(version ?? "").trim();
+  if (!/(\d+)\.(\d+)\.(\d+)/.test(text)) return "unreadable";
+  return agyVersionAtLeast(text, AGY_MINIMUM_MINOR, AGY_MINIMUM_PATCH) ? "ok" : "too-old";
 }
 
-// AGY 1.1.11 answers the read-only slash commands (`/usage`, `/quota`,
-// `/credits`, `/model`, `/effort`, `/skills`) in print mode without starting an
-// agent turn, spending quota, or leaving a conversation behind. That is what
-// makes a non-interactive AGY auth check possible at all: `/quota` needs the
-// account to answer, so a SUCCESS envelope proves authentication, and measured
-// on 1.1.11 it reports `num_turns: 0` with every token count at zero.
-//
-// Below 1.1.11 the same input is sent to the model as literal prompt text, so
-// the probe would cost a real turn and prove nothing. Gate on the version.
-export function supportsAgyReadOnlySlashCommands(version) {
-  return agyVersionAtLeast(version, 1, 11);
+export function agyFloorRefusal(version) {
+  return (
+    `AGY ${String(version ?? "").trim() || "(unknown)"} is older than this plugin supports. ` +
+    `agy-plugin-cc requires AGY ${AGY_MINIMUM_VERSION} or newer: below it, --model and --effort are ` +
+    "accepted and then ignored in headless runs, slash commands in a prompt are executed rather than " +
+    "read, and there is no JSON envelope to take the response from. Run `agy update`, or use " +
+    "`--engine gemini`."
+  );
 }
 
-// --add-dir puts a directory in AGY's workspace, which is what makes the model
-// treat it as "here". Without it a read-only turn reports its cwd as
-// ~/.gemini/antigravity-cli/scratch and every relative path misses — measured on
-// 1.1.10, 2026-08-05, alongside --new-project (which orients the same way but is
-// reserved for write turns).
-//
-// Gated at 1.1.10 because that is the only version the flag was exercised on. It
-// may well predate that; an unverified lower bound would be a guess, and a guess
-// here spawns an unknown flag at an older AGY instead of degrading quietly.
-export function supportsAgyWorkspaceDir(version) {
-  return agyVersionAtLeast(version, 1, 10);
-}
+export const AGY_VERSION_UNVERIFIED_NOTICE =
+  `Could not read the AGY version, so it was not checked. This plugin needs AGY ${AGY_MINIMUM_VERSION} or newer; ` +
+  "if something behaves oddly, run `agy update` first.";
 
 export function detectEngine(requestedEngine = null, options = {}) {
   const {
@@ -185,15 +171,11 @@ export function detectEngine(requestedEngine = null, options = {}) {
     const status = binaryAvailableFn(binary, ["--version"]);
     if (!status.available) throw new Error("AGY engine requested but agy binary is not available.");
     const version = status.detail ?? "unknown";
-    // Below 1.1.8 the on-disk transcript is the only source for the response,
-    // DONE status, and conversation id, so a missing brain dir must fail loud.
-    // From 1.1.8 the JSON envelope carries all three and the dir is optional.
-    if (!supportsAgyStructuredOutput(version) && !resolveAgyBrainRoot()) {
-      throw new Error(
-        "AGY engine requested but no transcript brain dir was found. AGY below 1.1.8 has no structured stdout, so the plugin requires the on-disk transcript for the completed response and conversation id. Run `agy` once interactively to initialize it, upgrade to AGY 1.1.8 or newer, or use `--engine gemini`."
-      );
-    }
-    return { engine: "agy", binary, version };
+    const floor = agyMeetsFloor(version);
+    if (floor === "too-old") throw new Error(agyFloorRefusal(version));
+    // "unreadable" runs anyway; the caller surfaces the notice once so the user
+    // knows the check did not happen rather than believing it passed.
+    return { engine: "agy", binary, version, versionUnverified: floor === "unreadable" };
   }
 
   if (normalized === "gemini") {
@@ -287,7 +269,7 @@ export function buildCliArgs(engine, options = {}) {
     }
     // The prompt is raw user text at position 0, so opt out of AGY's print-mode
     // slash-command and skill expansion wherever the flag exists (1.1.9+).
-    if (supportsAgySlashCommandOptOut(agyVersion)) {
+    {
       args.push("--disable-slash-commands");
     }
     const agyModel = normalizeAgyRequestedModel(model);
@@ -300,11 +282,11 @@ export function buildCliArgs(engine, options = {}) {
     }
     if (agyModel) args.push("--model", agyModel);
     if (agyEffort) args.push("--effort", agyEffort);
-    if (outputJson && supportsAgyStructuredOutput(agyVersion)) {
+    if (outputJson) {
       // stream-json is a superset of what json returns: the same terminal
       // envelope arrives as the final event, preceded by the progress that
       // makes a cut-off run legible. See supportsAgyStreamJson for the gate.
-      args.push("--output-format", supportsAgyStreamJson(agyVersion) ? "stream-json" : "json");
+      args.push("--output-format", "stream-json");
     }
     // No --dangerously-skip-permissions. AGY's headless print mode auto-approves
     // file edits and shell commands with or without it — measured on 1.1.10,
@@ -356,7 +338,7 @@ export function buildCliArgs(engine, options = {}) {
       args.push("--conversation", resumeThreadId);
     } else if (write) {
       args.push("--new-project");
-    } else if (workspaceDir && supportsAgyWorkspaceDir(agyVersion)) {
+    } else if (workspaceDir) {
       // Read-only turns were left unoriented until v0.16.4, which cost them the
       // ability to investigate anything: `/gemini:rescue` without --write is
       // documented for exactly that, and on AGY it was reading a scratch dir.

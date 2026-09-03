@@ -105,7 +105,6 @@ test("CRLF line endings parse identically", () => {
 // --- through the real turn path ---------------------------------------------
 
 import { runGeminiTurn } from "../plugins/gemini/scripts/lib/gemini.mjs";
-import { supportsAgyStreamJson } from "../plugins/gemini/scripts/lib/engine.mjs";
 
 function agyEngine(version) {
   return () => ({ engine: "agy", binary: "/fake/agy.exe", version });
@@ -126,29 +125,29 @@ function outputFormatOf(call) {
   return at === -1 ? null : call.args[at + 1];
 }
 
-test("the stream-json gate opens at the version it was measured on", () => {
-  assert.equal(supportsAgyStreamJson("1.1.12"), true);
-  assert.equal(supportsAgyStreamJson("1.1.11"), false);
-  assert.equal(supportsAgyStreamJson("1.2.0"), true);
+// stream-json used to be gated at 1.1.12, the version it was measured on, with
+// plain json below it. The declared AGY floor is that same version, so there is
+// no "below it" any more: every supported AGY is asked for stream-json.
+test("every supported AGY is asked for stream-json", async () => {
+  for (const version of ["1.1.12", "1.1.24"]) {
+    const runCommandFn = stubRun({ stdout: MEASURED_STREAM });
+    await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
+      runCommandFn,
+      detectEngineFn: agyEngine(version)
+    });
+    assert.equal(outputFormatOf(runCommandFn.calls[0]), "stream-json", `AGY ${version}`);
+  }
 });
 
-test("AGY 1.1.12 is asked for stream-json", async () => {
-  const runCommandFn = stubRun({ stdout: MEASURED_STREAM });
-  await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
-    runCommandFn,
-    detectEngineFn: agyEngine("1.1.12")
-  });
-  assert.equal(outputFormatOf(runCommandFn.calls[0]), "stream-json");
-});
-
-test("AGY 1.1.11 keeps plain json, which still works", async () => {
+// A plain (non-stream) envelope still parses: the parser reads what actually
+// arrived rather than trusting the flag, which is what keeps an engine that
+// ignores --output-format from silently producing nothing.
+test("a plain json envelope still parses when that is what arrives", async () => {
   const envelope = { conversation_id: "c", status: "SUCCESS", response: "done", num_turns: 1 };
-  const runCommandFn = stubRun({ stdout: `${JSON.stringify(envelope)}\n` });
   const result = await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
-    runCommandFn,
-    detectEngineFn: agyEngine("1.1.11")
+    runCommandFn: stubRun({ stdout: `${JSON.stringify(envelope)}\n` }),
+    detectEngineFn: agyEngine("1.1.24")
   });
-  assert.equal(outputFormatOf(runCommandFn.calls[0]), "json");
   assert.equal(result.finalMessage, "done");
   assert.equal(result.failure ?? null, null);
 });

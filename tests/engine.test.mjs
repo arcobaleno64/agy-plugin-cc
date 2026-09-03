@@ -10,10 +10,9 @@ import {
   mapEffortToModel,
   buildCliArgs,
   detectEngine,
-  supportsAgyModelSelection,
-  supportsAgySlashCommandOptOut,
-  supportsAgyStdinPrompt,
-  supportsAgyStructuredOutput
+  agyMeetsFloor,
+  agyFloorRefusal,
+  AGY_MINIMUM_VERSION
 } from "../plugins/gemini/scripts/lib/engine.mjs";
 
 // These two IDs return 404 ModelNotFound on the gemini CLI (verified 0.44.1).
@@ -75,37 +74,40 @@ test("detectEngine fails closed when agy resolves only to an absolute .cmd shim 
   );
 });
 
-test("AGY stdin prompt capability begins at stable 1.1.2 and fails closed for unknown versions", () => {
-  assert.equal(supportsAgyStdinPrompt("1.1.1"), false);
-  assert.equal(supportsAgyStdinPrompt("agy 1.1.1"), false);
-  assert.equal(supportsAgyStdinPrompt("1.1.2-beta.1"), false);
-  assert.equal(supportsAgyStdinPrompt("unknown"), false);
-  assert.equal(supportsAgyStdinPrompt("1.1.2"), true);
-  assert.equal(supportsAgyStdinPrompt("agy version 1.2.0"), true);
-  assert.equal(supportsAgyStdinPrompt("2.0.0"), true);
+// The seven capability gates became one floor. What the gates encoded is now a
+// prerequisite, so the only questions left are: is this version old enough to
+// refuse, new enough to run, or unreadable — which is a third answer, not a
+// synonym for "too old".
+test("the AGY floor refuses the version below it and accepts the floor itself", () => {
+  assert.equal(agyMeetsFloor("1.1.11"), "too-old");
+  assert.equal(agyMeetsFloor("agy 1.1.9"), "too-old");
+  assert.equal(agyMeetsFloor("1.1.2"), "too-old");
+  assert.equal(agyMeetsFloor(AGY_MINIMUM_VERSION), "ok");
+  assert.equal(agyMeetsFloor("agy version 1.2.0"), "ok");
+  assert.equal(agyMeetsFloor("2.0.0"), "ok");
 });
 
-// 1.1.5 through 1.1.9 accept --model/--effort but drop them in headless runs
-// (fixed in AGY 1.1.10), so those versions must not be reported as supported.
-test("AGY model and effort selection begins at stable 1.1.10", () => {
-  assert.equal(supportsAgyModelSelection("1.1.4"), false);
-  assert.equal(supportsAgyModelSelection("agy 1.1.5"), false);
-  assert.equal(supportsAgyModelSelection("1.1.9"), false);
-  assert.equal(supportsAgyModelSelection("1.1.10-beta.1"), false);
-  assert.equal(supportsAgyModelSelection("unknown"), false);
-  assert.equal(supportsAgyModelSelection("agy 1.1.10"), true);
-  assert.equal(supportsAgyModelSelection("1.2.0"), true);
-  assert.equal(supportsAgyModelSelection("2.0.0"), true);
+// A prerelease of the floor is not the floor: the released behaviour is what was
+// measured. Same rule the gates used.
+test("a prerelease of the floor version is still too old", () => {
+  assert.equal(agyMeetsFloor("1.1.12-rc.1"), "too-old");
+  assert.equal(agyMeetsFloor("1.1.12-beta.1"), "too-old");
 });
 
-test("AGY slash-command opt-out begins at stable 1.1.9", () => {
-  assert.equal(supportsAgySlashCommandOptOut("1.1.8"), false);
-  assert.equal(supportsAgySlashCommandOptOut("1.1.9-rc.1"), false);
-  assert.equal(supportsAgySlashCommandOptOut("unknown"), false);
-  assert.equal(supportsAgySlashCommandOptOut(null), false);
-  assert.equal(supportsAgySlashCommandOptOut("agy 1.1.9"), true);
-  assert.equal(supportsAgySlashCommandOptOut("1.1.10"), true);
-  assert.equal(supportsAgySlashCommandOptOut("2.0.0"), true);
+// The asymmetry is deliberate and is the whole reason this returns three states:
+// refusing on an unreadable version would turn one upstream change to the shape
+// of `agy --version` into an outage for every user at once.
+test("an unreadable version is reported as unreadable, never as too old", () => {
+  for (const version of ["unknown", "", null, undefined, "antigravity (build 8812)"]) {
+    assert.equal(agyMeetsFloor(version), "unreadable", `version ${String(version)}`);
+  }
+});
+
+test("the refusal names the detected version, the floor, and the fix", () => {
+  const message = agyFloorRefusal("1.1.9");
+  assert.match(message, /1\.1\.9/);
+  assert.match(message, new RegExp(AGY_MINIMUM_VERSION.replace(/\./g, "\\.")));
+  assert.match(message, /agy update/);
 });
 
 test("AGY requires an exact model ID and preserves safe explicit IDs", () => {
@@ -174,8 +176,11 @@ test("AGY stdin mode omits --print and prompt while preserving execution flags",
 test("AGY forwards an explicit model ID or effort as literal argv", () => {
   const modelArgs = buildCliArgs("agy", { prompt: "hello", useStdin: true, model: "gemini-3.6-flash-high" });
   const effortArgs = buildCliArgs("agy", { prompt: "hello", useStdin: true, effort: "high" });
-  assert.deepEqual(modelArgs.slice(0, 2), ["--model", "gemini-3.6-flash-high"]);
-  assert.deepEqual(effortArgs.slice(0, 2), ["--effort", "high"]);
+  // By position of the flag, not by position in argv: --disable-slash-commands is
+  // unconditional since the version floor, so a slice(0, 2) here was asserting
+  // where the flag sits rather than that it carries its value.
+  assert.deepEqual(modelArgs.slice(modelArgs.indexOf("--model"), modelArgs.indexOf("--model") + 2), ["--model", "gemini-3.6-flash-high"]);
+  assert.deepEqual(effortArgs.slice(effortArgs.indexOf("--effort"), effortArgs.indexOf("--effort") + 2), ["--effort", "high"]);
   assert.throws(
     () => buildCliArgs("agy", { prompt: "hello", useStdin: true, model: "gemini-3.6-flash-high", effort: "high" }),
     /cannot combine --model with --effort/
@@ -185,42 +190,27 @@ test("AGY forwards an explicit model ID or effort as literal argv", () => {
 // AGY 1.1.9+ expands slash commands and skills in print mode. Task prompts are
 // raw user text at position 0, so "/clear the cache logic" would run AGY's
 // /clear instead of being read as instructions.
-test("agy opts out of print-mode slash expansion on 1.1.9 and newer", () => {
-  const modern = buildCliArgs("agy", { prompt: "/clear the cache logic", useStdin: true, agyVersion: "1.1.10" });
-  assert.ok(modern.includes("--disable-slash-commands"));
-});
-
-test("agy omits the slash opt-out where the flag does not exist", () => {
-  for (const agyVersion of ["1.1.8", null, "unknown"]) {
-    const args = buildCliArgs("agy", { prompt: "hello", useStdin: true, agyVersion });
-    assert.ok(
-      !args.includes("--disable-slash-commands"),
-      `AGY ${agyVersion} predates --disable-slash-commands and must not receive it`
-    );
+test("agy always opts out of print-mode slash expansion", () => {
+  // Unconditional since the floor: a prompt beginning with "/" is user text, and
+  // every supported AGY understands the flag that says so. The version is passed
+  // here only to prove it no longer decides.
+  for (const agyVersion of ["1.1.12", "1.1.24", null, "unknown"]) {
+    const args = buildCliArgs("agy", { prompt: "/clear the cache logic", useStdin: true, agyVersion });
+    assert.ok(args.includes("--disable-slash-commands"), `AGY ${agyVersion} must still receive the opt-out`);
   }
 });
 
-test("AGY structured output begins at stable 1.1.8", () => {
-  assert.equal(supportsAgyStructuredOutput("1.1.7"), false);
-  assert.equal(supportsAgyStructuredOutput("1.1.8-rc.1"), false);
-  assert.equal(supportsAgyStructuredOutput("unknown"), false);
-  assert.equal(supportsAgyStructuredOutput(null), false);
-  assert.equal(supportsAgyStructuredOutput("agy 1.1.8"), true);
-  assert.equal(supportsAgyStructuredOutput("1.1.10"), true);
-  assert.equal(supportsAgyStructuredOutput("2.0.0"), true);
-});
-
-test("agy requests the JSON envelope only where the flag exists", () => {
-  const modern = buildCliArgs("agy", { prompt: "hello", useStdin: true, outputJson: true, agyVersion: "1.1.10" });
-  assert.deepEqual(modern.slice(modern.indexOf("--output-format"), modern.indexOf("--output-format") + 2), ["--output-format", "json"]);
-
-  for (const agyVersion of ["1.1.7", null, "unknown"]) {
+test("agy asks for stream-json whenever structured output is requested", () => {
+  // stream-json, not json: it is a superset, and it is what makes a run killed
+  // mid-answer report how far it got. Unconditional since the floor.
+  for (const agyVersion of ["1.1.12", "1.1.24", null, "unknown"]) {
     const args = buildCliArgs("agy", { prompt: "hello", useStdin: true, outputJson: true, agyVersion });
-    assert.ok(!args.includes("--output-format"), `AGY ${agyVersion} predates --output-format and must not receive it`);
+    const at = args.indexOf("--output-format");
+    assert.deepEqual(args.slice(at, at + 2), ["--output-format", "stream-json"], `AGY ${agyVersion}`);
   }
 
   // Never requested when the caller did not ask for structured output.
-  const plain = buildCliArgs("agy", { prompt: "hello", useStdin: true, agyVersion: "1.1.10" });
+  const plain = buildCliArgs("agy", { prompt: "hello", useStdin: true, agyVersion: "1.1.24" });
   assert.ok(!plain.includes("--output-format"));
 });
 
@@ -317,12 +307,13 @@ test("agy resumed turn keeps its original workspace rather than being re-oriente
   assert.ok(!args.includes("--new-project"));
 });
 
-// Gated at the only version the flag was exercised on. An older AGY keeps the
-// previous (unoriented) behavior rather than being handed a flag it may reject.
-test("--add-dir is withheld from AGY versions it was not verified on", () => {
-  for (const agyVersion of ["1.1.9", "1.1.10-beta.1", "unknown", null]) {
+test("--add-dir orients a read-only turn on every supported AGY", () => {
+  // Was gated at 1.1.10, the only version it had been exercised on. The floor is
+  // above that, so an unoriented read-only turn — which reported agy's scratch
+  // dir as "here" and missed every relative path — is no longer reachable.
+  for (const agyVersion of ["1.1.12", "1.1.24", "unknown", null]) {
     const args = buildCliArgs("agy", { prompt: "hello", workspaceDir: "C:/repo", agyVersion });
-    assert.ok(!args.includes("--add-dir"), `--add-dir leaked to AGY ${agyVersion}`);
+    assert.ok(args.includes("--add-dir"), `--add-dir missing for AGY ${agyVersion}`);
   }
 });
 

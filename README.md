@@ -12,7 +12,7 @@ Ported from [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) 
 
 ## Start here
 
-You need **Claude Code**, **Node.js ≥ 18**, and **one** supported engine: Gemini CLI ≥ 0.40 or AGY ≥ 1.0.3. Install and authenticate the engine you choose; you do not need both. Gemini CLI requires a Standard/Enterprise account or an API key, while AGY is the practical default for personal accounts. See [Prerequisites](#prerequisites) for the supported versions and authentication details.
+You need **Claude Code**, **Node.js ≥ 18**, and **one** supported engine: Gemini CLI ≥ 0.40 or AGY ≥ 1.1.12. Install and authenticate the engine you choose; you do not need both. Gemini CLI requires a Standard/Enterprise account or an API key, while AGY is the practical default for personal accounts. See [Prerequisites](#prerequisites) for the supported versions and authentication details.
 
 ### Install from the release channel
 
@@ -48,8 +48,8 @@ Compared with AGY-only, multi-host plugins, this project keeps the Gemini CLI pa
 - Pragmatic and adversarial code review over the current diff or branch.
 - Background task delegation for longer-running companion-agent work.
 - Gemini model aliases, graceful model fallback, and transient review retry.
-- Version-gated AGY result retrieval: native JSON envelope on 1.1.8+, transcript recovery below it.
-- Safer stdin prompt delivery on Gemini and AGY 1.1.2 or newer.
+- One declared AGY floor (1.1.12) in place of seven compatibility gates: an older AGY is refused by name, not silently degraded.
+- Stdin prompt delivery on both engines — prompts never enter argv.
 
 | Need | Use this plugin when... |
 |---|---|
@@ -70,7 +70,7 @@ Compared with AGY-only, multi-host plugins, this project keeps the Gemini CLI pa
 - **`/gemini:status`** — Inspect active and completed background jobs.
 - **`/gemini:result`** / **`/gemini:cancel`** — Retrieve or cancel a background job.
 - **Engine auto-detection** — Both engines are first-class; `auto` checks `gemini` first for its JSON/model contract, then `agy`.
-- **Version-aware stdin prompt delivery** — Gemini always uses stdin; AGY 1.1.2 or newer uses its auto-print stdin path, while older or unknown versions retain the compatible positional path.
+- **Stdin prompt delivery on both engines** — the prompt never enters argv, so no platform argv limit can truncate it and no metacharacter in it can be reinterpreted.
 - **Session lifecycle hooks** — Automatically injects `GEMINI_COMPANION_SESSION_ID`. On session end it **terminates this session's still-running background jobs** and removes their records; jobs from other sessions are left alone. Finished jobs' results are discarded with them, so retrieve anything you still need with `/gemini:result` before the session ends.
 
 ---
@@ -81,7 +81,7 @@ Compared with AGY-only, multi-host plugins, this project keeps the Gemini CLI pa
 |---|---|---|
 | Node.js | ≥ 18 | [nodejs.org](https://nodejs.org) |
 | Gemini CLI | ≥ 0.40; required for the `gemini` engine | `npm install -g @google/gemini-cli` |
-| AGY | ≥ 1.0.3; ≥ 1.1.2 recommended and live-verified on Windows/Ubuntu WSL2 | _(see install note below)_ |
+| AGY | ≥ 1.1.12 (enforced); live-verified on 1.1.24, Windows and Ubuntu WSL2. Older AGY is refused with the version it found and the command that fixes it — below 1.1.12, `--model` and `--effort` are accepted and then ignored in headless runs, a prompt starting with `/` is executed as a command, and there is no JSON envelope to read the answer from. Run `agy update`. | _(see install note below)_ |
 | Claude Code | any | [claude.ai/code](https://claude.ai/code) |
 
 **Install AGY** (required for `--engine agy`): `curl -fsSL https://antigravity.google/cli/install.sh | bash`
@@ -332,7 +332,7 @@ When enabled and the review returns `needs-attention`, Claude Code is blocked fr
 In `auto` mode the plugin selects the first available engine in this order:
 
 1. **`gemini` CLI** — outputs via stdout; supports stdin prompt delivery.
-2. **`agy`** — first-class supported engine and second `auto` candidate; AGY 1.1.2 or newer receives the prompt on stdin with no `--print` flag, while older or unknown versions retain `agy --print <prompt>`.
+2. **`agy`** — first-class supported engine and second `auto` candidate; receives the prompt on stdin with no `--print` flag. AGY below the declared floor (1.1.12) is refused at detection.
 
 Override via `--engine` flag or the `GEMINI_ENGINE` environment variable.
 
@@ -340,15 +340,15 @@ Override via `--engine` flag or the `GEMINI_ENGINE` environment variable.
 
 > **AGY 1.1.10+ selection:** use either `--model <exact-id>` from `agy models` or `--effort <low|medium|high>`. Gemini aliases are not valid AGY model IDs, model and effort cannot be combined, and `--model` is unavailable for a dual-engine review because IDs are engine-specific. Gemini retains its separate alias and effort-to-model mapping.
 
-> **AGY 1.1.8+ uses the native JSON envelope; older AGY falls back to transcript recovery.** AGY 1.1.8 added `--output-format json`, which returns the response, conversation ID, and a terminal status on stdout. From plugin v0.11.0 that envelope is the source of truth on AGY 1.1.8 or newer, and the on-disk transcript is not read at all — no brain root is required. One consequence: the reasoning-summary section is not shown for AGY results, because the envelope reports only a `thinking_tokens` count and carries no thinking text (`stream-json` does not either). The Gemini engine is unaffected; it takes its reasoning summary from stderr.
+> **AGY answers in a native JSON envelope.** `--output-format stream-json` returns the response, conversation ID, and a terminal status on stdout, plus the progress events that make a cut-off run legible. That envelope is the source of truth, and no brain root is required. One consequence: the reasoning-summary section is not shown for AGY results, because the envelope reports only a `thinking_tokens` count and carries no thinking text. The Gemini engine is unaffected; it takes its reasoning summary from stderr.
 >
-> Below AGY 1.1.8 the transcript remains authoritative, because positional `agy --print` produced no piped response on older releases (upstream [google-gemini/gemini-cli#27466](https://github.com/google-gemini/gemini-cli/issues/27466); reproduced on macOS AGY 1.0.7) and no version before 1.1.8 surfaces the conversation ID on stdout. Those runs still take the completed response, DONE status, thinking, and conversation ID from disk. Known brain roots are `~/.gemini/antigravity-cli/brain` (verified on Windows, macOS AGY 1.0.7, and Linux AGY 1.1.2) and `~/.antigravity-cli/brain` (older Linux 1.0.2, reported). If no brain root is found on such a version, run `agy` once, upgrade to 1.1.8 or newer, or open an issue with its actual location.
+> The on-disk transcript is still read, but for one case only and never as a version fallback: AGY killed before it printed anything. The turn ran, it was billed, and the transcript is the only surviving copy of what it produced. A run that prints its envelope never touches it. Known brain roots are `~/.gemini/antigravity-cli/brain` and `~/.antigravity-cli/brain`; if neither exists, that salvage path simply does not fire and the run reports the timeout it actually hit.
 
 ---
 
 ## Security
 
-- **Stdin delivery**: Gemini prompts and AGY 1.1.2-or-newer prompts use Node's `spawnSync` `input` option and never enter argv. AGY versions older than 1.1.2, plus unparseable versions, keep the positional compatibility path and its 24,000-character limit; prefer Gemini or AGY 1.1.2+ for untrusted prompt content.
+- **Stdin delivery**: every prompt, on both engines, uses Node's `spawnSync` `input` option and never enters argv. The positional path and its 24,000-character limit are gone with the AGY floor — the versions that needed them are refused at engine detection.
 - **Windows process boundary**: Gemini's npm `.cmd` shim is launched through `shell:true`, but its prompt remains on stdin and only validated flags enter argv. AGY must resolve to an absolute `.exe` and is always launched with `shell:false`.
 - **Git process boundary**: Repository-derived refs are always passed to Git as literal argv with `shell:false`, including on Windows; Git helpers never inherit the `.cmd` wrapper fallback. This aligns with the upstream Codex plugin's [v1.0.6 Git shell-expansion removal](https://github.com/openai/codex-plugin-cc/releases/tag/v1.0.6).
 - **DEP0190 warning is benign**: On Windows you may see `(node:NNN) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.` This is **safe to ignore here** — the deprecation is about *prompt content* placed in argv under `shell: true`, but this plugin never does that for the gemini engine: the prompt travels on stdin, and only controlled flags reach argv (each validated, e.g. model ids must match `^[A-Za-z0-9][A-Za-z0-9._-]*$`). The warning is Node flagging the general pattern, not an actual injection vector in this code path.
@@ -387,7 +387,6 @@ Claude Code
             ├─ buildCliArgs()        → version-gated args
             ├─ runCommand()          → spawnSync
             │    input: prompt       ← gemini + AGY ≥1.1.2
-            │    argv: prompt        ← older/unknown AGY only (24K cap)
             └─ renderTaskResult()   → Markdown output to Claude
 ```
 
@@ -457,6 +456,19 @@ While at 0.x:
 - **MINOR** (`0.23.0` → `0.24.0`) may carry a breaking change to that surface.
   When it does, the CHANGELOG entry says so in its first line.
 - **PATCH** (`0.23.0` → `0.23.1`) never does.
+
+### Engine support policy
+
+The supported engine versions are the ones in [Prerequisites](#prerequisites),
+and for AGY that floor is enforced at engine detection rather than documented and
+hoped for: an older AGY is refused by name, with the version found and the command
+that fixes it.
+
+The floor moves only when a capability the plugin depends on requires it — never
+to keep pace with upstream releases for their own sake. When it moves, it moves in
+a MINOR release whose CHANGELOG entry names the new floor and the upgrade command
+in its first line. There is no support window measured in time: an AGY that still
+does what the plugin asks of it stays supported however old it is.
 
 1.0.0 is reserved for the point where that surface has gone three consecutive
 MINOR releases without a breaking change, and the AGY integration no longer needs

@@ -12,7 +12,7 @@
 
 ## 從這裡開始
 
-你需要 **Claude Code**、**Node.js ≥ 18**，以及**一個**支援的引擎：Gemini CLI ≥ 0.40 或 AGY ≥ 1.0.3。只需安裝並認證你選擇的引擎，不必兩者都裝。Gemini CLI 需要 Standard／Enterprise 帳戶或 API 金鑰；個人帳戶實務上以 AGY 為預設選擇。支援版本與認證細節請見[系統需求](#系統需求)。
+你需要 **Claude Code**、**Node.js ≥ 18**，以及**一個**支援的引擎：Gemini CLI ≥ 0.40 或 AGY ≥ 1.1.12。只需安裝並認證你選擇的引擎，不必兩者都裝。Gemini CLI 需要 Standard／Enterprise 帳戶或 API 金鑰；個人帳戶實務上以 AGY 為預設選擇。支援版本與認證細節請見[系統需求](#系統需求)。
 
 ### 從發布通道安裝
 

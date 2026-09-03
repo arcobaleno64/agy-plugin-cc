@@ -133,7 +133,7 @@ outside it — all locally, none transmitted:
 |---|---|---|
 | `~/.gemini/oauth_creds.json` (or `$GEMINI_HOME`) | The token **expiry timestamp** only | To report Gemini auth status and to keep `auto` routing from selecting an unauthenticated CLI (`scripts/lib/gemini-auth.mjs`) |
 | `~/.gemini/settings.json` | The `security.auth.selectedType` string only | To tell a personal plan from a Code Assist plan, which differ in CLI access (`scripts/lib/gemini-auth.mjs`) |
-| `~/.gemini/antigravity-cli/brain/` or `~/.antigravity-cli/brain/` | AGY's own conversation transcript for the run it just started | Only on AGY older than 1.1.8, which has no structured stdout; newer AGY returns a JSON envelope and the transcript is not read (`scripts/lib/agy-transcript.mjs`, `scripts/lib/engine.mjs`) |
+| `~/.gemini/antigravity-cli/brain/` or `~/.antigravity-cli/brain/` | AGY's own conversation transcript for the run it just started | **Narrowed in 0.25.0.** It is no longer a version fallback — every supported AGY answers in a JSON envelope. It is read in exactly one case: AGY was killed before it printed anything, so the turn ran and was billed and its output survives nowhere else (`scripts/lib/agy-transcript.mjs`, `scripts/lib/gemini.mjs`). A run that prints its envelope never reads it. |
 | Your OS keychain, two fixed entries only | **Whether** `gemini-cli-api-key/default-api-key` or `gemini-cli-oauth/main-account` exists — never the stored value | Gemini CLI 0.53.1 keeps credentials there, so without this check a user who authenticated through the CLI is read as unauthenticated and `auto` routes past a working gemini (`scripts/lib/gemini-auth.mjs`) |
 
 The token value itself is never logged, copied, or transmitted. `GEMINI_API_KEY`

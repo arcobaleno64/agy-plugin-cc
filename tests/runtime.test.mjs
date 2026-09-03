@@ -745,7 +745,7 @@ test("an AGY resume names the tracked conversation instead of continuing the new
   const repo = makeTempDir();
   const binDir = makeTempDir();
   const capturePath = path.join(binDir, "agy-capture.json");
-  installCapturingAgyExecutable(binDir, { version: "1.1.10" });
+  installCapturingAgyExecutable(binDir, { version: "1.1.24" });
   initGitRepo(repo);
   commit(repo, "README.md", "hello\n");
 
@@ -921,28 +921,32 @@ test("task rejects an unknown engine", () => {
   assert.match(result.stderr, /Unknown engine/i);
 });
 
-test("AGY 1.1.2 task sends a long prompt only on stdin and keeps transcript authoritative", { skip: process.platform === "win32" }, () => {
+// A prompt far past AGY_POSITIONAL_PROMPT_SAFE_LIMIT must never reach argv,
+// where a platform limit truncates it silently. It goes on stdin, and the
+// response comes from the envelope.
+test("an AGY task sends a long prompt only on stdin", { skip: process.platform === "win32" }, () => {
   const repo = makeTempDir();
   const binDir = makeTempDir();
   const capturePath = path.join(binDir, "agy-capture.json");
-  const marker = `AGY112_STDIN_${"x".repeat(24_001)}`;
-  installCapturingAgyExecutable(binDir, { version: "1.1.2" });
+  const marker = `AGY_STDIN_${"x".repeat(24_001)}`;
+  installCapturingAgyExecutable(binDir, { version: "1.1.24" });
   initGitRepo(repo);
   commit(repo, "README.md", "hello\n");
 
+  const envelope = { conversation_id: "conv-stdin", status: "SUCCESS", response: "AGY_ENVELOPE_OK", num_turns: 1 };
   const result = run("node", [SCRIPT, "task", "--engine", "agy", marker], {
     cwd: repo,
     env: {
       ...buildFailingAgyEnv(binDir),
       FAKE_AGY_CAPTURE: capturePath,
-      FAKE_AGY_RESPONSE: "AGY112_TRANSCRIPT_OK",
-      FAKE_AGY_STDOUT: "AGY112_STDOUT_DECOY\n"
+      FAKE_AGY_RESPONSE: "AGY_TRANSCRIPT_MUST_NOT_WIN",
+      FAKE_AGY_STDOUT: `${JSON.stringify(envelope)}\n`
     }
   });
 
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /AGY112_TRANSCRIPT_OK/);
-  assert.doesNotMatch(result.stdout, /AGY112_STDOUT_DECOY/);
+  assert.match(result.stdout, /AGY_ENVELOPE_OK/);
+  assert.doesNotMatch(result.stdout, /AGY_TRANSCRIPT_MUST_NOT_WIN/);
   const capture = JSON.parse(fs.readFileSync(capturePath, "utf8"));
   assert.equal(capture.stdin, marker);
   assert.ok(!capture.args.includes("--print"));
@@ -954,11 +958,11 @@ test("AGY 1.1.2 task sends a long prompt only on stdin and keeps transcript auth
 // The capturing fixture always writes a transcript, so a result carrying the
 // envelope's response and not the transcript marker proves the disk was not read.
 
-test("AGY 1.1.10 task takes the response and conversation id from the stdout envelope", { skip: process.platform === "win32" }, () => {
+test("an AGY task takes the response and conversation id from the stdout envelope", { skip: process.platform === "win32" }, () => {
   const repo = makeTempDir();
   const binDir = makeTempDir();
   const capturePath = path.join(binDir, "agy-capture.json");
-  installCapturingAgyExecutable(binDir, { version: "1.1.10" });
+  installCapturingAgyExecutable(binDir, { version: "1.1.24" });
   initGitRepo(repo);
   commit(repo, "README.md", "hello\n");
 
@@ -991,8 +995,8 @@ test("AGY 1.1.10 task takes the response and conversation id from the stdout env
   assert.equal(jobs[0].threadId, "11111111-2222-3333-4444-555555555555");
 
   const capture = JSON.parse(fs.readFileSync(capturePath, "utf8"));
-  assert.ok(capture.args.includes("--output-format"), "1.1.10 must request the JSON envelope");
-  assert.equal(capture.args[capture.args.indexOf("--output-format") + 1], "json");
+  assert.ok(capture.args.includes("--output-format"), "a supported AGY must be asked for the envelope");
+  assert.equal(capture.args[capture.args.indexOf("--output-format") + 1], "stream-json");
 });
 
 // Envelope classification itself lives in tests/agy-envelope.test.mjs, which
@@ -1000,62 +1004,11 @@ test("AGY 1.1.10 task takes the response and conversation id from the stdout env
 // What stays here is the wiring those unit tests cannot see: real argv reaching
 // a real process, and the transcript actually being read on older AGY.
 
-test("AGY 1.1.7 keeps transcript recovery and never asks for the envelope", { skip: process.platform === "win32" }, () => {
+test("an AGY review sends the generated review prompt on stdin", { skip: process.platform === "win32" }, () => {
   const repo = makeTempDir();
   const binDir = makeTempDir();
   const capturePath = path.join(binDir, "agy-capture.json");
-  installCapturingAgyExecutable(binDir, { version: "1.1.7" });
-  initGitRepo(repo);
-  commit(repo, "README.md", "hello\n");
-
-  const result = run("node", [SCRIPT, "task", "--engine", "agy", "do something"], {
-    cwd: repo,
-    env: {
-      ...buildFailingAgyEnv(binDir),
-      FAKE_AGY_CAPTURE: capturePath,
-      FAKE_AGY_RESPONSE: "AGY117_TRANSCRIPT_OK",
-      FAKE_AGY_STDOUT: "AGY117_STDOUT_DECOY\n"
-    }
-  });
-
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /AGY117_TRANSCRIPT_OK/);
-  assert.doesNotMatch(result.stdout, /AGY117_STDOUT_DECOY/);
-
-  const capture = JSON.parse(fs.readFileSync(capturePath, "utf8"));
-  assert.ok(!capture.args.includes("--output-format"), "1.1.7 predates the JSON envelope");
-});
-
-test("AGY 1.1.1 task retains positional prompt compatibility", { skip: process.platform === "win32" }, () => {
-  const repo = makeTempDir();
-  const binDir = makeTempDir();
-  const capturePath = path.join(binDir, "agy-capture.json");
-  const prompt = "AGY111_POSITIONAL_MARKER";
-  installCapturingAgyExecutable(binDir, { version: "1.1.1" });
-  initGitRepo(repo);
-  commit(repo, "README.md", "hello\n");
-
-  const result = run("node", [SCRIPT, "task", "--engine", "agy", prompt], {
-    cwd: repo,
-    env: {
-      ...buildFailingAgyEnv(binDir),
-      FAKE_AGY_CAPTURE: capturePath,
-      FAKE_AGY_RESPONSE: "AGY111_TRANSCRIPT_OK"
-    }
-  });
-
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /AGY111_TRANSCRIPT_OK/);
-  const capture = JSON.parse(fs.readFileSync(capturePath, "utf8"));
-  assert.equal(capture.stdin, "");
-  assert.deepEqual(capture.args.slice(0, 2), ["--print", prompt]);
-});
-
-test("AGY 1.1.2 review sends the generated review prompt on stdin", { skip: process.platform === "win32" }, () => {
-  const repo = makeTempDir();
-  const binDir = makeTempDir();
-  const capturePath = path.join(binDir, "agy-capture.json");
-  installCapturingAgyExecutable(binDir, { version: "1.1.2" });
+  installCapturingAgyExecutable(binDir, { version: "1.1.24" });
   initGitRepo(repo);
   commit(repo, "src/app.js", "export const value = 1;\n");
   fs.writeFileSync(path.join(repo, "src", "app.js"), "export const value = 2;\n", "utf8");
@@ -1253,24 +1206,6 @@ test("background AGY task validates model and effort before spawning", () => {
       detectEngineFn() { return { engine: "agy", version: "1.1.10" }; }
     }),
     /cannot combine --model with --effort/
-  );
-  assert.equal(spawned, false);
-  fs.rmSync(repo, { recursive: true, force: true });
-});
-
-// AGY 1.1.5 through 1.1.9 accept --model/--effort and then ignore them in
-// headless runs, silently falling back to the persisted or default model.
-// Refuse the request instead of reporting a selection the run will not honor.
-test("background AGY task refuses model selection on AGY older than 1.1.10", () => {
-  const { repo } = setupRepo("task");
-  let spawned = false;
-
-  assert.throws(
-    () => dispatchBackgroundTask({ cwd: repo, engine: "agy", effort: "high", prompt: "diagnose" }, {
-      spawnFn() { spawned = true; return { pid: 1, unref() {} }; },
-      detectEngineFn() { return { engine: "agy", version: "1.1.9" }; }
-    }),
-    /does not support --model\/--effort.*Upgrade to AGY 1\.1\.10 or newer/s
   );
   assert.equal(spawned, false);
   fs.rmSync(repo, { recursive: true, force: true });

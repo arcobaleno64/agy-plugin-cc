@@ -1,5 +1,62 @@
 # Changelog
 
+## 0.25.0 - Unreleased
+
+- **BREAKING: AGY 1.1.12 or newer is now required, and an older AGY is refused by
+  name.** Run `agy update`. This replaces seven capability gates
+  (`supportsAgyStdinPrompt` 1.1.2, `supportsAgyStructuredOutput` 1.1.8,
+  `supportsAgySlashCommandOptOut` 1.1.9, `supportsAgyModelSelection` and
+  `supportsAgyWorkspaceDir` 1.1.10, `supportsAgyReadOnlySlashCommands` 1.1.11,
+  `supportsAgyStreamJson` 1.1.12) and every fallback behind them with one check
+  in `detectEngine`.
+
+  The gates were correct when written. What made them worth removing is that
+  they served users no one can see while being the only code the maintainer
+  could not run: six of the suite's eight skipped tests were the old-version
+  paths, skipped on Windows because the AGY stand-in reports Node's version and
+  cannot express a chosen one. Least-run code and least-tested code, the same
+  code. One gate was worse than untested — AGY 1.1.5 through 1.1.9 accept
+  `--model`/`--effort` and then ignore them in headless runs, so below it the
+  plugin quietly ran a model the user did not choose. A refusal that names the
+  version found and the command that fixes it is the honest version of that.
+
+  1.1.12 is the highest floor that removes anything and the lowest that removes
+  everything: every gate sat at or below it, and no behaviour above it is
+  version-branched (AGY 1.1.20's exit-code change is absorbed by `failedExit`
+  without asking the version).
+
+  **A version that cannot be parsed does not block the run.** `agyMeetsFloor`
+  answers `ok` / `too-old` / `unreadable`, and only `too-old` refuses; an
+  unreadable version runs and says it was not checked. The alternative turns one
+  cosmetic change to `agy --version` upstream into an outage for every user at
+  once, and nothing here can tell that apart from an odd local build. The floor
+  is enforced against versions that are readable and too old, never against
+  silence.
+
+- **The AGY transcript is no longer a version fallback, and `PRIVACY.md` narrows
+  to match.** Removing the 1.1.8 gate was going to delete
+  `scripts/lib/agy-transcript.mjs` outright. It survived because reading the
+  code found a second, live reason for it that the plan had not accounted for:
+  when AGY is killed before it prints, the turn has still run and still been
+  billed, and the transcript is the only surviving copy of what it produced.
+  That path fires on current AGY. So the module stays, its primary-path callers
+  are gone, and the privacy table now says the brain directory is read in that
+  one case rather than "on AGY older than 1.1.8".
+
+- **A stated engine-support policy** (`README.md` §Versioning). The floor moves
+  only when a capability the plugin depends on requires it, never to keep pace
+  with upstream releases; when it moves it moves in a MINOR release whose first
+  CHANGELOG line names the new floor and the upgrade command. There is no
+  support window measured in time.
+
+- **Skipped tests: 8 → 6, and every remaining one runs somewhere in CI.** Five
+  old-version tests were deleted rather than repaired, three were retargeted at a
+  supported AGY, and the two platform-keychain skips (macOS, Linux) were already
+  covered by the matching CI runners. The four still skipped on Windows are
+  skipped because the capturing AGY fixture needs a POSIX shebang and the plugin
+  refuses a `.cmd` shim for AGY on purpose (CVE-2024-27980) — a security
+  property, not a gap to close with a fixture.
+
 ## 0.24.4 - 2026-09-03 - Four things only using it could find
 
 - **The reviewer walkthrough stops competing with the job it is waiting for.**

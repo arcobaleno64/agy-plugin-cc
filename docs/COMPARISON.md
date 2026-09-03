@@ -94,7 +94,7 @@ cannot tell a credential problem from a real finding.
 - Standard and adversarial code review over the current diff or branch.
 - Background jobs with status, result, and cancel flows.
 - Gemini model aliases, graceful model fallback, and transient review retry.
-- Version-gated AGY result handling: structured stdout on 1.1.8+, transcript recovery only below it.
+- A declared AGY floor (1.1.12) instead of seven compatibility gates: an older AGY is refused by name with the command that fixes it, rather than silently degraded.
 - Safer stdin prompt delivery on the Gemini engine.
 
 ## What This Plugin Does Not Claim
