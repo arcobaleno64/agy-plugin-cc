@@ -178,6 +178,20 @@
     running the test: green wherever a gemini credential existed, red on every
     runner. The assertion is about AGY, not about the host.
 
+- **Two flags a command advertised and then refused.** `review.md` and
+  `adversarial-review.md` tell the model to stop on any value not in their
+  allowlist, and `--effort` was in neither list while sitting in both
+  `argument-hint`s; `--engines` was missing from the adversarial one as well,
+  despite being documented in the README and accepted by the runtime. A model
+  following the file correctly had to refuse `--engines gemini,agy`. Both lists
+  now admit them, and a test pins the property rather than the instance: every
+  flag a command's `argument-hint` offers must be one its allowlist admits.
+
+  Found by AGY, scoring this repository against the same rubric as the
+  maintainer's own pass. It reported the flag as undocumented, which is wrong —
+  `README.md:182,208` document it — but the half it got right is the half that
+  matters, and it is not one a self-assessment was going to find.
+
 ## 0.24.4 - 2026-09-03 - Four things only using it could find
 
 - **The reviewer walkthrough stops competing with the job it is waiting for.**

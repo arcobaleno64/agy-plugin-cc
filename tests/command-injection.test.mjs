@@ -102,3 +102,29 @@ test("an unreadable instructions file names the path it could not read", () => {
 test("positional instructions still work when no file is given", () => {
   assert.equal(parseTransferArgs(["carry", "on"]).instructions, "carry on");
 });
+
+// A command whose allowlist is missing a flag its own `argument-hint` advertises
+// is worse than one with no allowlist at all: the file tells the model to stop
+// on any value not in the set, so the flag is refused rather than passed
+// through. `/gemini:adversarial-review --engines gemini,agy` was refusable for
+// exactly this reason — `--engines` and `--effort` were advertised in the hint,
+// documented in the README, accepted by the runtime, and absent from the list.
+test("every flag a command advertises is one its allowlist admits", () => {
+  const flagsIn = (text) => new Set(text.match(/--[a-z][a-z-]*/g) ?? []);
+
+  for (const { name, text } of commandFiles()) {
+    const allowlist = text.split("Every value below must be one you checked")[1];
+    if (!allowlist) continue; // Commands that take no flag values carry no list.
+
+    const hint = text.match(/^argument-hint:\s*(.+)$/m)?.[1];
+    assert.ok(hint, `${name}: has an allowlist but no argument-hint to check it against`);
+
+    const admitted = flagsIn(allowlist.split("If a value is not in its set")[0]);
+    for (const flag of flagsIn(hint)) {
+      assert.ok(
+        admitted.has(flag),
+        `${name}: argument-hint offers ${flag}, but the allowlist does not admit it, so a model following this file must refuse it`
+      );
+    }
+  }
+});
