@@ -1,6 +1,17 @@
 name: Pull Request CI
 on:
   pull_request:
+  # Also on any branch push except main. Four of the suite's tests are
+  # platform-bound (two Windows-only, two keychain tests skipped off Linux and
+  # macOS), so a branch that never opens a PR has no way to run them — the
+  # maintainer's local run is one platform out of three. `workflow_dispatch`
+  # cannot fill that gap: GitHub only offers it for workflows already present
+  # on the default branch, which a not-yet-merged branch is not.
+  #
+  # main is excluded because every commit reaching it has already been through
+  # this workflow as a pull request.
+  push:
+    branches-ignore: [main]
 permissions:
   contents: read
 jobs:
