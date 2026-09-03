@@ -206,6 +206,37 @@
 
   Also reported by AGY's independent scoring pass.
 
+- **The last stage of the release pipeline drafts the announcement, and posts
+  nothing.** `scripts/build-social-announcement.mjs` turns a version's changelog
+  section into a post sized for X (280) and Threads (500), and
+  `.github/workflows/announce-release.yml` runs it on `release: published` and
+  writes the result to the job summary for a human to copy.
+
+  It holds no credential on purpose. Automating the posting would buy back a
+  couple of minutes a year — this project releases a handful of times — in
+  exchange for two long-lived social tokens living permanently in repository
+  secrets. Threads is the worse of the two: its long-lived token lasts ~60 days,
+  so a workflow running six times a year would meet an expired one nearly every
+  time, and keeping it alive needs a scheduled job holding a token that can
+  *write* secrets — a higher-value credential than either social account.
+
+  Highlights are not a new convention. Every changelog entry already opens with
+  a bold lead-in written when the change was fresh, and those are the headlines;
+  nothing is paraphrased or summarised, so there is no opportunity for a model
+  to turn a null check into an architecture. Posts that do not fit drop whole
+  headlines from the end rather than cutting a sentence in half.
+
+  The workflow also takes a `workflow_dispatch` version input, so it can be
+  exercised against a release that already exists instead of having its first
+  run be a real one — the failure mode `release.yml`'s own new jobs are still
+  exposed to.
+
+  Nothing reads the release body: the text comes from the changelog in the
+  checkout, which is reviewed content. A new test applies that rule to every
+  workflow — no `${{ }}` inside any `run:` body, because a tag name or release
+  title is written by whoever can push a tag, and interpolation makes it shell
+  source. Mutation-checked in both directions.
+
 ## 0.24.4 - 2026-09-03 - Four things only using it could find
 
 - **The reviewer walkthrough stops competing with the job it is waiting for.**

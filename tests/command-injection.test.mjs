@@ -128,3 +128,41 @@ test("every flag a command advertises is one its allowlist admits", () => {
     }
   }
 });
+
+// The same injection rule as the slash commands, one layer out. Text a workflow
+// receives — a tag name, a release body, an issue title — is written by whoever
+// can push a tag or open an issue, and `${{ }}` inside a `run:` body is
+// substituted before the shell sees it, so that text becomes shell source. The
+// safe shape is `env:`, where the value arrives as data. Applied to every
+// workflow rather than the two that currently matter, because the next one is
+// written in a hurry.
+test("no workflow interpolates an expression into a shell body", () => {
+  const dir = fileURLToPath(new URL("../.github/workflows", import.meta.url));
+  const files = fs.readdirSync(dir).filter((name) => name.endsWith(".yml") || name.endsWith(".yaml"));
+  assert.ok(files.length > 0, "there should be workflows to check");
+
+  for (const name of files) {
+    const lines = fs.readFileSync(path.join(dir, name), "utf8").split(/\r?\n/);
+    for (let i = 0; i < lines.length; i += 1) {
+      const start = lines[i].match(/^(\s*)(?:-\s+)?run:(.*)$/);
+      if (!start) continue;
+
+      const indent = start[1].length;
+      const body = [start[2]];
+      // A block scalar (`run: |`) continues while the following lines are
+      // indented past the key, blank lines included.
+      for (let j = i + 1; j < lines.length; j += 1) {
+        const line = lines[j];
+        if (line.trim() && line.search(/\S/) <= indent) break;
+        body.push(line);
+      }
+
+      const offending = body.filter((line) => line.includes("${{"));
+      assert.deepEqual(
+        offending,
+        [],
+        `${name}: line ${i + 1}'s run body interpolates an expression — pass it through env: instead`
+      );
+    }
+  }
+});
