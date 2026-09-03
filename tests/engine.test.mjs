@@ -501,13 +501,19 @@ test("an AGY that resolves to a non-.exe still gets the security refusal", () =>
   );
 });
 
+// The resolved path has to be absolute *and*, on Windows, an .exe — both are
+// platform judgements, so a Windows-shaped literal here fails the absolute test
+// on POSIX and throws the not-an-executable refusal instead of the one under
+// test. Shape the fixture like the platform it runs on.
+const RESOLVED_AGY_PATH = process.platform === "win32" ? "C:/tools/agy.exe" : "/usr/local/bin/agy";
+
 test("an AGY that resolves but cannot run names the path and what it said", () => {
   assert.throws(
     () => detectEngine("agy", {
-      resolveBinaryPathImpl: () => "C:/tools/agy.exe",
+      resolveBinaryPathImpl: () => RESOLVED_AGY_PATH,
       binaryAvailableImpl: () => ({ available: false, detail: "exit 127" })
     }),
-    /found at C:\/tools\/agy\.exe but could not run: exit 127/
+    new RegExp(`found at ${RESOLVED_AGY_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} but could not run: exit 127`)
   );
 });
 

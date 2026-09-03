@@ -142,6 +142,11 @@ test("a stale AGY beside a working gemini is not reported as the user's problem"
     engine: "gemini",
     geminiAvailabilityFn: () => ({ available: true, detail: "0.53.1" }),
     geminiLoginStatusFn: () => ({ loggedIn: true, state: "verified", detail: "ok" }),
+    // Injected, because readiness resolves credentials through the machine the
+    // test runs on when it is not. Leaving it out made the test pass wherever
+    // the maintainer had a gemini credential and fail on every CI runner, which
+    // is the wrong way round: the assertion is about AGY, not about the host.
+    geminiCredentialedFn: () => true,
     agyAvailabilityFn: () => ({ available: true, detail: "1.1.9" }),
     agyLoginStatusFn: () => agyStatus("unknown")
   });

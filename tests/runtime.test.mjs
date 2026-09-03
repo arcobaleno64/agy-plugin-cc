@@ -41,13 +41,12 @@ import { classifyCliFailure } from "../plugins/gemini/scripts/lib/failures.mjs";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT = path.join(ROOT, "plugins", "gemini", "scripts", "gemini-companion.mjs");
 
-// installFailingAgyExecutable reports AGY 1.1.2 on POSIX, so the run takes the
-// pre-1.1.8 transcript path and fails with nothing to recover. On Windows the
-// stand-in is a copied node.exe whose --version looks like a very new AGY, so
-// the same run takes the >=1.1.8 structured path and fails on the garbage it
-// gets instead of an envelope. Both are correct; the fixture cannot express a
-// chosen version on Windows. See installFailingAgyExecutable.
-const EXPECTED_FAILING_AGY_CATEGORY = process.platform === "win32" ? "invalid-json" : "transcript-missing";
+// Both stand-ins report a version at or above the floor, so both runs take the
+// structured path and fail on the absence of an envelope rather than on a
+// version. Before the floor the POSIX shim reported 1.1.2 and this constant had
+// to branch; that branch only ever ran in CI, which is why the floor broke it
+// invisibly on the maintainer's platform. See installFailingAgyExecutable.
+const EXPECTED_FAILING_AGY_CATEGORY = "invalid-json";
 const STOP_GATE_HOOK = path.join(ROOT, "plugins", "gemini", "scripts", "stop-review-gate-hook.mjs");
 
 function setupRepo(scenario = "task") {
@@ -1019,12 +1018,23 @@ test("an AGY review sends the generated review prompt on stdin", { skip: process
     env: {
       ...buildFailingAgyEnv(binDir),
       FAKE_AGY_CAPTURE: capturePath,
-      FAKE_AGY_RESPONSE: JSON.stringify({ verdict: "clean", summary: "AGY stdin review completed.", findings: [] })
+      // The response arrives on stdout in an envelope. The transcript is no
+      // longer a source, so a fixture that only wrote one would be pinning a
+      // path the floor removed; FAKE_AGY_RESPONSE still writes that transcript,
+      // and the assertion below proves the envelope is what was read.
+      FAKE_AGY_RESPONSE: "AGY_REVIEW_TRANSCRIPT_MUST_NOT_WIN",
+      FAKE_AGY_STDOUT: `${JSON.stringify({
+        conversation_id: "conv-review-stdin",
+        status: "SUCCESS",
+        num_turns: 1,
+        response: JSON.stringify({ verdict: "clean", summary: "AGY stdin review completed.", findings: [] })
+      })}\n`
     }
   });
 
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /AGY stdin review completed/);
+  assert.doesNotMatch(result.stdout, /AGY_REVIEW_TRANSCRIPT_MUST_NOT_WIN/);
   const capture = JSON.parse(fs.readFileSync(capturePath, "utf8"));
   assert.match(capture.stdin, /export const value = 2/);
   assert.ok(!capture.args.includes("--print"));

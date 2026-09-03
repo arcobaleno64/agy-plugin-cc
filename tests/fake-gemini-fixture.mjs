@@ -97,7 +97,7 @@ export function installFakeAgy(binDir) {
 // POSIX integration fixture for AGY transport tests. It records argv/stdin,
 // emits a decoy stdout response, and writes a completed transcript so tests can
 // prove that transport changes do not weaken transcript-authoritative recovery.
-export function installCapturingAgyExecutable(binDir, { version = "1.1.2" } = {}) {
+export function installCapturingAgyExecutable(binDir, { version = "1.1.24" } = {}) {
   if (process.platform === "win32") {
     throw new Error("The capturing AGY fixture uses a POSIX shebang; Windows is covered by live AGY smoke tests.");
   }
@@ -133,12 +133,13 @@ export function installCapturingAgyExecutable(binDir, { version = "1.1.2" } = {}
 // must resolve to an absolute .exe, so a copied Node executable provides a
 // safe, deterministic non-zero unknown-option response there.
 //
-// Windows caveat: that copied node.exe answers --version with Node's own
-// version, which parses as a very new AGY, so the run takes the >=1.1.8
-// structured path rather than transcript recovery. The stand-in cannot report a
-// chosen version — an absolute .exe is required, and a .cmd shim is refused on
-// purpose (CVE-2024-27980). Match on the generic rejection rather than a
-// specific flag name, since which flag node rejects first tracks argv order.
+// Both platforms now report a version at or above the floor: the POSIX shim
+// says so outright, and the copied node.exe answers --version with Node's own
+// version, which parses as a very new AGY. So both take the same structured
+// path, and only the stderr text differs. Match on the generic rejection on
+// Windows rather than a specific flag name, since which flag node rejects first
+// tracks argv order. A .cmd shim that could name its own version is refused on
+// purpose there (CVE-2024-27980).
 export function installFailingAgyExecutable(binDir) {
   if (process.platform === "win32") {
     fs.copyFileSync(process.execPath, path.join(binDir, "agy.exe"));
@@ -147,7 +148,7 @@ export function installFailingAgyExecutable(binDir) {
 
   writeExecutable(
     path.join(binDir, "agy"),
-    "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'agy 1.1.2'; exit 0; fi\necho 'AGY fixture failed server-side' >&2\nexit 23\n"
+    "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'agy 1.1.24'; exit 0; fi\necho 'AGY fixture failed server-side' >&2\nexit 23\n"
   );
   return /AGY fixture failed server-side/i;
 }
