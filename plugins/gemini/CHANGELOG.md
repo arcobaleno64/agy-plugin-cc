@@ -97,6 +97,35 @@
   exceeds its context window — but its `promptNul`/`promptTooLong` flag inputs
   and the `NUL byte`/`positional prompt` text patterns go with their producer.
 
+- **The error paths nothing had ever run.** The message audit was finished with a
+  second instrument: the whole suite under `NODE_V8_COVERAGE`, which records the
+  spawned CLI runs too, asked which `throw` sites no process reaches. 19 of
+  them. The sentinel pass says which messages a test asserts; coverage says
+  which states are ever entered, and only the second can tell dead code from an
+  untested live state.
+
+  Judging them one by one found one more piece of dead code and one defect:
+
+  - `buildSingleJobSnapshot` carried a second, differently worded "No job found
+    for X" that could not run — `matchJobReference` throws its own first —
+    and if it ever had, it would have said `No job found for "undefined"`,
+    because the only way to reach it is with no reference at all. Replaced by a
+    message about the store, which is what is actually true there.
+  - `/gemini:status` does not scope by session, unlike result and cancel, so its
+    refusal must not offer `--all` as a way to see more. Pinned, so that a
+    well-meant consistency edit cannot add advice for a problem no one has.
+
+  The other 17 were live states no test had entered: an ambiguous job prefix,
+  cancelling with two jobs active, reading a review group mid-run, and ten
+  command-line refusals that the suite could never reach because it drives the
+  companion through its exported functions rather than its argv.
+  `tests/unreached-error-paths.test.mjs` reaches every one of them.
+
+  1 remains, knowingly: readonly-guard's TOCTOU detector, which fires when a
+  path is swapped between an `fstat` and an `lstat` inside one function. It has
+  no injection seam, and a test that pretended to reach it would be worse than
+  the honest note now sitting where it would have gone.
+
 - **The AGY transcript is no longer a version fallback, and `PRIVACY.md` narrows
   to match.** Removing the 1.1.8 gate was going to delete
   `scripts/lib/agy-transcript.mjs` outright. It survived because reading the

@@ -25,7 +25,7 @@ belong to.
 
 | Surface | Slash commands | MCP tools | Skills | Test files (`*.test.*`) |
 |---|---|---|---|---|
-| **this project** | 8 | **6** | 3 | 41 |
+| **this project** | 8 | **6** | 3 | 42 |
 | abiswas97 | 8 | 0 | 3 | 13 |
 | m-ghalib | 7 | 0 | 3 | 12 |
 | sakibsadmanshajib/antigravity-plugin | 6 | 0 | 0 | 12 |
