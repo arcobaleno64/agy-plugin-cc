@@ -55,6 +55,28 @@
   a binary that resolves but cannot run names its path and what it printed, and
   a missing one gets the install command.
 
+- **The release pipeline now checks what users receive, and says why a version
+  exists.** Three additions to `.github/workflows/release.yml`, none of them
+  touching its permission model:
+
+  - *The tag must be reachable from `main`, and `main` must already offer that
+    version.* Delivery here is the default branch, not the tag: the marketplace
+    source is `main`, so a version becomes installable the moment its bump
+    merges — before this workflow runs. A tag off `main`, or a `main` whose
+    manifest says something else, publishes a release nobody can install.
+    Nothing checked either.
+  - *Release notes carry the changelog section.* The page showed only GitHub's
+    generated list of PR titles, so the reasons — written here — reached nobody.
+    The section is extracted in the job that has a checkout and handed to the
+    publishing job through the environment, never interpolated into its script:
+    whoever can push a tag writes that text, and `${{ }}` inside a `run:` body
+    would hand them a shell in the one job holding a token that can publish.
+  - *A new `verify-published` job runs the plugin from a bare clone of the
+    published tag* — no `npm ci`, no `node_modules`, nothing built, which is how
+    Claude Code resolves a marketplace plugin — and asserts it reports its own
+    version. Everything before it tests the working copy the workflow was
+    handed; this is the only step that tests what a user gets.
+
 - **The AGY transcript is no longer a version fallback, and `PRIVACY.md` narrows
   to match.** Removing the 1.1.8 gate was going to delete
   `scripts/lib/agy-transcript.mjs` outright. It survived because reading the
