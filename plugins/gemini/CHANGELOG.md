@@ -150,6 +150,34 @@
   refuses a `.cmd` shim for AGY on purpose (CVE-2024-27980) — a security
   property, not a gap to close with a fixture.
 
+- **CI runs on branch pushes, not only on pull requests.** Four tests in the
+  suite are platform-bound — two assert `cmd.exe` argv behaviour and run only on
+  Windows, two read an OS keychain and are skipped off Linux and macOS — so a
+  branch with no PR open was verified on whatever single platform the maintainer
+  happened to be on. `workflow_dispatch` cannot fill that gap: GitHub only
+  offers a manual trigger for workflows already on the default branch, which an
+  unmerged branch is not. `main` stays excluded, because everything reaching it
+  has already run this workflow as a pull request.
+
+- **Five assertions that only ever ran off Windows, fixed.** The first branch-push
+  run failed on all three platforms while the local suite was green, and each
+  failure was a test measuring the host rather than the code:
+
+  - The POSIX AGY stand-in still announced 1.1.2, which the floor above refuses,
+    so three transport tests were asserting the refusal text instead of the
+    transport they name. Both stand-ins now sit above the floor, and the
+    failing-AGY failure category is one value rather than a per-platform branch.
+  - The AGY review transport test drove its response through the transcript,
+    which this release removed as a response source. It now arrives in a stdout
+    envelope, and the transcript carries a marker asserted *not* to appear.
+  - `detectEngine`'s "resolved but cannot run" case used a Windows-shaped path,
+    which is not absolute on POSIX, so off Windows it got the
+    not-an-executable refusal rather than the one under test.
+  - The readiness test for a stale AGY beside a working gemini never injected
+    `geminiCredentialedFn`, so readiness resolved credentials from the machine
+    running the test: green wherever a gemini credential existed, red on every
+    runner. The assertion is about AGY, not about the host.
+
 ## 0.24.4 - 2026-09-03 - Four things only using it could find
 
 - **The reviewer walkthrough stops competing with the job it is waiting for.**
