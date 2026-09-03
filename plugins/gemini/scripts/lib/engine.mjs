@@ -135,8 +135,18 @@ const AGY_MINIMUM_PATCH = 12;
 // never against silence.
 export function agyMeetsFloor(version) {
   const text = String(version ?? "").trim();
-  if (!/(\d+)\.(\d+)\.(\d+)/.test(text)) return "unreadable";
-  return agyVersionAtLeast(text, AGY_MINIMUM_MINOR, AGY_MINIMUM_PATCH) ? "ok" : "too-old";
+  // A two-segment version is a version, not an unreadable string: "1.1" is
+  // decidably below 1.1.12 and must be refused rather than waved through as
+  // "could not tell". Normalised to X.Y.0 before the comparison, which is the
+  // lowest patch it could mean and therefore the safe reading.
+  const twoSegment = /(?<![.\d])(\d+)\.(\d+)(?![.\d])/.exec(text);
+  const normalized = /(\d+)\.(\d+)\.(\d+)/.test(text)
+    ? text
+    : twoSegment
+      ? `${twoSegment[1]}.${twoSegment[2]}.0`
+      : null;
+  if (normalized === null) return "unreadable";
+  return agyVersionAtLeast(normalized, AGY_MINIMUM_MINOR, AGY_MINIMUM_PATCH) ? "ok" : "too-old";
 }
 
 export function agyFloorRefusal(version) {
@@ -207,7 +217,14 @@ export function detectEngine(requestedEngine = null, options = {}) {
   }
   const agyStatus = agyBinary ? binaryAvailableFn(agyBinary, ["--version"]) : { available: false };
   if (agyStatus.available) {
-    return { engine: "agy", binary: agyBinary, version: agyStatus.detail ?? "unknown" };
+    // The floor applies to the engine that will run, not to the way it was
+    // chosen. Reaching here means gemini has no usable credential, so an AGY
+    // below the floor is not a fallback — it is the only thing left, and running
+    // it would silently ignore --model and read slash commands out of the prompt.
+    const agyVersion = agyStatus.detail ?? "unknown";
+    const agyFloor = agyMeetsFloor(agyVersion);
+    if (agyFloor === "too-old") throw new Error(agyFloorRefusal(agyVersion));
+    return { engine: "agy", binary: agyBinary, version: agyVersion, versionUnverified: agyFloor === "unreadable" };
   }
 
   // Nothing usable. Distinguish "no engine installed" from "gemini installed but

@@ -441,7 +441,7 @@ test("the grace window survives the smallest timeout the CLI accepts", async () 
 test("the AGY probe leaves itself room to answer before being killed", () => {
   const runCommandFn = stubRun({ stdout: "", stderr: "", status: 1 });
 
-  probeAgyLogin({ runCommandFn, detectEngineFn: agyEngine("1.1.11") });
+  probeAgyLogin({ runCommandFn, detectEngineFn: agyEngine("1.1.24") });
 
   const [call] = runCommandFn.calls;
   const printTimeoutMs = Number(call.args[call.args.indexOf("--print-timeout") + 1].replace(/s$/, "")) * 1000;

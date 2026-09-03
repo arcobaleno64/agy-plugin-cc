@@ -33,6 +33,11 @@
   is enforced against versions that are readable and too old, never against
   silence.
 
+  The floor is checked on both routes into AGY, not only the explicit one.
+  `auto` reaches AGY exactly when gemini has no usable credential, so an
+  unsupported AGY there is not a soft fallback — it is the engine, and it is
+  refused by name rather than run with `--model` silently dropped.
+
 - **The AGY transcript is no longer a version fallback, and `PRIVACY.md` narrows
   to match.** Removing the 1.1.8 gate was going to delete
   `scripts/lib/agy-transcript.mjs` outright. It survived because reading the

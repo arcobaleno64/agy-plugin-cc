@@ -19,8 +19,9 @@ import path from "node:path";
 // The defect this answers: getAgyLoginStatus can only say "unknown", so
 // /gemini:setup told the user to "run an `--engine agy` command to confirm it is
 // logged in" — spend a billed turn, then read the answer out of whether it
-// failed. AGY 1.1.11 answers `/quota` in print mode from the account without
-// starting a turn, which is a real auth check at no token cost.
+// failed. AGY answers `/quota` in print mode from the account
+// without starting a turn (1.1.11+, and this plugin's floor is 1.1.12), which is
+// a real auth check at no token cost.
 // ---------------------------------------------------------------------------
 
 const AGY_ENVELOPE = {
@@ -49,7 +50,7 @@ function stubRun(result) {
 test("the AGY probe asks a read-only question, so it costs no turn", () => {
   const runCommandFn = stubRun({ stdout: `${JSON.stringify(AGY_ENVELOPE)}\n` });
 
-  const status = probeAgyLogin({ runCommandFn, detectEngineFn: agyEngine("1.1.11") });
+  const status = probeAgyLogin({ runCommandFn, detectEngineFn: agyEngine("1.1.24") });
 
   assert.equal(status.loggedIn, true);
   assert.equal(status.state, "verified");
@@ -74,7 +75,7 @@ test("an unauthenticated AGY is reported as logged out, with proof", () => {
     status: 1
   });
 
-  const status = probeAgyLogin({ runCommandFn, detectEngineFn: agyEngine("1.1.11") });
+  const status = probeAgyLogin({ runCommandFn, detectEngineFn: agyEngine("1.1.24") });
 
   assert.equal(status.loggedIn, false);
   assert.equal(status.state, "logged-out");
@@ -86,7 +87,7 @@ test("an unauthenticated AGY is reported as logged out, with proof", () => {
 test("a probe that fails for another reason leaves the state unknown", () => {
   const runCommandFn = stubRun({ stdout: "", stderr: "connection reset", status: 1 });
 
-  const status = probeAgyLogin({ runCommandFn, detectEngineFn: agyEngine("1.1.11") });
+  const status = probeAgyLogin({ runCommandFn, detectEngineFn: agyEngine("1.1.24") });
 
   assert.equal(status.state, "unknown");
   assert.equal(status.verifiable, false);
@@ -156,6 +157,35 @@ test("setup says an unreadable AGY version was not checked, not that it is too o
   const said = report.nextSteps.join(String.fromCharCode(10));
   assert.match(said, /Could not read the AGY version/);
   assert.doesNotMatch(said, /older than this plugin supports/);
+});
+
+// Running on an unreadable version is a risk the user accepted. Spending on one
+// is a different decision: below 1.1.11 `/quota` is billed as an ordinary turn,
+// and an unreadable version cannot rule that out. Reported by adversarial review.
+test("the probe refuses to spend a turn on an AGY whose version it cannot read", () => {
+  const runCommandFn = stubRun({ stdout: `${JSON.stringify(AGY_ENVELOPE)}` });
+
+  const status = probeAgyLogin({
+    runCommandFn,
+    detectEngineFn: () => ({ engine: "agy", binary: "/fake/agy", version: "wobble", versionUnverified: true })
+  });
+
+  assert.equal(status.state, "unknown");
+  assert.equal(status.verifiable, false);
+  assert.deepEqual(runCommandFn.calls, [], "an unverified AGY must not be spawned for a probe");
+});
+
+// Under `auto` an unsupported AGY is still what this machine would route to when
+// gemini has no working credential, so the report must not call it ready.
+test("an AGY below the floor is not ready even when it was not explicitly selected", () => {
+  const report = buildSetupReport(makeTempDir(), [], {
+    agyAvailabilityFn: () => ({ available: true, detail: "1.1.9" }),
+    agyLoginStatusFn: () => agyStatus("verified"),
+    geminiAvailabilityFn: () => ({ available: false, detail: null })
+  });
+
+  assert.notEqual(report.readyState, "ready");
+  assert.match(report.nextSteps.join(String.fromCharCode(10)), /1\.1\.9 is older than this plugin supports/);
 });
 
 test("an unprobed AGY stays partial but is told how to check for free", () => {

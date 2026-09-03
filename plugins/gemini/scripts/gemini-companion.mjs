@@ -371,14 +371,20 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
   // ready.
   const agyVerified = agyAuth.state === "verified";
   const agyLoggedOut = agyAuth.state === "logged-out";
+  // Asked whenever AGY is installed, not only when it is selected: under `auto`
+  // an unsupported AGY is still the engine this machine would route to when
+  // gemini has no working credential, and a report that called that "ready"
+  // would be wrong in exactly the case the user needed it to be right.
+  const agyFloor = agyStatus.available ? agyMeetsFloor(agyStatus.detail) : "unreadable";
+  const agyBelowFloor = agyStatus.available && agyFloor === "too-old";
   const ready =
-    engineKnown && nodeStatus.available && (agySelected ? agyVerified : geminiReady);
+    engineKnown && nodeStatus.available && (agySelected ? agyVerified && !agyBelowFloor : geminiReady);
   const readyState = !engineKnown
     ? "not-ready"
     : !nodeStatus.available
       ? "not-ready"
       : agySelected
-        ? !agyStatus.available || agyLoggedOut
+        ? !agyStatus.available || agyLoggedOut || agyBelowFloor
           ? "not-ready"
           : agyVerified
             ? "ready"
@@ -391,7 +397,7 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
             // routes to an available AGY when gemini's credential does not work.
             requestedEngine === "gemini" && geminiProbedLoggedOut
             ? "not-ready"
-            : agyAvailable
+            : agyAvailable && !agyBelowFloor
               ? "partial"
               : "not-ready";
 
@@ -409,10 +415,10 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
   // The floor is a readiness fact, and setup is where a user asks whether this
   // is ready. Saying it here means an unsupported AGY is named before the first
   // command fails on it, rather than after.
-  if (agySelected && agyStatus.available) {
-    const floor = agyMeetsFloor(agyStatus.detail);
-    if (floor === "too-old") nextSteps.push(agyFloorRefusal(agyStatus.detail));
-    else if (floor === "unreadable") nextSteps.push(AGY_VERSION_UNVERIFIED_NOTICE);
+  if (agyStatus.available && agyFloor === "too-old") {
+    nextSteps.push(agyFloorRefusal(agyStatus.detail));
+  } else if (agySelected && agyStatus.available && agyFloor === "unreadable") {
+    nextSteps.push(AGY_VERSION_UNVERIFIED_NOTICE);
   }
   if (agySelected && agyStatus.available && agyLoggedOut) {
     nextSteps.push(

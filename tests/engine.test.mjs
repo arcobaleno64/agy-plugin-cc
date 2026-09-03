@@ -103,6 +103,48 @@ test("an unreadable version is reported as unreadable, never as too old", () => 
   }
 });
 
+// A two-segment version is decidable, so it must be decided. Reported by
+// adversarial review: "1.1" fell through the three-segment regex and was waved
+// through as unreadable, which let a version unambiguously below the floor run.
+test("a two-segment version is refused, not treated as unreadable", () => {
+  assert.equal(agyMeetsFloor("1.1"), "too-old");
+  assert.equal(agyMeetsFloor("1.0"), "too-old");
+  assert.equal(agyMeetsFloor("agy 1.1"), "too-old");
+  assert.equal(agyMeetsFloor("1.2"), "ok");
+  assert.equal(agyMeetsFloor("2.0"), "ok");
+});
+
+// The floor is only worth anything where it is enforced. These assert through
+// detectEngine rather than the predicate, because that is the seam every
+// command passes and the predicate is not.
+test("detectEngine refuses an AGY below the floor and names the fix", () => {
+  const absolute = process.platform === "win32" ? "C:/fake/agy.exe" : "/fake/agy";
+  for (const version of ["1.1.9", "1.1.11", "1.1"]) {
+    assert.throws(
+      () => detectEngine("agy", {
+        binaryAvailableImpl: () => ({ available: true, detail: version }),
+        resolveBinaryPathImpl: () => absolute
+      }),
+      /older than this plugin supports[\s\S]*agy update/,
+      `AGY ${version} must be refused`
+    );
+  }
+});
+
+test("detectEngine runs a supported AGY, and flags an unreadable version instead of refusing", () => {
+  const absolute = process.platform === "win32" ? "C:/fake/agy.exe" : "/fake/agy";
+  const detect = (detail) => detectEngine("agy", {
+    binaryAvailableImpl: () => ({ available: true, detail }),
+    resolveBinaryPathImpl: () => absolute
+  });
+
+  assert.equal(detect(AGY_MINIMUM_VERSION).versionUnverified, false);
+  assert.equal(detect("1.1.24").versionUnverified, false);
+  const odd = detect("antigravity (build 8812)");
+  assert.equal(odd.engine, "agy");
+  assert.equal(odd.versionUnverified, true);
+});
+
 test("the refusal names the detected version, the floor, and the fix", () => {
   const message = agyFloorRefusal("1.1.9");
   assert.match(message, /1\.1\.9/);
@@ -414,12 +456,37 @@ test("auto prefers gemini when it is installed and has a credential", () => {
 
 test("auto falls through to AGY when gemini is installed but unauthenticated", () => {
   const info = detectEngine("auto", {
-    binaryAvailableImpl: stubBinaries({ gemini: AVAILABLE, agy: { available: true, detail: "1.1.10" } }),
+    binaryAvailableImpl: stubBinaries({ gemini: AVAILABLE, agy: { available: true, detail: "1.1.24" } }),
     hasGeminiCredentialsImpl: () => false,
     resolveBinaryPathImpl: () => "/fake/agy.exe"
   });
   assert.equal(info.engine, "agy");
-  assert.equal(info.version, "1.1.10");
+  assert.equal(info.version, "1.1.24");
+});
+
+// The floor belongs to the engine that runs, not to how it was picked. Under
+// `auto` an unsupported AGY is not a soft fallback: gemini has already been
+// ruled out, so it is the engine, and it must be refused by name rather than run
+// with --model silently dropped.
+test("auto refuses an unsupported AGY instead of quietly routing to it", () => {
+  assert.throws(
+    () => detectEngine("auto", {
+      binaryAvailableImpl: stubBinaries({ gemini: AVAILABLE, agy: { available: true, detail: "1.1.9" } }),
+      hasGeminiCredentialsImpl: () => false,
+      resolveBinaryPathImpl: () => "/fake/agy.exe"
+    }),
+    /1\.1\.9 is older than this plugin supports[\s\S]*agy update/
+  );
+});
+
+test("auto flags an unreadable AGY version rather than refusing it", () => {
+  const info = detectEngine("auto", {
+    binaryAvailableImpl: stubBinaries({ gemini: AVAILABLE, agy: { available: true, detail: "antigravity (build 8812)" } }),
+    hasGeminiCredentialsImpl: () => false,
+    resolveBinaryPathImpl: () => "/fake/agy.exe"
+  });
+  assert.equal(info.engine, "agy");
+  assert.equal(info.versionUnverified, true);
 });
 
 test("auto reports the credential problem when gemini is the only engine present", () => {

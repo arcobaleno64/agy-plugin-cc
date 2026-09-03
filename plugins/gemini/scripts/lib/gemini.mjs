@@ -3,7 +3,16 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 
-import { buildCliArgs, detectEngine, ENGINE_ENV, formatAgyTimeout, mapEffortToModel, normalizeAgyEffort, normalizeAgyRequestedModel, normalizeRequestedModel } from "./engine.mjs";
+import { agyMeetsFloor, AGY_VERSION_UNVERIFIED_NOTICE, buildCliArgs, detectEngine, ENGINE_ENV, formatAgyTimeout, mapEffortToModel, normalizeAgyEffort, normalizeAgyRequestedModel, normalizeRequestedModel } from "./engine.mjs";
+
+// The floor fails open on a version it cannot read, which is only defensible if
+// the user is told the check did not happen. Said once per run, through the
+// progress channel a background job records and on stderr for a foreground one.
+function noticeUnverifiedAgy(engineInfo, onProgress) {
+  if (!engineInfo?.versionUnverified) return;
+  onProgress?.({ message: AGY_VERSION_UNVERIFIED_NOTICE, phase: "starting", engine: engineInfo.engine });
+  process.stderr.write(`[gemini-companion] ${AGY_VERSION_UNVERIFIED_NOTICE}\n`);
+}
 import { classifyCliFailure } from "./failures.mjs";
 import { binaryAvailable, runCommand } from "./process.mjs";
 import { resolveAgyBrainRoot, listConvDirs, recoverAgyResponse } from "./agy-transcript.mjs";
@@ -441,6 +450,7 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
   onProgress?.({ message: "Detecting engine...", phase: "starting" });
 
   const engineInfo = detectEngineFn(requestedEngine ?? null);
+  noticeUnverifiedAgy(engineInfo, onProgress);
 
   if (engineInfo.engine === "agy") {
     if (model || effort) {
@@ -663,6 +673,7 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
   // printed before detection runs: a review job queued under `auto` otherwise had
   // no way to say which engine it picked until it finished.
   onProgress?.({ message: `Using ${engineInfo.engine}.`, phase: "reviewing", engine: engineInfo.engine });
+  noticeUnverifiedAgy(engineInfo, onProgress);
   const agyStructured = engineInfo.engine === "agy";
   const useJson = true;
 
@@ -1092,6 +1103,18 @@ export function probeAgyLogin({ runCommandFn = runCommand, detectEngineFn = dete
   }
 
   const version = engineInfo.version;
+  // Running on an unreadable version is a risk the user accepted; SPENDING on
+  // one is not the same decision. Below 1.1.11 `/quota` is sent to the model as
+  // prompt text, so a probe there costs a real turn to learn nothing, and an
+  // unreadable version cannot rule that out. Decline rather than bill.
+  if (engineInfo.versionUnverified || agyMeetsFloor(version) !== "ok") {
+    return {
+      loggedIn: false,
+      state: "unknown",
+      verifiable: false,
+      detail: `Cannot probe AGY without risking a billed turn: ${AGY_VERSION_UNVERIFIED_NOTICE} Read-only slash commands are answered without starting a turn only on a supported AGY, so this check is skipped rather than charged. Run \`agy\` interactively once, or \`agy update\`.`
+    };
+  }
 
   // Same grace window as a real turn: an equal --print-timeout would have AGY
   // self-terminate on the tick runCommand kills it, so a slow-but-authenticated

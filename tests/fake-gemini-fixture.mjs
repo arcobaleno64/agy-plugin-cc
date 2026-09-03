@@ -83,11 +83,14 @@ export function writeExpiredGeminiCredentials(binDir) {
 
 // Install a fake `agy` binary that succeeds on its --version probe so
 // getAgyAvailability() reports available:true. Does not install gemini.
+// The version it reports has to clear AGY_MINIMUM_VERSION: since 0.25.0 an AGY
+// below the floor is reported as unsupported rather than available, and these
+// callers are asking about availability, not about the floor.
 export function installFakeAgy(binDir) {
   if (process.platform === "win32") {
-    fs.writeFileSync(path.join(binDir, "agy.cmd"), `@echo off\r\necho agy 1.0.0\r\nexit /b 0\r\n`, "utf8");
+    fs.writeFileSync(path.join(binDir, "agy.cmd"), `@echo off\r\necho agy 1.1.24\r\nexit /b 0\r\n`, "utf8");
   } else {
-    writeExecutable(path.join(binDir, "agy"), "#!/bin/sh\necho 'agy 1.0.0'\nexit 0\n");
+    writeExecutable(path.join(binDir, "agy"), "#!/bin/sh\necho 'agy 1.1.24'\nexit 0\n");
   }
 }
 
