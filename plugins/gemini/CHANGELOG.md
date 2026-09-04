@@ -237,6 +237,30 @@
   title is written by whoever can push a tag, and interpolation makes it shell
   source. Mutation-checked in both directions.
 
+- **The release pipeline was rehearsed end to end, and it found two things.**
+  `release.yml`'s new jobs only run on a `v*` tag, so until now their first
+  execution would have been a real release. A throwaway private repository was
+  loaded with this tree, bumped, and tagged, which ran the whole workflow for
+  real: `verify` passed all of its gates, `publish` created a release whose body
+  carries the changelog section above GitHub's generated notes, and
+  `verify-published` failed only because an unauthenticated clone cannot read a
+  private repository — that job's script was checked separately against the real,
+  public `v0.24.4` and reports the right version.
+
+  What the rehearsal caught:
+
+  - **A minor bump must also update three documents**, or `npm test` fails inside
+    `release.yml` *after* the tag is pushed: `SECURITY.md`'s supported line,
+    `PRIVACY.md`'s "Applies to plugin version" line, and the version cell in
+    `docs/COMPARISON.md`. The tests that enforce this are deliberate — the
+    privacy document once claimed 0.16.x for six releases — but nothing said so
+    where someone cutting a release would read it.
+  - **The announcement test was itself a release blocker.** It required three
+    headlines in the newest changelog section; a patch release with one entry
+    would have failed it, at the same point in the pipeline. It now requires one.
+    Found by a dry run with a one-entry section, which is exactly the release it
+    would have blocked.
+
 ## 0.24.4 - 2026-09-03 - Four things only using it could find
 
 - **The reviewer walkthrough stops competing with the job it is waiting for.**

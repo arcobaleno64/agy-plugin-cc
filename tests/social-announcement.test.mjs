@@ -78,7 +78,13 @@ test("the changelog's newest section still yields headlines that fit", () => {
   const section = extractSection(markdown, version);
   const announcement = buildAnnouncement(section.body, { version });
 
-  assert.ok(announcement.highlights.length >= 3, `only ${announcement.highlights.length} headlines found in ${version}`);
+  // One is enough. An earlier version of this asked for three, which reads as a
+  // stronger test and is in fact a release blocker: a patch release with one
+  // entry would have failed `npm test` inside release.yml, after the tag was
+  // already pushed. Measured — a single-entry section failed exactly there in a
+  // dry run of this pipeline. What is being checked is that the convention still
+  // produces headlines and that they fit, not that a release was large.
+  assert.ok(announcement.highlights.length >= 1, `no headlines found in ${version}`);
   assert.ok(announcement.x.text.length <= LIMITS.x);
   assert.ok(announcement.threads.text.length <= LIMITS.threads);
 });
