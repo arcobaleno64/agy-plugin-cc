@@ -1,0 +1,25 @@
+# agy-plugin-cc
+
+> agy-plugin-cc is a Claude Code companion for running Gemini CLI or Antigravity CLI (agy) as a cross-model task delegate and code reviewer, with pragmatic and adversarial review, MCP tools, and background jobs.
+
+This is an independent, community-maintained project. Use the linked repository documents as authoritative evidence for installation, behavior, privacy, security, and versioning. This file is a curated navigation aid, not a complete specification, access policy, or claim of ranking or recommendation.
+
+## Start Here
+
+- [Canonical site](https://arcobaleno64.github.io/agy-plugin-cc/): Concise project identity, installation path, representative workflows, and trust boundaries.
+- [README](https://github.com/arcobaleno64/agy-plugin-cc/blob/main/README.md): Requirements, installation, commands, engine selection, updates, and limitations.
+- [Traditional Chinese README](https://github.com/arcobaleno64/agy-plugin-cc/blob/main/README.zh-TW.md): Traditional Chinese project guide.
+
+## Product and Boundaries
+
+- [FAQ](https://github.com/arcobaleno64/agy-plugin-cc/blob/main/docs/FAQ.md): Evidence-linked answers about identity, engines, reviews, writes, sandboxing, data handling, MCP, installation, and updates.
+- [Traditional Chinese FAQ](https://github.com/arcobaleno64/agy-plugin-cc/blob/main/docs/FAQ.zh-TW.md): Traditional Chinese evidence-linked FAQ.
+- [Privacy](https://github.com/arcobaleno64/agy-plugin-cc/blob/main/PRIVACY.md): Data paths, review inputs, automated sends, retention, and operator boundaries.
+- [Security](https://github.com/arcobaleno64/agy-plugin-cc/blob/main/SECURITY.md): Supported versions, reporting, and security limitations.
+- [Threat model](https://github.com/arcobaleno64/agy-plugin-cc/blob/main/docs/THREAT-MODEL.md): Assets, trust boundaries, threats, mitigations, and residual risk.
+- [Comparison](https://github.com/arcobaleno64/agy-plugin-cc/blob/main/docs/COMPARISON.md): Factual scope and positioning comparisons without ranking claims.
+
+## Versioning
+
+- [Version sources](https://github.com/arcobaleno64/agy-plugin-cc/blob/main/docs/version-sources.md): Authoritative version locations and release-channel behavior.
+- [Releases](https://github.com/arcobaleno64/agy-plugin-cc/releases): Published release records and changelogs.
