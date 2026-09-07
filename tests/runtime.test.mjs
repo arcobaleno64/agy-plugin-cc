@@ -951,7 +951,10 @@ test("an AGY task sends a long prompt only on stdin", { skip: process.platform =
   assert.equal(capture.stdin, marker);
   assert.ok(!capture.args.includes("--print"));
   assert.ok(!capture.args.includes(marker));
-  assert.deepEqual(capture.args.slice(-2), ["--print-timeout", "105s"]);
+  // Derived from the AGY default budget, not chosen: 600s minus the 15s flush
+  // grace. It moved with the default in #153, and the literal is kept so a
+  // change to either one has to be looked at rather than absorbed.
+  assert.deepEqual(capture.args.slice(-2), ["--print-timeout", "585s"]);
 });
 
 // --- AGY >=1.1.8 structured output supersedes transcript recovery ---

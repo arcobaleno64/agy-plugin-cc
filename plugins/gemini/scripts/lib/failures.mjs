@@ -49,7 +49,12 @@ const DEFAULTS = {
     // only AGY timing out and pointed at gemini, which left a gemini timeout with
     // no engine advice at all -- the case in field note gi-2026-08-24-b7c1, where
     // gemini stalled for minutes on a diff AGY answered in about 25 seconds.
-    nextStep: "Retry later, reduce prompt size or review scope, or run it on the other engine (`--engine agy` or `--engine gemini`)."
+    // `--timeout` comes first because it is the only one of these that addresses
+    // the cause when the budget itself is what was too small — issue #153, where
+    // three runs were spent narrowing scope before the timeout turned out to be
+    // the binding constraint. Scope and engine stay, since a genuinely oversized
+    // prompt and a stalled engine are both still real causes.
+    nextStep: "Raise the budget with `--timeout <seconds>`, reduce prompt size or review scope, or run it on the other engine (`--engine agy` or `--engine gemini`)."
   },
   "prompt-too-long": {
     retryable: false,
