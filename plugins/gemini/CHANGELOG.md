@@ -329,6 +329,39 @@
     Found by a dry run with a one-entry section, which is exactly the release it
     would have blocked.
 
+- **The stop gate no longer treats a review that reviewed nothing as a pass.**
+  The hook guarded its review result with `if (!payload)`, which asks whether the
+  process returned anything, not whether it returned a verdict. Two ways to exit
+  0 with no verdict slipped through, and both spent the gate's one-shot
+  `gateReviewedAt` mark and let Stop past in silence — the edits were recorded as
+  reviewed forever, unseen.
+
+  The first is a change that was committed before Stop fired. The gate reviews
+  `--scope working-tree` because the plugin never commits, but nothing stops the
+  agent or the user from committing first, and then the companion returns
+  `{ empty: true, result: null }` with exit 0. The second is a turn that
+  succeeded while the model wrote prose instead of the structured review:
+  `result` is null and the exit status stays 0.
+
+  The guard is now `if (!payload?.result?.verdict)`, so both land in the
+  fail-open branch that already existed — Stop is still allowed, the mark is not
+  spent, and the skip is visible. That branch's own wording was widened to match:
+  it claimed the review "could not run", which an empty scope did not.
+
+  The hole was in the one direction this file had already ruled out. The same
+  function chose `--scope working-tree` deliberately, "instead of relying on auto
+  scope (which could resolve to an empty branch diff and pass vacuously)" — the
+  vacuous pass was anticipated for branch scope and closed there, while
+  working-tree kept the identical shape. And the visible-warning design at the
+  fail-open branch says the skip must never be silent; this was the one route
+  that was.
+
+  Both routes now have an end-to-end test through the real hook, asserting on the
+  stored job that the mark is unspent. The prose route needed a fixture that did
+  not exist: `review-prose` in `tests/fixtures/fake-gemini.cjs` is a turn that
+  succeeds and answers in prose, which is the shape the engines actually produce
+  when they answer the prompt instead of obeying its output contract.
+
 ## 0.24.4 - 2026-09-03 - Four things only using it could find
 
 - **The reviewer walkthrough stops competing with the job it is waiting for.**

@@ -2054,6 +2054,71 @@ test("stop-gate fails OPEN with a visible warning when the review cannot run", (
   assert.match(result.stderr, /review gate skipped/i);
 });
 
+test("stop-gate does not consume the mark when the review had nothing to review", () => {
+  // The gate reviews `--scope working-tree` because the plugin never commits.
+  // Nothing stops the edits being committed between the write task finishing and
+  // Stop firing, and then the review returns `{ empty: true, result: null }` with
+  // exit 0. That is a truthy payload carrying no verdict: the hook used to take
+  // it for a passing review, stamp the job as reviewed, and let Stop through
+  // without a word. The edits were then marked reviewed forever, unseen.
+  const { repo, binDir } = setupRepo("adversarial");
+  commit(repo, "src/app.js", "export const value = 1;\n");
+  seedState(
+    repo,
+    [{ id: "task-empty", status: "completed", jobClass: "task", write: true, kindLabel: "rescue", title: "Gemini Task" }],
+    { stopReviewGateEnabled: true }
+  );
+
+  const result = runStopGate(repo, buildEnv(binDir));
+
+  assert.equal(result.status, 0, result.stderr);
+  const decision = JSON.parse(result.stdout);
+  assert.ok(!("decision" in decision), "fail open: a vacuous review must not trap the user at Stop");
+  assert.match(
+    decision.systemMessage ?? "",
+    /skipped/i,
+    "a review that produced no verdict is a skipped gate, and the skip has to be visible"
+  );
+
+  const job = storedJobs(repo).find((entry) => entry.id === "task-empty");
+  assert.ok(job, "the seeded write task is still in the store");
+  assert.equal(
+    job.gateReviewedAt,
+    undefined,
+    "nothing was reviewed, so the one-shot mark must still be unspent"
+  );
+});
+
+test("stop-gate does not consume the mark when the engine answered in prose", () => {
+  // The other way to exit 0 with no verdict: the turn succeeds and the model
+  // writes prose instead of the structured review. `result` is null while the
+  // exit status stays 0, so the payload is truthy and carries nothing to act on.
+  // Unlike the empty-scope case there IS an unreviewed change in the tree here,
+  // which is exactly why the mark must survive.
+  const { repo, binDir } = setupRepo("review-prose");
+  commit(repo, "src/app.js", "export const value = items[0];" + String.fromCharCode(10));
+  fs.writeFileSync(path.join(repo, "src", "app.js"), "export const value = items[0].id;" + String.fromCharCode(10));
+  seedState(
+    repo,
+    [{ id: "task-prose", status: "completed", jobClass: "task", write: true, kindLabel: "rescue", title: "Gemini Task" }],
+    { stopReviewGateEnabled: true }
+  );
+
+  const result = runStopGate(repo, buildEnv(binDir));
+
+  assert.equal(result.status, 0, result.stderr);
+  const decision = JSON.parse(result.stdout);
+  assert.ok(!("decision" in decision), "fail open: an unparseable review must not trap the user at Stop");
+  assert.match(decision.systemMessage ?? "", /skipped/i, "no verdict came back, so say the gate did not run");
+
+  const job = storedJobs(repo).find((entry) => entry.id === "task-prose");
+  assert.equal(
+    job?.gateReviewedAt,
+    undefined,
+    "the change in the tree was never actually reviewed, so it must still arm the gate"
+  );
+});
+
 test("the fixture PATH drops directories holding a real gemini or agy", () => {
   // A stand-in that merely goes first on PATH is only as isolated as the
   // resolution below it. Dropping the real installation's directory is what makes
