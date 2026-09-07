@@ -82,6 +82,16 @@
   still told the model to condition on AGY 1.1.8 for the JSON envelope; above
   the floor that condition is always true.
 
+  `tests/readme-translation-parity.test.mjs` closes the gap that let this
+  happen. Two assertions: the two READMEs cite the same set of version numbers,
+  and each one's AGY prerequisite row states the floor the code enforces, read
+  from `AGY_MINIMUM_VERSION` rather than from the other document. Version
+  numbers are the part of a page that survives translation unchanged, which is
+  what makes the drift mechanically visible at all. Reverting the prerequisites
+  row in either language turns both assertions red; drifting one version number
+  in one file turns only the first; moving the floor in the code turns only the
+  second.
+
   Two Chinese renderings are corrected while there. "per-plugin data directory"
   had been carried over as 每外掛資料目錄, which is not a construction Chinese
   makes; and "non-blocking limitations" as 非阻塞限制, which in Chinese is the
