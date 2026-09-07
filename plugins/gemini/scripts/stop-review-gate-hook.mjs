@@ -6,7 +6,7 @@ import process from "node:process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { getConfig, listJobs, upsertJob } from "./lib/state.mjs";
+import { getConfig, jobStoreUnreadableReason, listJobs, upsertJob } from "./lib/state.mjs";
 import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
 
 const SELF_PATH = fileURLToPath(import.meta.url);
@@ -146,6 +146,20 @@ async function main() {
   const jobs = listJobs(workspaceRoot);
   const pending = pendingGateWriteTasks(jobs);
   if (pending.length === 0) {
+    // An empty list is the reason this lets Stop through, and `listJobs` gives
+    // the same empty list for a store it could not read. Untangled here rather
+    // than in `listJobs` because only this caller treats "no jobs" as a licence
+    // to skip the gate; everywhere else an unreadable store and an empty one
+    // really do render the same.
+    const unreadable = jobStoreUnreadableReason(workspaceRoot);
+    if (unreadable) {
+      const warning =
+        `Gemini review gate skipped: the job store could not be read (${unreadable}), so the gate cannot tell whether anything needs reviewing. Run /gemini:adversarial-review --wait before stopping if you changed code.`;
+      process.stderr.write(`${warning}
+`);
+      emitDecision({ systemMessage: warning });
+      return;
+    }
     emitDecision({});
     return;
   }

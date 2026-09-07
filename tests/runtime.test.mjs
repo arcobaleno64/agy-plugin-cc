@@ -2029,6 +2029,56 @@ test("stop-gate proceeds without a warning when enabled but no write task comple
   assert.ok(!decision.systemMessage, "no skip warning when there is nothing to review");
 });
 
+test("stop-gate says so when it cannot read the job store", () => {
+  // `listJobs` returns [] for a store it could not read, which is the same
+  // answer it gives for a store with nothing in it — and an empty list is
+  // exactly why this hook lets Stop through. A permissions problem or a
+  // clobbered directory therefore disarmed the gate in silence. Failing open is
+  // still right; being quiet about it is not.
+  //
+  // The store is made unreadable portably by putting a FILE where the jobs
+  // directory belongs: readdir answers ENOTDIR on every platform, where a chmod
+  // would do nothing on Windows.
+  const workspace = makeTempDir();
+  const stateFile = seedState(workspace, [], { stopReviewGateEnabled: true });
+  fs.writeFileSync(path.join(path.dirname(stateFile), "jobs"), "not a directory", "utf8");
+
+  const result = runStopGate(workspace, envWithoutSession());
+
+  assert.equal(result.status, 0, result.stderr);
+  const decision = JSON.parse(result.stdout);
+  assert.ok(!("decision" in decision), "fail open: an unreadable store must not trap the user at Stop");
+  assert.match(
+    decision.systemMessage ?? "",
+    /job store could not be read/i,
+    "an unreadable store is a skipped gate, and the skip has to be visible"
+  );
+  assert.match(result.stderr, /job store could not be read/i);
+});
+
+test("stop-gate is quiet in a workspace that has never run a job", () => {
+  // The store's directory is created on first write, so its absence is the
+  // ordinary state of a fresh workspace — not a store that could not be read.
+  // Without that carve-out the unreadable-store warning above fires on every
+  // Stop for anyone who has not used the plugin yet, which is the failure mode
+  // of adding it. Nothing else in this file covers it: the neighbouring
+  // no-warning test seeds a job, and seeding creates the directory.
+  const workspace = makeTempDir();
+  const stateFile = seedState(workspace, [], { stopReviewGateEnabled: true });
+  assert.ok(
+    !fs.existsSync(path.join(path.dirname(stateFile), "jobs")),
+    "the premise: seeding no jobs must leave no jobs directory"
+  );
+
+  const result = runStopGate(workspace, envWithoutSession());
+
+  assert.equal(result.status, 0, result.stderr);
+  const decision = JSON.parse(result.stdout);
+  assert.ok(!("decision" in decision));
+  assert.ok(!decision.systemMessage, "an unused workspace is not a broken one");
+  assert.equal(result.stderr.trim(), "");
+});
+
 test("stop-gate fails OPEN with a visible warning when the review cannot run", () => {
   // A completed --write task arms the gate, but the review is forced to fail:
   // unavailable engines + a non-git workspace guarantee the companion errors,
