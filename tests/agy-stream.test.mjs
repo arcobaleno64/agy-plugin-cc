@@ -357,7 +357,7 @@ test("the plain-json path still shows output that arrived and failed to parse", 
 //
 // gi-2026-08-17-c4a1: the run produced its entire deliverable — seven findings,
 // both closing sections, nothing truncated — and was stored as `failed` with
-// "Retry later, reduce prompt size or review scope", which for that run buys a
+// the generic timeout advice ("reduce prompt size or review scope"), which for that run buys a
 // second identical answer at full price. The envelope is still the authority on
 // completeness (a SUCCESS response is what makes a run successful, and that is
 // unchanged), so this does not become a success. It stops being a bare failure.
@@ -378,7 +378,7 @@ test("a run cut off after a finished response block is not told to retry", async
   assert.equal(result.partial, true);
   assert.equal(result.finalMessage, "the whole deliverable");
   assert.match(result.failure.summary, /the recovered response block is complete/);
-  assert.doesNotMatch(result.failure.nextStep, /Retry later/);
+  assert.doesNotMatch(result.failure.nextStep, /reduce prompt size/);
   assert.match(result.failure.nextStep, /Read the recovered response below/);
 });
 
@@ -391,7 +391,7 @@ test("a run cut off mid-answer is partial but still says the text was truncated"
   assert.equal(result.partial, true);
   assert.match(result.failure.summary, /partial output preserved/);
   assert.doesNotMatch(result.failure.summary, /response block is complete/);
-  assert.match(result.failure.nextStep, /Retry later/, "there is nothing complete to read instead");
+  assert.match(result.failure.nextStep, /reduce prompt size/, "there is nothing complete to read instead");
 });
 
 test("a run with nothing to show is a failure, not a partial one", async () => {

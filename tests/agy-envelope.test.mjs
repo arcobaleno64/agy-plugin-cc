@@ -428,17 +428,37 @@ test("AGY's print-timeout lands before the hard kill, not on it", async () => {
   );
 });
 
+// 300 rather than 600 on purpose: 600 is now the default too, so asking for it
+// would pass whether or not --timeout was read at all.
 test("--timeout raises both the hard kill and AGY's own window", async () => {
   const runCommandFn = stubRun({ stdout: `${JSON.stringify(SUCCESS_ENVELOPE)}\n` });
 
-  await runGeminiTurn("/repo", { prompt: "hi", write: false, timeoutSeconds: 600 }, {
+  await runGeminiTurn("/repo", { prompt: "hi", write: false, timeoutSeconds: 300 }, {
     runCommandFn,
     detectEngineFn: agyEngine()
   });
 
   const [call] = runCommandFn.calls;
-  assert.equal(call.opts.timeout, 600_000);
-  assert.equal(call.args[call.args.indexOf("--print-timeout") + 1], "585s");
+  assert.equal(call.opts.timeout, 300_000);
+  assert.equal(call.args[call.args.indexOf("--print-timeout") + 1], "285s");
+});
+
+// The 2-minute AGY default was defending against AGY 1.0.3, whose `agy --print`
+// returned nothing over a pipe; the 1.1.12 floor refuses that version before it
+// can spawn. What the cap did instead was kill work that was going to finish: an
+// agentic read-only pass over three files of this repo timed out three times at
+// 120s and completed in 223s at `--timeout 600` (issue #153). A budget below
+// that measurement is the defect returning.
+test("an AGY turn with no --timeout gets the same budget as gemini", async () => {
+  const runCommandFn = stubRun({ stdout: `${JSON.stringify(SUCCESS_ENVELOPE)}\n` });
+
+  await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
+    runCommandFn,
+    detectEngineFn: agyEngine()
+  });
+
+  const [call] = runCommandFn.calls;
+  assert.equal(call.opts.timeout, 600_000, "the measured 223s run must fit inside the default");
 });
 
 // Subtracting a flat 15s and flooring the result at 30s made the grace window

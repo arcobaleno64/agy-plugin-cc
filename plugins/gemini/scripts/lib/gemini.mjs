@@ -23,11 +23,17 @@ import { readAgyStream } from "./agy-stream.mjs";
 import { describeReadOnlyWrites, detectWrites, snapshotWorkspace } from "./readonly-guard.mjs";
 
 const DEFAULT_SPAWN_TIMEOUT_MS = 600_000; // 10 minutes (gemini)
-// AGY's `agy --print` does not stream its response over a pipe in non-interactive
-// use (verified empty stdout / hang on 1.0.3), so a 10-minute spawn would simply
-// hang silently. Cap AGY far shorter so the plugin fails fast instead. This also
-// feeds AGY's own `--print-timeout` via buildCliArgs.
-const AGY_SPAWN_TIMEOUT_MS = 120_000; // 2 minutes
+// AGY is given the same budget as gemini. It used to be capped at 2 minutes so
+// the plugin would fail fast rather than hang on AGY 1.0.3, whose `agy --print`
+// returned nothing over a pipe in non-interactive use — a version the declared
+// floor (1.1.12) now refuses at engine detection, so that hang cannot reach the
+// runtime any more. The cap outlived it, and was measured to be the binding
+// constraint rather than a safety net: an agentic read-only pass over three
+// files of this repo timed out three times at 120s and finished in 223s at
+// `--timeout 600` (2026-09-07, AGY 1.1.27, issue #153). A silent hang is also
+// visible now, because 1.1.8+ streams its envelope as it goes. This also feeds
+// AGY's own `--print-timeout` via buildCliArgs.
+const AGY_SPAWN_TIMEOUT_MS = 600_000; // 10 minutes
 // How much earlier AGY's own --print-timeout lands, so it self-terminates and
 // flushes its final transcript row before spawnSync SIGKILLs it.
 const AGY_FLUSH_GRACE_MS = 15_000;
@@ -249,7 +255,7 @@ function annotateFailureWithProgress(failure, structured) {
     ? failure
     : { ...failure, summary: `${failure.summary} (${notes.join("; ")})` };
 
-  // The default next step for a timeout is "retry later, reduce prompt size".
+  // The default next step for a timeout is "raise --timeout, reduce prompt size".
   // For a run whose response block finished before the kill, that advice buys a
   // second copy of an answer already sitting in front of the user at full price
   // (field note gi-2026-08-17-c4a1: seven findings, both closing sections,

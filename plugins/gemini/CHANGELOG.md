@@ -2,6 +2,31 @@
 
 ## 0.25.0 - Unreleased
 
+- **AGY turns now get ten minutes, the same as Gemini CLI.** The old two-minute
+  cap was defending against AGY 1.0.3, whose `agy --print` returned nothing over
+  a pipe in non-interactive use; a ten-minute spawn against that version would
+  have hung silently, so the cap made it fail fast instead. The 1.1.12 floor now
+  refuses 1.0.3 at engine detection, and a stalled turn is visible anyway, since
+  1.1.8 and newer stream the envelope as they go. The cap outlived what it was
+  guarding.
+
+  What it did in the meantime was kill work that was going to finish. A
+  read-only audit of three files in this repository timed out three times at the
+  default and completed in 223 seconds at `--timeout 600` — same prompt, same
+  scope, one variable. Narrowing the scope fourfold in token cost did not help;
+  only the budget did. Codex answered the identical prompt in 155 seconds, so
+  this is what an agentic pass over three files costs, not something slow about
+  AGY.
+
+  The failure message pointed away from the fix, and now names it. "Retry later,
+  reduce prompt size or review scope, or run it on the other engine" offered
+  three suggestions, none of which addresses a budget that is simply too small.
+  It now leads with `--timeout <seconds>` and keeps the rest, because an
+  oversized prompt and a stalled engine remain real causes.
+
+  `--print-timeout`, which AGY self-terminates on, is derived from the budget and
+  follows it up to 585 seconds. Neither bound on `--timeout` moved: 30 to 3600
+  seconds, as before.
 - **An unreadable job store no longer reads as "nothing to gate".** `listJobs`
   answers `[]` both for a store with no jobs in it and for one it could not
   read, and an empty list is exactly why the stop gate lets Stop through. A

@@ -79,6 +79,15 @@ test("classifyCliFailure identifies timeout failures", () => {
   assert.equal(failure.retryable, true);
 });
 
+// Issue #153: the advice pointed away from the fix. Three runs were spent
+// narrowing the scope, which the measurements showed does not help, before the
+// budget itself turned out to be what was too small, and `--timeout`, the flag
+// that raises it, was the one thing the message never named.
+test("a timeout's next step names the flag that raises the budget", () => {
+  const failure = classifyCliFailure({ error: Object.assign(new Error("spawn timed out"), { code: "ETIMEDOUT" }) });
+  assert.match(failure.nextStep, /--timeout/, `the fix must be named: ${failure.nextStep}`);
+});
+
 test("classifyCliFailure identifies model-unavailable failures", () => {
   const failure = classifyCliFailure({ stderr: "ModelNotFoundError: Requested entity was not found. code: 404" });
   assert.equal(failure.category, "model-unavailable");

@@ -62,7 +62,7 @@ Argument handling:
 - The companion script handles `--background` itself: it enqueues the review and spawns a detached `review-worker`, so the result outlives the foreground command. It does not outlive the session: `SessionEnd` removes this session's job records, finished ones included, so collect it with `/gemini:result` before the session ends. Do not use Claude's `run_in_background: true` for it.
 - `/gemini:review` is native-review only. It does not take custom focus text.
 - For an adversarial review that challenges design decisions, use `/gemini:adversarial-review`.
-- `--timeout <seconds>` is not only how long the run may take: it is also a ceiling on how much output can be produced, because a turn that cannot finish emitting inside the window is killed. Raise it for a large scope or a batch; the AGY default is 120 seconds.
+- `--timeout <seconds>` is not only how long the run may take: it is also a ceiling on how much output can be produced, because a turn that cannot finish emitting inside the window is killed. Raise it for a large scope or a batch; both engines default to 600 seconds.
 - `--deep` runs an **agentic** review: Gemini uses its read-only tools to inspect repo context beyond the diff (dependency manifests, untracked files, callers) before producing the same JSON findings. It is slower and uses more tokens; omit it for the fast, diff-scoped default. Pair `--deep` with `--background` for larger changes.
 
 Foreground flow:
