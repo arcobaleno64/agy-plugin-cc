@@ -98,6 +98,16 @@
   concurrency term rather than "these do not block you". Neither is a
   translation a reader could recover the meaning from.
 
+  A third correction came from asking AGY to review the Chinese README for
+  English-shaped prose: `effort` was rendered 努力 in three places, where the
+  rest of the same file says 推理強度. 努力 is the everyday word for personal
+  exertion, so "別名與努力等級" reads as tiers of trying hard rather than as a
+  reasoning-effort setting. That review was run as a controlled check — the two
+  corrections above were re-injected into an otherwise-correct file — and it
+  found one of them, missed the other, and returned twenty-two items in total,
+  most of which were house voice it wanted flattened. Useful as a source of
+  candidates, not as a verdict.
+
 - **A degraded adversarial review now says why the engine dropped out.** With
   `--engines gemini,agy` and a sub-floor AGY, the warning read `unavailable:
   agy.` and stopped there — the refusal that names `agy update` was caught and

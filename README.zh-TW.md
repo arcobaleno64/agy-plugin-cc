@@ -318,8 +318,8 @@ AGY 請用 `/gemini:setup --engine agy` 驗證所選引擎；auto／Gemini 請�
 
 ### 模型別名說明
 
-- 別名與努力等級集中於單一來源——`plugins/gemini/scripts/lib/model-map.mjs`——且 `npm test` 會以其驗證上表，二者不致漂移。
-- **努力對映**（於提供 `--effort` 但未給 `--model` 時套用）：`none`/`minimal` → `gemini-2.5-flash-lite`；`low`/`medium` → `gemini-3-flash-preview`；`high`/`xhigh` → `gemini-3.1-pro-preview`。
+- 別名與推理強度等級集中於單一來源——`plugins/gemini/scripts/lib/model-map.mjs`——且 `npm test` 會以其驗證上表，二者不致漂移。
+- **推理強度對映**（於提供 `--effort` 但未給 `--model` 時套用）：`none`/`minimal` → `gemini-2.5-flash-lite`；`low`/`medium` → `gemini-3-flash-preview`；`high`/`xhigh` → `gemini-3.1-pro-preview`。
 - **CLI probe snapshot。** 上表最後於 2026-08-05 對 Gemini API 模型清單複驗，所用的六個 id 全數有效。Google 可能隨時下架 preview id。若某別名無法解析，以 `--model <精確 ID>` 覆蓋——任何非已知別名之值將原樣透傳給 CLI。
 - **Gemini 3.5 可用性已變動。** 2026-06-02 實測時 `gemini-3.5-flash` 與 `gemini-3.5-pro` 皆回 `404 ModelNotFound`；至 2026-08-05，`gemini-3.5-flash` 已為 GA，`gemini-3.5-pro` 仍不存在。未知或不可用 model ID 會優雅降級至 GA fallback。
 - **模型優雅降級。** 若所請求之 model id 在你的 gemini CLI 上找不到（preview/已退役 id，或 CLI 版本落差），外掛會**以 GA fallback `gemini-2.5-flash` 重試一次**並印出明確提示——讓過時 id 優雅降級，而非硬性失敗。
@@ -477,4 +477,4 @@ MIT © 2026 arcobaleno64。
 
 **衍生自上游**（沿用，Apache-2.0）：斜線命令結構、背景工作模型（enqueue／worker／status／result／cancel）、`.omc/state` 持久化與 job-control 模式、停止時 review-gate 模式、skill 合約佈局，以及 version／manifest 工具（`bump-version`）。
 
-**本倉儲原創**（MIT）：Gemini/AGY 引擎偵測與路由、stdin 提示傳遞、`model-map` 別名／努力來源、AGY 引擎處理、OAuth 狀態檢查，以及 contract 驗證腳本。
+**本倉儲原創**（MIT）：Gemini/AGY 引擎偵測與路由、stdin 提示傳遞、`model-map` 別名／推理強度來源、AGY 引擎處理、OAuth 狀態檢查，以及 contract 驗證腳本。
