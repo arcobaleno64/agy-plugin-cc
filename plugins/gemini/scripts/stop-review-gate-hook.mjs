@@ -151,13 +151,20 @@ async function main() {
   }
 
   const payload = runAdversarialReview(cwd);
-  if (!payload) {
-    // Review failed or Gemini unavailable — fail OPEN (never trap the user at
-    // Stop), but make the skip VISIBLE instead of silent so they know the gate
-    // did not actually run. `systemMessage` surfaces to the user; stderr is a
-    // belt-and-suspenders fallback for hook logs.
+  // The guard is "did it return a verdict", not "did it return anything". A
+  // review that reviewed nothing still exits 0 with a whole JSON object: the
+  // companion returns `{ empty: true, result: null }` when the scope is empty,
+  // which is what a committed change looks like to `--scope working-tree`. That
+  // payload is truthy, so `!payload` let it through as a pass — the mark was
+  // spent, Stop was allowed, and nothing was said. Same for a run whose output
+  // did not parse: `result` is null while the exit status stays 0.
+  if (!payload?.result?.verdict) {
+    // Review failed, returned no verdict, or Gemini unavailable — fail OPEN
+    // (never trap the user at Stop), but make the skip VISIBLE instead of silent
+    // so they know the gate did not actually run. `systemMessage` surfaces to
+    // the user; stderr is a belt-and-suspenders fallback for hook logs.
     const warning =
-      "Gemini review gate skipped: the adversarial review could not run (Gemini/AGY unavailable or errored). Run /gemini:adversarial-review --wait before stopping if you changed code.";
+      "Gemini review gate skipped: the adversarial review did not return a verdict (Gemini/AGY unavailable, errored, or nothing in scope to review). Run /gemini:adversarial-review --wait before stopping if you changed code.";
     process.stderr.write(`${warning}\n`);
     emitDecision({ systemMessage: warning });
     return;

@@ -151,6 +151,19 @@ function respond(prompt) {
     process.stderr.write("Considering empty-state edge cases...\nCross-checking [DEP12] handling in the retry path.\nReasoning complete.\n");
   }
 
+  if (SCENARIO === "review-prose") {
+    // A turn that SUCCEEDS and still yields no review: exit 0, a well-formed CLI
+    // envelope, and prose where the structured verdict should be. The models do
+    // this when they answer the prompt instead of obeying its output contract.
+    // The plugin then carries `result: null` with an exit status of 0, which is
+    // the shape the stop gate has to tell apart from a passing review.
+    process.stdout.write(JSON.stringify({
+      session_id: sessionId,
+      response: "I looked at the diff and it seems fine to me overall. Nothing jumped out."
+    }));
+    process.exit(0);
+  }
+
   const response = buildResponse();
   process.stdout.write(JSON.stringify({ session_id: sessionId, response: response }));
   process.exit(0);
