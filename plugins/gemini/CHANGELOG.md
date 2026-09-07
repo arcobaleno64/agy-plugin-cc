@@ -42,10 +42,34 @@
   both problems instead of sending the user to a second failure. A sub-floor AGY
   merely sitting on PATH beside a working gemini is not reported at all.
 
+  `setup` now answers `unreadable` on both routes too. The two floor branches had
+  drifted apart: `too-old` already spoke about the AGY that would actually run,
+  while `unreadable` spoke only under an explicit `--engine agy`. So under `auto`
+  with no gemini credential, `/gemini:setup` said nothing about a version it had
+  failed to read, and the first real command then said it — the same fact, two
+  answers, depending on which surface was asked. The narrowing that keeps a
+  stale AGY beside a working gemini unreported is unchanged, and now has a test
+  of its own rather than being a side effect of the narrower condition.
+
   The version is read from the start of `agy --version` (bare `1.1.25`, or a
   `agy`/`antigravity`/`v` prefix), not from the first pair of numbers anywhere in
   the line. An unanchored match read `antigravity (node 18.2.1)` as AGY 18.2.1
   and certified it; both misreadings are now `unreadable`, which fails open.
+
+  The docs that described the replaced gates are updated with them: the AGY
+  transport fallback (README Security, `docs/known-diffs.md`) contradicted the
+  stdin-only bullet five lines above it, `--probe-agy`'s "1.1.11+" caveat
+  described a version the floor now refuses before the probe is reached, and
+  `docs/MODEL_COMPARISON.md` pointed at `supportsAgyModelSelection`, which no
+  longer exists. The CHANGELOG entries naming those gates are left alone — they
+  record the removal.
+
+- **A degraded adversarial review now says why the engine dropped out.** With
+  `--engines gemini,agy` and a sub-floor AGY, the warning read `unavailable:
+  agy.` and stopped there — the refusal that names `agy update` was caught and
+  reduced to the engine's name, so the one path where the user most needed the
+  fix was the one that withheld it. It now carries each engine's reason, in the
+  same `engine (reason)` form the all-engines-unavailable error already used.
 
 - **A missing AGY is now reported as missing.** Three different problems shared
   one message, and on Windows the likeliest of them — AGY simply not installed —

@@ -422,7 +422,7 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
   const agyWouldRun = agySelected || !geminiReady;
   if (agyWouldRun && agyStatus.available && agyFloor === "too-old") {
     nextSteps.push(agyFloorRefusal(agyStatus.detail, { geminiUsable: geminiReady }));
-  } else if (agySelected && agyStatus.available && agyFloor === "unreadable") {
+  } else if (agyWouldRun && agyStatus.available && agyFloor === "unreadable") {
     nextSteps.push(AGY_VERSION_UNVERIFIED_NOTICE);
   }
   if (agySelected && agyStatus.available && agyLoggedOut) {
@@ -1201,7 +1201,7 @@ export function dispatchAdversarialReview(request, {
   }
 
   const warning = unavailable.length > 0
-    ? `Adversarial review degraded to ${availableEngines.join(", ")}; unavailable: ${unavailable.map(({ engine }) => engine).join(", ")}.`
+    ? `Adversarial review degraded to ${availableEngines.join(", ")}; unavailable: ${unavailable.map(({ engine, error }) => `${engine} (${error})`).join("; ")}.`
     : null;
   if (warning) stderr.write(`${warning}\n`);
 

@@ -224,6 +224,38 @@ test("an AGY below the floor is not ready even when it was not explicitly select
   assert.match(report.nextSteps.join(String.fromCharCode(10)), /1\.1\.9 is older than this plugin supports/);
 });
 
+// Same reasoning as the test above, for the third answer. The two floor branches
+// answered the same question differently: `too-old` had already widened to the
+// AGY that would actually run, while `unreadable` still spoke only under an
+// explicit `--engine agy`. So under `auto` with no gemini credential, setup said
+// nothing about a version it had failed to read, and the first real command then
+// said it -- the same fact, two answers, depending on which surface was asked.
+test("an unreadable AGY version is reported under auto when it is what would run", () => {
+  const report = buildSetupReport(makeTempDir(), [], {
+    agyAvailabilityFn: () => ({ available: true, detail: "antigravity (build 8812)" }),
+    agyLoginStatusFn: () => agyStatus("verified"),
+    geminiAvailabilityFn: () => ({ available: false, detail: null })
+  });
+
+  assert.match(report.nextSteps.join(String.fromCharCode(10)), /Could not read the AGY version/);
+});
+
+// The fence the `too-old` branch was narrowed for holds for `unreadable` too:
+// widening must not reach an AGY that a working gemini keeps out of the way.
+test("an unreadable AGY version beside a working gemini stays unreported", () => {
+  const report = buildSetupReport(makeTempDir(), [], {
+    engine: "gemini",
+    geminiAvailabilityFn: () => ({ available: true, detail: "0.53.1" }),
+    geminiLoginStatusFn: () => ({ loggedIn: true, state: "verified", detail: "ok" }),
+    geminiCredentialedFn: () => true,
+    agyAvailabilityFn: () => ({ available: true, detail: "antigravity (build 8812)" }),
+    agyLoginStatusFn: () => agyStatus("unknown")
+  });
+
+  assert.equal(report.readyState, "ready");
+  assert.deepEqual(report.nextSteps, []);
+});
+
 test("an unprobed AGY stays partial but is told how to check for free", () => {
   const report = buildSetupReport(makeTempDir(), [], {
     engine: "agy",

@@ -1162,6 +1162,9 @@ test("dispatchAdversarialReview degrades to one available engine with a stderr w
     assert.deepEqual(dispatched.unavailableEngines, ["agy"]);
     assert.equal(dispatched.jobIds.length, 1);
     assert.match(stderr, /degraded to gemini.*unavailable: agy/i);
+    // A version-floor refusal names the fix (`agy update`). Reporting the engine
+    // name alone would drop that, leaving the user with no way forward.
+    assert.match(stderr, /agy is unavailable/);
     const job = readJobFile(resolveJobFile(repo, dispatched.jobIds[0]));
     assert.equal(job.engine, "gemini");
     assert.equal(job.groupId, undefined);
