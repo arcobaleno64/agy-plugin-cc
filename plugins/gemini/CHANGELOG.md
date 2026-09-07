@@ -2,6 +2,30 @@
 
 ## 0.25.0 - Unreleased
 
+- **An unreadable job store no longer reads as "nothing to gate".** `listJobs`
+  answers `[]` both for a store with no jobs in it and for one it could not
+  read, and an empty list is exactly why the stop gate lets Stop through. A
+  permissions problem, a lock, or a clobbered directory therefore disarmed the
+  gate without a word.
+
+  `listJobs` is unchanged. Making it throw would turn a read failure into a
+  crash at fourteen call sites, and for thirteen of them the merge is right — a
+  status listing with nothing to show reads the same either way. Only the gate
+  treats "no jobs" as a licence to skip, so only the gate asks the new
+  `jobStoreUnreadableReason`, and only on the path where the answer changes
+  anything. It still fails open; it now says why, in the same shape as the
+  review-failure warning beside it.
+
+  ENOENT is deliberately not a failure: the directory is created on first write,
+  so its absence is the ordinary state of a workspace that has run no jobs yet.
+  That carve-out has a test of its own, added because a mutation proved nothing
+  else covered it — the neighbouring no-warning test seeds a job, and seeding is
+  what creates the directory. Without it, the new warning would fire on every
+  Stop for anyone who had not used the plugin yet.
+
+  The unreadable case is reproduced portably by putting a file where the jobs
+  directory belongs: readdir answers ENOTDIR everywhere, where a chmod does
+  nothing on Windows.
 - **BREAKING: AGY 1.1.12 or newer is now required, and an older AGY is refused by
   name.** Run `agy update`. This replaces seven capability gates
   (`supportsAgyStdinPrompt` 1.1.2, `supportsAgyStructuredOutput` 1.1.8,
