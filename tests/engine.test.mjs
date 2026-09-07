@@ -203,7 +203,14 @@ test("the auto refusal does not offer gemini as the way out", () => {
 test("the refusal names the detected version, the floor, and the fix", () => {
   const message = agyFloorRefusal("1.1.9");
   assert.match(message, /1\.1\.9/);
-  assert.match(message, new RegExp(AGY_MINIMUM_VERSION.replace(/\./g, "\\.")));
+  // Substring, not a regex built from the constant: hand-escaping a version
+  // string for a pattern adds an escaping bug to guard against
+  // (CodeQL js/incomplete-sanitization) and buys nothing over a plain
+  // containment check.
+  assert.ok(
+    message.includes(AGY_MINIMUM_VERSION),
+    `the refusal must name the floor ${AGY_MINIMUM_VERSION}: ${message}`
+  );
   assert.match(message, /agy update/);
 });
 
