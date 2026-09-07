@@ -471,8 +471,10 @@ does what the plugin asks of it stays supported however old it is.
 
 1.0.0 is reserved for the point where that surface has gone three consecutive
 MINOR releases without a breaking change, and the AGY integration no longer needs
-per-version gates. Neither is true yet: `scripts/lib/engine.mjs` still carries
-seven `supportsAgy*` gates, each branching on the AGY version it found.
+per-version gates. The second is now true: the seven `supportsAgy*` gates are
+gone, replaced by one floor checked once in `detectEngine`, and no path branches
+on the AGY version after that. The first is not: the breaking change that removed
+them is the unreleased 0.25.0, so the count starts again from there.
 
 ---
 

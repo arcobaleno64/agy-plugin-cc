@@ -64,6 +64,30 @@
   longer exists. The CHANGELOG entries naming those gates are left alone — they
   record the removal.
 
+  `README.zh-TW.md` was nine passages behind, and the way it stayed behind is
+  worth recording: the floor commit edited it, so it read as done. It updated the
+  one-line requirement at the top and left everything else, which put the
+  prerequisites table (`AGY ≥ 1.0.3`, recommending 1.1.2) in direct contradiction
+  with the same file's opening line (`AGY ≥ 1.1.12`). The English README was then
+  swept for stale passages and the Chinese one was not, because the sweep worked
+  from a list of found passages rather than from a search for the removed
+  identifier. `git grep supportsAgy -- '*.md'` bounds that set in one call and
+  was never run. It now returns only the two sentences that say the gates are
+  gone, plus the CHANGELOG history.
+
+  Brought in line: the feature list, the prerequisites table, `--probe-agy`, the
+  engine-selection list, both JSON-envelope paragraphs, the Security stdin
+  bullet, and the AGY-transport-fallback bullet, which is deleted here as it was
+  in English. The prompting skill's `gemini-prompt-antipatterns.md` reference
+  still told the model to condition on AGY 1.1.8 for the JSON envelope; above
+  the floor that condition is always true.
+
+  Two Chinese renderings are corrected while there. "per-plugin data directory"
+  had been carried over as 每外掛資料目錄, which is not a construction Chinese
+  makes; and "non-blocking limitations" as 非阻塞限制, which in Chinese is the
+  concurrency term rather than "these do not block you". Neither is a
+  translation a reader could recover the meaning from.
+
 - **A degraded adversarial review now says why the engine dropped out.** With
   `--engines gemini,agy` and a sub-floor AGY, the warning read `unavailable:
   agy.` and stopped there — the refusal that names `agy update` was caught and
