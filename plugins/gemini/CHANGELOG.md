@@ -1,56 +1,7 @@
 # Changelog
 
-## 0.25.0 - Unreleased
+## 0.25.0 - 2026-09-07 - A declared AGY floor, and a stop gate that stops guessing
 
-- **AGY turns now get ten minutes, the same as Gemini CLI.** The old two-minute
-  cap was defending against AGY 1.0.3, whose `agy --print` returned nothing over
-  a pipe in non-interactive use; a ten-minute spawn against that version would
-  have hung silently, so the cap made it fail fast instead. The 1.1.12 floor now
-  refuses 1.0.3 at engine detection, and a stalled turn is visible anyway, since
-  1.1.8 and newer stream the envelope as they go. The cap outlived what it was
-  guarding.
-
-  What it did in the meantime was kill work that was going to finish. A
-  read-only audit of three files in this repository timed out three times at the
-  default and completed in 223 seconds at `--timeout 600` — same prompt, same
-  scope, one variable. Narrowing the scope fourfold in token cost did not help;
-  only the budget did. Codex answered the identical prompt in 155 seconds, so
-  this is what an agentic pass over three files costs, not something slow about
-  AGY.
-
-  The failure message pointed away from the fix, and now names it. "Retry later,
-  reduce prompt size or review scope, or run it on the other engine" offered
-  three suggestions, none of which addresses a budget that is simply too small.
-  It now leads with `--timeout <seconds>` and keeps the rest, because an
-  oversized prompt and a stalled engine remain real causes.
-
-  `--print-timeout`, which AGY self-terminates on, is derived from the budget and
-  follows it up to 585 seconds. Neither bound on `--timeout` moved: 30 to 3600
-  seconds, as before.
-- **An unreadable job store no longer reads as "nothing to gate".** `listJobs`
-  answers `[]` both for a store with no jobs in it and for one it could not
-  read, and an empty list is exactly why the stop gate lets Stop through. A
-  permissions problem, a lock, or a clobbered directory therefore disarmed the
-  gate without a word.
-
-  `listJobs` is unchanged. Making it throw would turn a read failure into a
-  crash at fourteen call sites, and for thirteen of them the merge is right — a
-  status listing with nothing to show reads the same either way. Only the gate
-  treats "no jobs" as a licence to skip, so only the gate asks the new
-  `jobStoreUnreadableReason`, and only on the path where the answer changes
-  anything. It still fails open; it now says why, in the same shape as the
-  review-failure warning beside it.
-
-  ENOENT is deliberately not a failure: the directory is created on first write,
-  so its absence is the ordinary state of a workspace that has run no jobs yet.
-  That carve-out has a test of its own, added because a mutation proved nothing
-  else covered it — the neighbouring no-warning test seeds a job, and seeding is
-  what creates the directory. Without it, the new warning would fire on every
-  Stop for anyone who had not used the plugin yet.
-
-  The unreadable case is reproduced portably by putting a file where the jobs
-  directory belongs: readdir answers ENOTDIR everywhere, where a chmod does
-  nothing on Windows.
 - **BREAKING: AGY 1.1.12 or newer is now required, and an older AGY is refused by
   name.** Run `agy update`. This replaces seven capability gates
   (`supportsAgyStdinPrompt` 1.1.2, `supportsAgyStructuredOutput` 1.1.8,
@@ -157,6 +108,55 @@
   most of which were house voice it wanted flattened. Useful as a source of
   candidates, not as a verdict.
 
+- **AGY turns now get ten minutes, the same as Gemini CLI.** The old two-minute
+  cap was defending against AGY 1.0.3, whose `agy --print` returned nothing over
+  a pipe in non-interactive use; a ten-minute spawn against that version would
+  have hung silently, so the cap made it fail fast instead. The 1.1.12 floor now
+  refuses 1.0.3 at engine detection, and a stalled turn is visible anyway, since
+  1.1.8 and newer stream the envelope as they go. The cap outlived what it was
+  guarding.
+
+  What it did in the meantime was kill work that was going to finish. A
+  read-only audit of three files in this repository timed out three times at the
+  default and completed in 223 seconds at `--timeout 600` — same prompt, same
+  scope, one variable. Narrowing the scope fourfold in token cost did not help;
+  only the budget did. Codex answered the identical prompt in 155 seconds, so
+  this is what an agentic pass over three files costs, not something slow about
+  AGY.
+
+  The failure message pointed away from the fix, and now names it. "Retry later,
+  reduce prompt size or review scope, or run it on the other engine" offered
+  three suggestions, none of which addresses a budget that is simply too small.
+  It now leads with `--timeout <seconds>` and keeps the rest, because an
+  oversized prompt and a stalled engine remain real causes.
+
+  `--print-timeout`, which AGY self-terminates on, is derived from the budget and
+  follows it up to 585 seconds. Neither bound on `--timeout` moved: 30 to 3600
+  seconds, as before.
+- **An unreadable job store no longer reads as "nothing to gate".** `listJobs`
+  answers `[]` both for a store with no jobs in it and for one it could not
+  read, and an empty list is exactly why the stop gate lets Stop through. A
+  permissions problem, a lock, or a clobbered directory therefore disarmed the
+  gate without a word.
+
+  `listJobs` is unchanged. Making it throw would turn a read failure into a
+  crash at fourteen call sites, and for thirteen of them the merge is right — a
+  status listing with nothing to show reads the same either way. Only the gate
+  treats "no jobs" as a licence to skip, so only the gate asks the new
+  `jobStoreUnreadableReason`, and only on the path where the answer changes
+  anything. It still fails open; it now says why, in the same shape as the
+  review-failure warning beside it.
+
+  ENOENT is deliberately not a failure: the directory is created on first write,
+  so its absence is the ordinary state of a workspace that has run no jobs yet.
+  That carve-out has a test of its own, added because a mutation proved nothing
+  else covered it — the neighbouring no-warning test seeds a job, and seeding is
+  what creates the directory. Without it, the new warning would fire on every
+  Stop for anyone who had not used the plugin yet.
+
+  The unreadable case is reproduced portably by putting a file where the jobs
+  directory belongs: readdir answers ENOTDIR everywhere, where a chmod does
+  nothing on Windows.
 - **A degraded adversarial review now says why the engine dropped out.** With
   `--engines gemini,agy` and a sub-floor AGY, the warning read `unavailable:
   agy.` and stopped there — the refusal that names `agy update` was caught and
