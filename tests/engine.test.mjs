@@ -10,10 +10,9 @@ import {
   mapEffortToModel,
   buildCliArgs,
   detectEngine,
-  supportsAgyModelSelection,
-  supportsAgySlashCommandOptOut,
-  supportsAgyStdinPrompt,
-  supportsAgyStructuredOutput
+  agyMeetsFloor,
+  agyFloorRefusal,
+  AGY_MINIMUM_VERSION
 } from "../plugins/gemini/scripts/lib/engine.mjs";
 
 // These two IDs return 404 ModelNotFound on the gemini CLI (verified 0.44.1).
@@ -62,7 +61,7 @@ test("unknown / explicit model strings pass through unchanged", () => {
 test("detectEngine fails closed when agy resolves only to a bare non-.exe path", () => {
   assert.throws(
     () => detectEngine("agy", { resolveBinaryPathImpl: () => "agy.cmd" }),
-    /AGY could not be resolved to an executable \.exe path; the plugin refuses to spawn it via the shell to avoid argv injection on Windows\./
+    /AGY resolved to a path that is not an executable \.exe; the plugin refuses to spawn it via the shell to avoid argv injection on Windows\./
   );
 });
 
@@ -70,42 +69,149 @@ test("detectEngine fails closed when agy resolves only to an absolute .cmd shim 
   // An absolute .cmd path would still re-enter cmd.exe on pre-patch Node even
   // under shell:false, so requireExe must reject it, not just bare names.
   assert.throws(
-    () => detectEngine("agy", { resolveBinaryPathImpl: () => (process.platform === "win32" ? "C:\\tools\\agy.cmd" : null) }),
-    /AGY could not be resolved to an executable \.exe path/
+    // Returned on every platform: the point is that requireExe rejects a .cmd,
+    // and on POSIX this path is simply not absolute, which fails the same way.
+    () => detectEngine("agy", { resolveBinaryPathImpl: () => "C:\\tools\\agy.cmd" }),
+    /AGY resolved to a path that is not an executable \.exe/
   );
 });
 
-test("AGY stdin prompt capability begins at stable 1.1.2 and fails closed for unknown versions", () => {
-  assert.equal(supportsAgyStdinPrompt("1.1.1"), false);
-  assert.equal(supportsAgyStdinPrompt("agy 1.1.1"), false);
-  assert.equal(supportsAgyStdinPrompt("1.1.2-beta.1"), false);
-  assert.equal(supportsAgyStdinPrompt("unknown"), false);
-  assert.equal(supportsAgyStdinPrompt("1.1.2"), true);
-  assert.equal(supportsAgyStdinPrompt("agy version 1.2.0"), true);
-  assert.equal(supportsAgyStdinPrompt("2.0.0"), true);
+// The seven capability gates became one floor. What the gates encoded is now a
+// prerequisite, so the only questions left are: is this version old enough to
+// refuse, new enough to run, or unreadable — which is a third answer, not a
+// synonym for "too old".
+test("the AGY floor refuses the version below it and accepts the floor itself", () => {
+  assert.equal(agyMeetsFloor("1.1.11"), "too-old");
+  assert.equal(agyMeetsFloor("agy 1.1.9"), "too-old");
+  assert.equal(agyMeetsFloor("1.1.2"), "too-old");
+  assert.equal(agyMeetsFloor(AGY_MINIMUM_VERSION), "ok");
+  assert.equal(agyMeetsFloor("agy version 1.2.0"), "ok");
+  assert.equal(agyMeetsFloor("2.0.0"), "ok");
 });
 
-// 1.1.5 through 1.1.9 accept --model/--effort but drop them in headless runs
-// (fixed in AGY 1.1.10), so those versions must not be reported as supported.
-test("AGY model and effort selection begins at stable 1.1.10", () => {
-  assert.equal(supportsAgyModelSelection("1.1.4"), false);
-  assert.equal(supportsAgyModelSelection("agy 1.1.5"), false);
-  assert.equal(supportsAgyModelSelection("1.1.9"), false);
-  assert.equal(supportsAgyModelSelection("1.1.10-beta.1"), false);
-  assert.equal(supportsAgyModelSelection("unknown"), false);
-  assert.equal(supportsAgyModelSelection("agy 1.1.10"), true);
-  assert.equal(supportsAgyModelSelection("1.2.0"), true);
-  assert.equal(supportsAgyModelSelection("2.0.0"), true);
+// A prerelease of the floor is not the floor: the released behaviour is what was
+// measured. Same rule the gates used.
+test("a prerelease of the floor version is still too old", () => {
+  assert.equal(agyMeetsFloor("1.1.12-rc.1"), "too-old");
+  assert.equal(agyMeetsFloor("1.1.12-beta.1"), "too-old");
 });
 
-test("AGY slash-command opt-out begins at stable 1.1.9", () => {
-  assert.equal(supportsAgySlashCommandOptOut("1.1.8"), false);
-  assert.equal(supportsAgySlashCommandOptOut("1.1.9-rc.1"), false);
-  assert.equal(supportsAgySlashCommandOptOut("unknown"), false);
-  assert.equal(supportsAgySlashCommandOptOut(null), false);
-  assert.equal(supportsAgySlashCommandOptOut("agy 1.1.9"), true);
-  assert.equal(supportsAgySlashCommandOptOut("1.1.10"), true);
-  assert.equal(supportsAgySlashCommandOptOut("2.0.0"), true);
+// The asymmetry is deliberate and is the whole reason this returns three states:
+// refusing on an unreadable version would turn one upstream change to the shape
+// of `agy --version` into an outage for every user at once.
+test("an unreadable version is reported as unreadable, never as too old", () => {
+  for (const version of ["unknown", "", null, undefined, "antigravity (build 8812)"]) {
+    assert.equal(agyMeetsFloor(version), "unreadable", `version ${String(version)}`);
+  }
+});
+
+// A two-segment version is decidable, so it must be decided. Reported by
+// adversarial review: "1.1" fell through the three-segment regex and was waved
+// through as unreadable, which let a version unambiguously below the floor run.
+test("a two-segment version is refused, not treated as unreadable", () => {
+  assert.equal(agyMeetsFloor("1.1"), "too-old");
+  assert.equal(agyMeetsFloor("1.0"), "too-old");
+  assert.equal(agyMeetsFloor("agy 1.1"), "too-old");
+  assert.equal(agyMeetsFloor("1.2"), "ok");
+  assert.equal(agyMeetsFloor("2.0"), "ok");
+});
+
+// The floor is only worth anything where it is enforced. These assert through
+// detectEngine rather than the predicate, because that is the seam every
+// command passes and the predicate is not.
+test("detectEngine refuses an AGY below the floor and names the fix", () => {
+  const absolute = process.platform === "win32" ? "C:/fake/agy.exe" : "/fake/agy";
+  for (const version of ["1.1.9", "1.1.11", "1.1"]) {
+    assert.throws(
+      () => detectEngine("agy", {
+        binaryAvailableImpl: () => ({ available: true, detail: version }),
+        resolveBinaryPathImpl: () => absolute
+      }),
+      /older than this plugin supports[\s\S]*agy update/,
+      `AGY ${version} must be refused`
+    );
+  }
+});
+
+test("detectEngine runs a supported AGY, and flags an unreadable version instead of refusing", () => {
+  const absolute = process.platform === "win32" ? "C:/fake/agy.exe" : "/fake/agy";
+  const detect = (detail) => detectEngine("agy", {
+    binaryAvailableImpl: () => ({ available: true, detail }),
+    resolveBinaryPathImpl: () => absolute
+  });
+
+  assert.equal(detect(AGY_MINIMUM_VERSION).versionUnverified, false);
+  assert.equal(detect("1.1.24").versionUnverified, false);
+  const odd = detect("antigravity (build 8812)");
+  assert.equal(odd.engine, "agy");
+  assert.equal(odd.versionUnverified, true);
+});
+
+// A version string is not a bag of numbers. Both of these were reported by
+// adversarial review as misreadings of the unanchored match: the first was
+// certified as AGY 18.2.1, the second refused as 1.1. Unreadable is the right
+// answer for both, because unreadable fails open and a wrong reading does not.
+test("a number in build metadata is not mistaken for the AGY version", () => {
+  assert.equal(agyMeetsFloor("antigravity (node 18.2.1)"), "unreadable");
+  assert.equal(agyMeetsFloor("agy 2 (build 1.1)"), "unreadable");
+  assert.equal(agyMeetsFloor("built from 99.9.9 sources"), "unreadable");
+});
+
+// The shapes AGY actually prints. 1.1.25 answers `--version` with a bare
+// version; the test stand-in prefixes it. Both must be read, or the floor is
+// enforced against nobody.
+test("the versions AGY really prints are read, prefix or none", () => {
+  assert.equal(agyMeetsFloor("1.1.25"), "ok");
+  assert.equal(agyMeetsFloor("agy 1.1.24"), "ok");
+  assert.equal(agyMeetsFloor("v1.1.24"), "ok");
+  assert.equal(agyMeetsFloor("antigravity 1.1.24"), "ok");
+});
+
+// `1.0.x` is unambiguously below the floor even though its patch is a wildcard,
+// and a prerelease of the floor itself is not the floor.
+test("a wildcard patch is still decidable, and a prerelease is still not the release", () => {
+  assert.equal(agyMeetsFloor("1.0.x"), "too-old");
+  assert.equal(agyMeetsFloor(`${AGY_MINIMUM_VERSION}-rc.1`), "too-old");
+});
+
+// Under auto, this refusal is reached *because* gemini had no usable
+// credential, so telling the user to switch to gemini sends them into a second
+// failure. The explicit route keeps that suggestion, because there it works.
+test("the auto refusal does not offer gemini as the way out", () => {
+  const absolute = process.platform === "win32" ? "C:/fake/agy.exe" : "/fake/agy";
+  let autoMessage = "";
+  try {
+    detectEngine("auto", {
+      binaryAvailableImpl: (binary) =>
+        String(binary).includes("gemini")
+          ? { available: true, detail: "0.53.1" }
+          : { available: true, detail: "1.1.9" },
+      hasGeminiCredentialsImpl: () => false,
+      resolveBinaryPathImpl: () => absolute
+    });
+    assert.fail("a sub-floor AGY under auto must be refused");
+  } catch (error) {
+    autoMessage = error.message;
+  }
+  assert.match(autoMessage, /agy update/);
+  assert.match(autoMessage, /no usable credential either/);
+  assert.doesNotMatch(autoMessage, /or use `--engine gemini`/);
+
+  assert.match(agyFloorRefusal("1.1.9"), /or use `--engine gemini`/);
+});
+
+test("the refusal names the detected version, the floor, and the fix", () => {
+  const message = agyFloorRefusal("1.1.9");
+  assert.match(message, /1\.1\.9/);
+  // Substring, not a regex built from the constant: hand-escaping a version
+  // string for a pattern adds an escaping bug to guard against
+  // (CodeQL js/incomplete-sanitization) and buys nothing over a plain
+  // containment check.
+  assert.ok(
+    message.includes(AGY_MINIMUM_VERSION),
+    `the refusal must name the floor ${AGY_MINIMUM_VERSION}: ${message}`
+  );
+  assert.match(message, /agy update/);
 });
 
 test("AGY requires an exact model ID and preserves safe explicit IDs", () => {
@@ -121,37 +227,22 @@ test("AGY accepts only its documented effort levels", () => {
   assert.throws(() => normalizeAgyEffort("xhigh"), /AGY supports --effort values/);
 });
 
-test("agy positional prompt rejects NUL bytes before argv construction", () => {
-  assert.throws(
-    () => buildCliArgs("agy", { prompt: "hello\0world" }),
-    (error) => error.failure?.category === "prompt-too-long" && /NUL/i.test(error.message)
-  );
-});
-
-test("agy positional prompt rejects prompts above the safe Windows argv limit", () => {
-  assert.throws(
-    () => buildCliArgs("agy", { prompt: "x".repeat(24_001) }),
-    (error) => error.failure?.category === "prompt-too-long" && /24,000|24000/.test(error.message)
-  );
-});
-
-// The advice for these two lives at the throw site, not in the DEFAULTS table, so a
-// rewrite of the default cannot reach it -- and a test against the default cannot
-// catch a regression in it. Pinned where it is produced. The wording is engine-named
-// on purpose and correct here: this path runs only when AGY takes the prompt as a
-// command-line argument, which is AGY older than 1.1.2, and gemini genuinely is the
-// way out of it.
-test("the argv-limit advice names the escape it actually has", () => {
-  for (const prompt of ["hello\u0000world", "x".repeat(24_001)]) {
-    assert.throws(
-      () => buildCliArgs("agy", { prompt }),
-      (error) => {
-        assert.equal(error.failure?.category, "prompt-too-long");
-        assert.match(error.failure.nextStep, /--engine gemini/, "gemini is the way off the argv path");
-        assert.match(error.failure.nextStep, /stdin/, "and the reason it works is stated");
-        return true;
-      }
+// These three used to assert a preflight that refused a NUL byte or a prompt
+// above 24,000 characters before argv was built. That preflight guarded the
+// positional prompt, which the AGY floor retired: the prompt is piped on stdin
+// on every path, so the guard protected nothing and only a test could reach it.
+// What replaces them is the property that made the guard unnecessary — a prompt
+// no argv could carry is never put in argv, whatever is in it.
+test("no prompt reaches argv, however long or however hostile", () => {
+  for (const prompt of ["hello\u0000world", "x".repeat(24_001), "/quota"]) {
+    const args = buildCliArgs("agy", { prompt, outputJson: true });
+    assert.ok(!args.includes(prompt), "the prompt itself must not be an argument");
+    assert.ok(!args.includes("--print"), "--print would consume the next flag as its prompt");
+    assert.ok(
+      args.every((arg) => !arg.includes("\u0000")),
+      "nothing derived from the prompt may carry a NUL into argv"
     );
+    assert.ok(args.includes("--disable-slash-commands"), "a prompt that looks like a slash command stays text");
   }
 });
 
@@ -159,7 +250,6 @@ test("AGY stdin mode omits --print and prompt while preserving execution flags",
   const prompt = "x".repeat(24_001);
   const args = buildCliArgs("agy", {
     prompt,
-    useStdin: true,
     write: true,
     timeoutMs: 105_000
   });
@@ -172,12 +262,15 @@ test("AGY stdin mode omits --print and prompt while preserving execution flags",
 });
 
 test("AGY forwards an explicit model ID or effort as literal argv", () => {
-  const modelArgs = buildCliArgs("agy", { prompt: "hello", useStdin: true, model: "gemini-3.6-flash-high" });
-  const effortArgs = buildCliArgs("agy", { prompt: "hello", useStdin: true, effort: "high" });
-  assert.deepEqual(modelArgs.slice(0, 2), ["--model", "gemini-3.6-flash-high"]);
-  assert.deepEqual(effortArgs.slice(0, 2), ["--effort", "high"]);
+  const modelArgs = buildCliArgs("agy", { prompt: "hello", model: "gemini-3.6-flash-high" });
+  const effortArgs = buildCliArgs("agy", { prompt: "hello", effort: "high" });
+  // By position of the flag, not by position in argv: --disable-slash-commands is
+  // unconditional since the version floor, so a slice(0, 2) here was asserting
+  // where the flag sits rather than that it carries its value.
+  assert.deepEqual(modelArgs.slice(modelArgs.indexOf("--model"), modelArgs.indexOf("--model") + 2), ["--model", "gemini-3.6-flash-high"]);
+  assert.deepEqual(effortArgs.slice(effortArgs.indexOf("--effort"), effortArgs.indexOf("--effort") + 2), ["--effort", "high"]);
   assert.throws(
-    () => buildCliArgs("agy", { prompt: "hello", useStdin: true, model: "gemini-3.6-flash-high", effort: "high" }),
+    () => buildCliArgs("agy", { prompt: "hello", model: "gemini-3.6-flash-high", effort: "high" }),
     /cannot combine --model with --effort/
   );
 });
@@ -185,42 +278,27 @@ test("AGY forwards an explicit model ID or effort as literal argv", () => {
 // AGY 1.1.9+ expands slash commands and skills in print mode. Task prompts are
 // raw user text at position 0, so "/clear the cache logic" would run AGY's
 // /clear instead of being read as instructions.
-test("agy opts out of print-mode slash expansion on 1.1.9 and newer", () => {
-  const modern = buildCliArgs("agy", { prompt: "/clear the cache logic", useStdin: true, agyVersion: "1.1.10" });
-  assert.ok(modern.includes("--disable-slash-commands"));
-});
-
-test("agy omits the slash opt-out where the flag does not exist", () => {
-  for (const agyVersion of ["1.1.8", null, "unknown"]) {
-    const args = buildCliArgs("agy", { prompt: "hello", useStdin: true, agyVersion });
-    assert.ok(
-      !args.includes("--disable-slash-commands"),
-      `AGY ${agyVersion} predates --disable-slash-commands and must not receive it`
-    );
+test("agy always opts out of print-mode slash expansion", () => {
+  // Unconditional since the floor: a prompt beginning with "/" is user text, and
+  // every supported AGY understands the flag that says so. The version is passed
+  // here only to prove it no longer decides.
+  for (const agyVersion of ["1.1.12", "1.1.24", null, "unknown"]) {
+    const args = buildCliArgs("agy", { prompt: "/clear the cache logic", agyVersion });
+    assert.ok(args.includes("--disable-slash-commands"), `AGY ${agyVersion} must still receive the opt-out`);
   }
 });
 
-test("AGY structured output begins at stable 1.1.8", () => {
-  assert.equal(supportsAgyStructuredOutput("1.1.7"), false);
-  assert.equal(supportsAgyStructuredOutput("1.1.8-rc.1"), false);
-  assert.equal(supportsAgyStructuredOutput("unknown"), false);
-  assert.equal(supportsAgyStructuredOutput(null), false);
-  assert.equal(supportsAgyStructuredOutput("agy 1.1.8"), true);
-  assert.equal(supportsAgyStructuredOutput("1.1.10"), true);
-  assert.equal(supportsAgyStructuredOutput("2.0.0"), true);
-});
-
-test("agy requests the JSON envelope only where the flag exists", () => {
-  const modern = buildCliArgs("agy", { prompt: "hello", useStdin: true, outputJson: true, agyVersion: "1.1.10" });
-  assert.deepEqual(modern.slice(modern.indexOf("--output-format"), modern.indexOf("--output-format") + 2), ["--output-format", "json"]);
-
-  for (const agyVersion of ["1.1.7", null, "unknown"]) {
-    const args = buildCliArgs("agy", { prompt: "hello", useStdin: true, outputJson: true, agyVersion });
-    assert.ok(!args.includes("--output-format"), `AGY ${agyVersion} predates --output-format and must not receive it`);
+test("agy asks for stream-json whenever structured output is requested", () => {
+  // stream-json, not json: it is a superset, and it is what makes a run killed
+  // mid-answer report how far it got. Unconditional since the floor.
+  for (const agyVersion of ["1.1.12", "1.1.24", null, "unknown"]) {
+    const args = buildCliArgs("agy", { prompt: "hello", outputJson: true, agyVersion });
+    const at = args.indexOf("--output-format");
+    assert.deepEqual(args.slice(at, at + 2), ["--output-format", "stream-json"], `AGY ${agyVersion}`);
   }
 
   // Never requested when the caller did not ask for structured output.
-  const plain = buildCliArgs("agy", { prompt: "hello", useStdin: true, agyVersion: "1.1.10" });
+  const plain = buildCliArgs("agy", { prompt: "hello", agyVersion: "1.1.24" });
   assert.ok(!plain.includes("--output-format"));
 });
 
@@ -317,12 +395,13 @@ test("agy resumed turn keeps its original workspace rather than being re-oriente
   assert.ok(!args.includes("--new-project"));
 });
 
-// Gated at the only version the flag was exercised on. An older AGY keeps the
-// previous (unoriented) behavior rather than being handed a flag it may reject.
-test("--add-dir is withheld from AGY versions it was not verified on", () => {
-  for (const agyVersion of ["1.1.9", "1.1.10-beta.1", "unknown", null]) {
+test("--add-dir orients a read-only turn on every supported AGY", () => {
+  // Was gated at 1.1.10, the only version it had been exercised on. The floor is
+  // above that, so an unoriented read-only turn — which reported agy's scratch
+  // dir as "here" and missed every relative path — is no longer reachable.
+  for (const agyVersion of ["1.1.12", "1.1.24", "unknown", null]) {
     const args = buildCliArgs("agy", { prompt: "hello", workspaceDir: "C:/repo", agyVersion });
-    assert.ok(!args.includes("--add-dir"), `--add-dir leaked to AGY ${agyVersion}`);
+    assert.ok(args.includes("--add-dir"), `--add-dir missing for AGY ${agyVersion}`);
   }
 });
 
@@ -335,8 +414,8 @@ test("no workspace dir means no --add-dir, whatever the version", () => {
 // no counterpart there and must not appear.
 test("the gemini engine never receives --add-dir", () => {
   for (const options of [
-    { prompt: "hello", useStdin: true, workspaceDir: "C:/repo" },
-    { prompt: "hello", useStdin: true, workspaceDir: "C:/repo", write: true }
+    { prompt: "hello", workspaceDir: "C:/repo" },
+    { prompt: "hello", workspaceDir: "C:/repo", write: true }
   ]) {
     assert.ok(!buildCliArgs("gemini", options).includes("--add-dir"));
   }
@@ -351,7 +430,7 @@ test("no agy turn passes --dangerously-skip-permissions", () => {
     { prompt: "hello" },
     { prompt: "hello", write: true },
     { prompt: "hello", write: true, resumeLast: true, resumeThreadId: "conv-abc" },
-    { prompt: "hello", write: true, useStdin: true, agyVersion: "1.1.10" }
+    { prompt: "hello", write: true, agyVersion: "1.1.10" }
   ]) {
     const args = buildCliArgs("agy", options);
     assert.ok(
@@ -376,8 +455,8 @@ test("no agy turn passes --sandbox, which is not a path boundary", () => {
 // offered no write or shell tools at all. Pinned in both directions so neither
 // half is dropped by analogy with the agy path.
 test("gemini write turn passes --yolo and a read-only turn does not", () => {
-  assert.ok(buildCliArgs("gemini", { prompt: "hello", write: true, useStdin: true }).includes("--yolo"));
-  assert.ok(!buildCliArgs("gemini", { prompt: "hello", useStdin: true }).includes("--yolo"));
+  assert.ok(buildCliArgs("gemini", { prompt: "hello", write: true }).includes("--yolo"));
+  assert.ok(!buildCliArgs("gemini", { prompt: "hello" }).includes("--yolo"));
 });
 
 // --approval-mode plan does run headless over stdin, but it re-declares
@@ -386,16 +465,63 @@ test("gemini write turn passes --yolo and a read-only turn does not", () => {
 // read-only shape. Pinned so plan mode is not adopted for sounding safer.
 test("no gemini turn passes --approval-mode, which weakens the read-only shape", () => {
   for (const options of [
-    { prompt: "hello", useStdin: true },
-    { prompt: "hello", useStdin: true, write: true },
-    { prompt: "hello", useStdin: true, outputJson: true },
-    { prompt: "hello", useStdin: true, resumeLast: true }
+    { prompt: "hello" },
+    { prompt: "hello", write: true },
+    { prompt: "hello", outputJson: true },
+    { prompt: "hello", resumeLast: true }
   ]) {
     assert.ok(
       !buildCliArgs("gemini", options).includes("--approval-mode"),
       `flag appeared for ${JSON.stringify(options)}`
     );
   }
+});
+
+// Three different problems used to share one message, and on Windows the only
+// one a user was likely to hit — AGY simply not installed — was answered with a
+// lecture about argv injection, because path resolution throws before the
+// friendly "not available" line is reached. Each case now says its own thing.
+test("a missing AGY is reported as missing, not as a security refusal", () => {
+  assert.throws(
+    () => detectEngine("agy", {
+      resolveBinaryPathImpl: () => null,
+      binaryAvailableImpl: () => ({ available: false })
+    }),
+    (error) => {
+      assert.match(error.message, /no `agy` binary was found on PATH/);
+      assert.match(error.message, /install\.sh/);
+      assert.doesNotMatch(error.message, /argv injection/);
+      return true;
+    }
+  );
+});
+
+// The security refusal keeps its own case: agy IS installed, and resolves to
+// something the plugin will not hand to a shell (CVE-2024-27980).
+test("an AGY that resolves to a non-.exe still gets the security refusal", () => {
+  assert.throws(
+    () => detectEngine("agy", {
+      resolveBinaryPathImpl: (_binary, options) => (options?.requireExe ? null : "C:/npm/agy.cmd"),
+      binaryAvailableImpl: () => ({ available: true, detail: "1.1.25" })
+    }),
+    /not an executable \.exe[\s\S]*argv injection/
+  );
+});
+
+// The resolved path has to be absolute *and*, on Windows, an .exe — both are
+// platform judgements, so a Windows-shaped literal here fails the absolute test
+// on POSIX and throws the not-an-executable refusal instead of the one under
+// test. Shape the fixture like the platform it runs on.
+const RESOLVED_AGY_PATH = process.platform === "win32" ? "C:/tools/agy.exe" : "/usr/local/bin/agy";
+
+test("an AGY that resolves but cannot run names the path and what it said", () => {
+  assert.throws(
+    () => detectEngine("agy", {
+      resolveBinaryPathImpl: () => RESOLVED_AGY_PATH,
+      binaryAvailableImpl: () => ({ available: false, detail: "exit 127" })
+    }),
+    new RegExp(`found at ${RESOLVED_AGY_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} but could not run: exit 127`)
+  );
 });
 
 // --- auto routing ---
@@ -423,12 +549,37 @@ test("auto prefers gemini when it is installed and has a credential", () => {
 
 test("auto falls through to AGY when gemini is installed but unauthenticated", () => {
   const info = detectEngine("auto", {
-    binaryAvailableImpl: stubBinaries({ gemini: AVAILABLE, agy: { available: true, detail: "1.1.10" } }),
+    binaryAvailableImpl: stubBinaries({ gemini: AVAILABLE, agy: { available: true, detail: "1.1.24" } }),
     hasGeminiCredentialsImpl: () => false,
     resolveBinaryPathImpl: () => "/fake/agy.exe"
   });
   assert.equal(info.engine, "agy");
-  assert.equal(info.version, "1.1.10");
+  assert.equal(info.version, "1.1.24");
+});
+
+// The floor belongs to the engine that runs, not to how it was picked. Under
+// `auto` an unsupported AGY is not a soft fallback: gemini has already been
+// ruled out, so it is the engine, and it must be refused by name rather than run
+// with --model silently dropped.
+test("auto refuses an unsupported AGY instead of quietly routing to it", () => {
+  assert.throws(
+    () => detectEngine("auto", {
+      binaryAvailableImpl: stubBinaries({ gemini: AVAILABLE, agy: { available: true, detail: "1.1.9" } }),
+      hasGeminiCredentialsImpl: () => false,
+      resolveBinaryPathImpl: () => "/fake/agy.exe"
+    }),
+    /1\.1\.9 is older than this plugin supports[\s\S]*agy update/
+  );
+});
+
+test("auto flags an unreadable AGY version rather than refusing it", () => {
+  const info = detectEngine("auto", {
+    binaryAvailableImpl: stubBinaries({ gemini: AVAILABLE, agy: { available: true, detail: "antigravity (build 8812)" } }),
+    hasGeminiCredentialsImpl: () => false,
+    resolveBinaryPathImpl: () => "/fake/agy.exe"
+  });
+  assert.equal(info.engine, "agy");
+  assert.equal(info.versionUnverified, true);
 });
 
 test("auto reports the credential problem when gemini is the only engine present", () => {
@@ -450,6 +601,42 @@ test("auto keeps the plain not-installed message when neither engine is present"
       resolveBinaryPathImpl: () => "/fake/agy.exe"
     }),
     /No Gemini or AGY engine found/
+  );
+});
+
+// `auto` used to swallow every resolution failure alike, which turned a refusal
+// into a denial: an npm-installed `agy.cmd` on Windows resolves, is rejected on
+// purpose, and the user was told no AGY binary was found — advised to install
+// what they already had. Absence stays swallowed; a refusal is now spoken.
+// `requireExe` is what the two fixtures below differ on, because that is exactly
+// what the real resolver asks and what a .cmd fails.
+const AGY_CMD_ONLY = (_binary, options) => (options?.requireExe ? null : "C:/npm/agy.cmd");
+
+test("auto names the AGY it refused to spawn instead of calling it missing", () => {
+  assert.throws(
+    () => detectEngine("auto", {
+      binaryAvailableImpl: stubBinaries({ gemini: AVAILABLE, agy: MISSING }),
+      hasGeminiCredentialsImpl: () => false,
+      resolveBinaryPathImpl: AGY_CMD_ONLY
+    }),
+    (error) => {
+      assert.match(error.message, /not an executable \.exe[\s\S]*argv injection/, "the refusal is stated");
+      assert.match(error.message, /no usable credential/, "and so is why gemini is not the way out");
+      assert.doesNotMatch(error.message, /no AGY binary was found/, "an installed AGY must not be called missing");
+      assert.doesNotMatch(error.message, /use --engine gemini/, "gemini has no credential, so it is not an escape");
+      return true;
+    }
+  );
+});
+
+test("auto with no gemini at all says so alongside the AGY refusal", () => {
+  assert.throws(
+    () => detectEngine("auto", {
+      binaryAvailableImpl: stubBinaries({}),
+      hasGeminiCredentialsImpl: () => false,
+      resolveBinaryPathImpl: AGY_CMD_ONLY
+    }),
+    /not an executable \.exe[\s\S]*Gemini CLI is not installed either/
   );
 });
 

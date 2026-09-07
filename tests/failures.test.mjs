@@ -79,6 +79,15 @@ test("classifyCliFailure identifies timeout failures", () => {
   assert.equal(failure.retryable, true);
 });
 
+// Issue #153: the advice pointed away from the fix. Three runs were spent
+// narrowing the scope, which the measurements showed does not help, before the
+// budget itself turned out to be what was too small, and `--timeout`, the flag
+// that raises it, was the one thing the message never named.
+test("a timeout's next step names the flag that raises the budget", () => {
+  const failure = classifyCliFailure({ error: Object.assign(new Error("spawn timed out"), { code: "ETIMEDOUT" }) });
+  assert.match(failure.nextStep, /--timeout/, `the fix must be named: ${failure.nextStep}`);
+});
+
 test("classifyCliFailure identifies model-unavailable failures", () => {
   const failure = classifyCliFailure({ stderr: "ModelNotFoundError: Requested entity was not found. code: 404" });
   assert.equal(failure.category, "model-unavailable");
@@ -117,11 +126,15 @@ test("classifyCliFailure identifies transcript recovery failures", () => {
   assert.equal(classifyCliFailure({ transcriptReason: "2 new dirs appeared; picked newest by mtime" }).category, "transcript-ambiguous");
 });
 
-test("classifyCliFailure identifies prompt-too-long preflight failures", () => {
-  const failure = classifyCliFailure({ promptTooLong: true, engine: "agy" });
+// Driven by what an engine says, because that is the only way in now: the
+// preflight that set a `promptTooLong` flag was deleted with the positional
+// prompt path, so a flag-driven test would have pinned a caller that no longer
+// exists.
+test("classifyCliFailure identifies a prompt the model cannot accept", () => {
+  const failure = classifyCliFailure({ stderr: "Error: prompt is too long for this model", engine: "agy" });
   assert.equal(failure.category, "prompt-too-long");
   assert.equal(failure.retryable, false);
-  assert.match(failure.nextStep, /shorten|gemini/i);
+  assert.match(failure.nextStep, /shorten|narrow|split/i);
 });
 
 // Verbatim wording from a live AGY run. The exit status is 0 and stdout is
@@ -230,12 +243,12 @@ test("advice for an AGY-only condition stays AGY-only", () => {
   }
 });
 
-// An earlier attempt at this rewrote the default to describe AGY argv handling, on
-// the assumption that the argv cases reach it. They do not: assertAgyPromptSafe
-// throws with its own nextStep and normalizeFailure prefers an explicit one, so the
-// only traffic here is the text-matched arm -- `context length`, `token limit` -- a
-// model's context window, most often gemini's. Those users were handed a paragraph
-// about AGY versions. What is pinned is that this default names no engine at all.
+// An earlier attempt at this rewrote the default to describe AGY argv handling,
+// on the assumption that the argv cases reach it. They never did, and now there
+// are no argv cases at all: the traffic here is the text-matched arm --
+// `context length`, `token limit` -- a model's context window, most often
+// gemini's. Those users were handed a paragraph about AGY versions. What is
+// pinned is that this default names no engine at all.
 test("the default prompt-too-long advice belongs to no engine", () => {
   const failure = classifyCliFailure({ stderr: "Error: context length exceeded for the model" });
   assert.equal(failure.category, "prompt-too-long");

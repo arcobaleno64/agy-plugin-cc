@@ -70,7 +70,7 @@ Probed on this machine (gemini CLI **0.44.1**, then-current on npm), 2026-06-02:
 | **`gemini-3.5-pro`** | ❌ **404** | Not served by this CLI version in this probe |
 
 - **AGY (antigravity 1.0.4)** exposed **no `--model`/`--effort`** flag in the original 2026-06-02 probe. By 2026-07-06, local AGY 1.0.16 exposed `--model` and `agy models`.
-  **Superseded since — current behavior (verified on AGY 1.1.12, 2026-08-12):** the plugin forwards both. `--effort <low|medium|high>` is passed to AGY natively, and `--model` is passed through as an exact AGY model id from `agy models`. What it still does *not* do is translate Gemini aliases into AGY ids — `flash` and `pro` are Gemini aliases only — and the two flags cannot be combined, because the AGY model ids reject the pairing. See `supportsAgyModelSelection` (gated at 1.1.10, the first version that applies the selection instead of silently falling back to the persisted model).
+  **Superseded since — current behavior (verified on AGY 1.1.12, 2026-08-12):** the plugin forwards both. `--effort <low|medium|high>` is passed to AGY natively, and `--model` is passed through as an exact AGY model id from `agy models`. What it still does *not* do is translate Gemini aliases into AGY ids — `flash` and `pro` are Gemini aliases only — and the two flags cannot be combined, because the AGY model ids reject the pairing. The 1.1.10 gate that used to guard this is gone: below that version AGY accepted `--model`/`--effort` and then ignored them in headless runs, and the 1.1.12 floor now refuses those versions outright, so the selection is always applied rather than silently falling back to the persisted model.
 - **AGY's own model listing, read 2026-09-02 on AGY 1.1.24.** `agy models` returns 14 ids:
 
   | Family | Ids |

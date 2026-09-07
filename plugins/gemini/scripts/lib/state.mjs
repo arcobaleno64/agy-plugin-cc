@@ -251,6 +251,29 @@ function readJobEntry(jobFile) {
   }
 }
 
+// `listJobs` answers [] for two different situations: a store with no jobs in
+// it, and a store it could not read. For almost every caller that is the right
+// merge — a status listing with nothing to show reads the same either way, and
+// throwing would turn a permissions problem into a crash on fourteen call
+// sites. The stop gate is the exception. There, "no jobs" is the reason it lets
+// Stop through, so a directory it failed to read disarms the gate and says
+// nothing. This reports which of the two it was, without changing what
+// `listJobs` returns to anyone.
+//
+// A store that was never created is empty, not unreadable: the directory is made
+// on first write, so ENOENT is the ordinary state of a workspace that has run no
+// jobs yet.
+export function jobStoreUnreadableReason(cwd) {
+  const jobsDir = path.join(resolveStateDir(cwd), JOBS_DIR_NAME);
+  try {
+    fs.readdirSync(jobsDir);
+    return null;
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    return error?.code ? String(error.code) : String(error?.message ?? error);
+  }
+}
+
 export function listJobs(cwd) {
   // resolveStateDir shells out to git to find the workspace root, so resolve it
   // once for the whole call. `/gemini:status --wait` polls this every two

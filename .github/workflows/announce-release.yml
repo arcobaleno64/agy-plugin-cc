@@ -1,0 +1,61 @@
+name: Announce release
+# Drafts the social post for a release and stops there. It posts nothing and
+# holds no credential: this project releases a handful of times a year, so
+# automating the posting would buy back a couple of minutes annually in exchange
+# for two long-lived social tokens living permanently in this repository's
+# secrets. Threads is the worse of the two — its long-lived token expires after
+# ~60 days, and a workflow that runs six times a year would meet an expired one
+# almost every time, so keeping it alive needs a scheduled refresh job holding a
+# token that can *write* secrets. That is a higher-value credential than either
+# social account.
+#
+# Nothing here reads the release body. The text comes from the changelog in the
+# checkout, which is reviewed content, so the post cannot be steered by whoever
+# writes a release note.
+on:
+  release:
+    types: [published]
+  # So this can be exercised against a version that already exists, instead of
+  # having its first-ever run be a real release — the failure mode this repo has
+  # already been bitten by once.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to draft an announcement for, e.g. 0.25.0"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  draft:
+    # Prereleases are not announced. They are for people already watching the
+    # repository, who do not need to hear about it on a social account.
+    if: github.event_name != 'release' || github.event.release.prerelease == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: 22
+
+      - name: Draft the announcement
+        # The tag name is written by whoever pushes the tag, so it crosses into
+        # the job through the environment and is never interpolated into this
+        # script body. Same rule as release.yml's notes step.
+        env:
+          RAW_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.version }}
+        run: |
+          set -euo pipefail
+          version="${RAW_VERSION#v}"
+          node scripts/build-social-announcement.mjs "$version" | tee announcement.txt
+          {
+            echo "## Announcement draft for v${version}"
+            echo
+            echo "Copy one of these. Nothing has been posted."
+            echo
+            echo '```'
+            cat announcement.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

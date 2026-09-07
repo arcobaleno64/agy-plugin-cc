@@ -48,9 +48,9 @@ function enumSchema(values, defaultValue) {
   return { type: "string", enum: values, ...(defaultValue ? { default: defaultValue } : {}) };
 }
 
-// The AGY default is 2 minutes, and it is this plugin's number rather than AGY's
-// own (AGY defaults --print-timeout to 5m). It doubles as a ceiling on output
-// size: a turn that produces more than it can emit inside the window is killed,
+// Both engines default to 10 minutes. AGY's used to be 2, which was this
+// plugin's number rather than AGY's own; see the note on AGY_SPAWN_TIMEOUT_MS
+// for why it went. The budget doubles as a ceiling on output size: a turn that produces more than it can emit inside the window is killed,
 // which is what both 2026-08-17 timeout incidents actually hit. The CLI has
 // accepted `--timeout` since it was added; only the two surfaces a user reaches
 // it through did not offer it. Bounds come from the runtime constants so the
@@ -59,7 +59,7 @@ const timeoutSchema = () => ({
   type: "integer",
   minimum: MIN_TURN_TIMEOUT_SECONDS,
   maximum: MAX_TURN_TIMEOUT_SECONDS,
-  description: `Seconds this turn may run before it is killed (default 120 on AGY, 600 on Gemini CLI). Also a ceiling on how much output can be produced: raise it for large batches or deep reviews. ${MIN_TURN_TIMEOUT_SECONDS}-${MAX_TURN_TIMEOUT_SECONDS}.`
+  description: `Seconds this turn may run before it is killed (default 600 on both engines). Also a ceiling on how much output can be produced: raise it for large batches or deep reviews. ${MIN_TURN_TIMEOUT_SECONDS}-${MAX_TURN_TIMEOUT_SECONDS}.`
 });
 
 export const TOOLS = [
