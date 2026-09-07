@@ -7,7 +7,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { parseArgs, normalizeArgv } from "./lib/args.mjs";
-import { detectEngine, ENGINE_ENV, normalizeAgyEffort, normalizeAgyRequestedModel, normalizeRequestedModel, supportsAgyModelSelection, VALID_EFFORT_LEVELS } from "./lib/engine.mjs";
+import { agyFloorRefusal, agyMeetsFloor, AGY_MINIMUM_VERSION, AGY_VERSION_UNVERIFIED_NOTICE, detectEngine, ENGINE_ENV, normalizeAgyEffort, normalizeAgyRequestedModel, normalizeRequestedModel, VALID_EFFORT_LEVELS } from "./lib/engine.mjs";
 import { collectReviewContext, describeReviewTarget, ensureGitRepository, resolveReviewTarget } from "./lib/git.mjs";
 import { readStdinIfPiped } from "./lib/fs.mjs";
 import { binaryAvailable, terminateProcessTree } from "./lib/process.mjs";
@@ -371,14 +371,20 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
   // ready.
   const agyVerified = agyAuth.state === "verified";
   const agyLoggedOut = agyAuth.state === "logged-out";
+  // Asked whenever AGY is installed, not only when it is selected: under `auto`
+  // an unsupported AGY is still the engine this machine would route to when
+  // gemini has no working credential, and a report that called that "ready"
+  // would be wrong in exactly the case the user needed it to be right.
+  const agyFloor = agyStatus.available ? agyMeetsFloor(agyStatus.detail) : "unreadable";
+  const agyBelowFloor = agyStatus.available && agyFloor === "too-old";
   const ready =
-    engineKnown && nodeStatus.available && (agySelected ? agyVerified : geminiReady);
+    engineKnown && nodeStatus.available && (agySelected ? agyVerified && !agyBelowFloor : geminiReady);
   const readyState = !engineKnown
     ? "not-ready"
     : !nodeStatus.available
       ? "not-ready"
       : agySelected
-        ? !agyStatus.available || agyLoggedOut
+        ? !agyStatus.available || agyLoggedOut || agyBelowFloor
           ? "not-ready"
           : agyVerified
             ? "ready"
@@ -391,7 +397,7 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
             // routes to an available AGY when gemini's credential does not work.
             requestedEngine === "gemini" && geminiProbedLoggedOut
             ? "not-ready"
-            : agyAvailable
+            : agyAvailable && !agyBelowFloor
               ? "partial"
               : "not-ready";
 
@@ -405,6 +411,19 @@ export function buildSetupReport(cwd, actionsTaken = [], options = {}) {
     nextSteps.push(
       "AGY was requested via `--engine agy` but is not installed. Install it with `curl -fsSL https://antigravity.google/cli/install.sh | bash`, or drop `--engine agy` to use the default Gemini CLI."
     );
+  }
+  // The floor is a readiness fact, and setup is where a user asks whether this
+  // is ready. Saying it here means an unsupported AGY is named before the first
+  // command fails on it, rather than after.
+  // Only when AGY is the engine that would run. A sub-floor AGY sitting on PATH
+  // beside a working gemini is not the user's problem, and reporting it produced
+  // a self-contradicting report: readyState "ready" with a refusal in nextSteps
+  // telling them to update an engine they had not selected.
+  const agyWouldRun = agySelected || !geminiReady;
+  if (agyWouldRun && agyStatus.available && agyFloor === "too-old") {
+    nextSteps.push(agyFloorRefusal(agyStatus.detail, { geminiUsable: geminiReady }));
+  } else if (agyWouldRun && agyStatus.available && agyFloor === "unreadable") {
+    nextSteps.push(AGY_VERSION_UNVERIFIED_NOTICE);
   }
   if (agySelected && agyStatus.available && agyLoggedOut) {
     nextSteps.push(
@@ -1093,9 +1112,6 @@ function prepareEngineSelection(engineInfo, model, effort) {
   if (!requestedModel && !requestedEffort) return { model: requestedModel, effort: requestedEffort };
 
   if (engineInfo.engine === "agy") {
-    if (!supportsAgyModelSelection(engineInfo.version)) {
-      throw new Error(`AGY ${engineInfo.version} does not support --model/--effort. AGY 1.1.5 through 1.1.9 accept the flags but ignore them in headless runs. Upgrade to AGY 1.1.10 or newer, or select --engine gemini.`);
-    }
     const agyModel = normalizeAgyRequestedModel(requestedModel);
     const agyEffort = normalizeAgyEffort(requestedEffort);
     if (agyModel && agyEffort) {
@@ -1185,7 +1201,7 @@ export function dispatchAdversarialReview(request, {
   }
 
   const warning = unavailable.length > 0
-    ? `Adversarial review degraded to ${availableEngines.join(", ")}; unavailable: ${unavailable.map(({ engine }) => engine).join(", ")}.`
+    ? `Adversarial review degraded to ${availableEngines.join(", ")}; unavailable: ${unavailable.map(({ engine, error }) => `${engine} (${error})`).join("; ")}.`
     : null;
   if (warning) stderr.write(`${warning}\n`);
 

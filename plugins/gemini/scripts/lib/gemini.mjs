@@ -3,7 +3,19 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 
-import { buildCliArgs, detectEngine, ENGINE_ENV, formatAgyTimeout, mapEffortToModel, normalizeAgyEffort, normalizeAgyRequestedModel, normalizeRequestedModel, supportsAgyModelSelection, supportsAgyReadOnlySlashCommands, supportsAgyStdinPrompt, supportsAgyStructuredOutput } from "./engine.mjs";
+import { agyMeetsFloor, AGY_VERSION_UNVERIFIED_NOTICE, buildCliArgs, detectEngine, ENGINE_ENV, formatAgyTimeout, mapEffortToModel, normalizeAgyEffort, normalizeAgyRequestedModel, normalizeRequestedModel } from "./engine.mjs";
+
+// The floor fails open on a version it cannot read, which is only defensible if
+// the user is told the check did not happen. Said once per run through the
+// progress channel alone: createTrackedProgress already mirrors progress to
+// stderr for a foreground run and into the job log for a background one, so the
+// direct stderr write this used to add was a duplicate in the first case,
+// unrequested noise under --json, and discarded by the detached worker in the
+// third.
+function noticeUnverifiedAgy(engineInfo, onProgress) {
+  if (!engineInfo?.versionUnverified) return;
+  onProgress?.({ message: AGY_VERSION_UNVERIFIED_NOTICE, phase: "starting", engine: engineInfo.engine });
+}
 import { classifyCliFailure } from "./failures.mjs";
 import { binaryAvailable, runCommand } from "./process.mjs";
 import { resolveAgyBrainRoot, listConvDirs, recoverAgyResponse } from "./agy-transcript.mjs";
@@ -441,12 +453,10 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
   onProgress?.({ message: "Detecting engine...", phase: "starting" });
 
   const engineInfo = detectEngineFn(requestedEngine ?? null);
+  noticeUnverifiedAgy(engineInfo, onProgress);
 
   if (engineInfo.engine === "agy") {
     if (model || effort) {
-      if (!supportsAgyModelSelection(engineInfo.version)) {
-        throw new Error(`AGY ${engineInfo.version} does not support --model/--effort. AGY 1.1.5 through 1.1.9 accept the flags but ignore them in headless runs. Upgrade to AGY 1.1.10 or newer, or select --engine gemini.`);
-      }
       model = normalizeAgyRequestedModel(model);
       effort = normalizeAgyEffort(effort);
     }
@@ -457,24 +467,21 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
     model = normalizeRequestedModel(model) ?? model;
   }
 
-  // Gemini always uses stdin. AGY auto-enters print mode from stdin starting at
-  // 1.1.2; unknown/older versions keep the positional compatibility path.
-  const useStdin = engineInfo.engine === "gemini"
-    || (engineInfo.engine === "agy" && supportsAgyStdinPrompt(engineInfo.version));
-  const agyStructured = engineInfo.engine === "agy" && supportsAgyStructuredOutput(engineInfo.version);
-  const useJson = engineInfo.engine === "gemini" || agyStructured;
+  // Both engines take the prompt on stdin and answer in a JSON envelope. AGY
+  // has done so since 1.1.2 and 1.1.8 respectively, which the declared floor
+  // (AGY_MINIMUM_VERSION) now guarantees, so neither is conditional any more.
+  const agyStructured = engineInfo.engine === "agy";
+  const useJson = true;
   const spawnTimeoutMs = resolveSpawnTimeoutMs(engineInfo.engine, timeoutSeconds);
 
-  // AGY >=1.1.8 returns the response, conversation id, and terminal status in a
-  // stdout envelope. Older versions surface none of them reliably, so they need
-  // the conversation dirs snapshotted BEFORE the spawn to identify the new one
-  // afterwards.
-  //
-  // Structured runs snapshot too, even though they normally never read it: when
-  // the envelope is missing the turn has still run and been billed, and the
-  // transcript on disk is the only remaining copy of what it produced. Costs one
-  // readdir. Give agy's own --print-timeout a shorter window than the hard spawn
-  // kill either way, so agy self-terminates and flushes before SIGKILL.
+  // AGY returns the response, conversation id, and terminal status in a stdout
+  // envelope, so the transcript is no longer a source — but the snapshot stays,
+  // and this is the reason it survived the version floor: when agy is killed
+  // before it prints, the turn has still run and still been billed, and the
+  // transcript on disk is the only remaining copy of what it produced. That is
+  // a live path on current AGY, not a legacy one. Costs one readdir. Give agy's
+  // own --print-timeout a shorter window than the hard spawn kill so it
+  // self-terminates and flushes before SIGKILL.
   let agyBrainRoot = null;
   let agyBefore = null;
   let agyPrintTimeoutMs = spawnTimeoutMs;
@@ -493,7 +500,6 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
     resumeThreadId,
     timeoutMs: engineInfo.engine === "agy" ? agyPrintTimeoutMs : spawnTimeoutMs,
     agyVersion: engineInfo.version,
-    useStdin,
     outputJson: useJson,
     // Orients a read-only AGY turn on this repository. A write turn is already
     // oriented by --new-project; buildCliArgs picks between them.
@@ -509,7 +515,7 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
 
   const result = runCommandFn(engineInfo.binary, args, {
     cwd,
-    input: useStdin ? prompt : undefined,
+    input: prompt,
     maxBuffer: MAX_BUFFER,
     timeout: spawnTimeoutMs, // hard kill — grace-later than agy's --print-timeout
   });
@@ -537,10 +543,9 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
       write,
       resumeLast,
       timeoutMs: spawnTimeoutMs,
-      useStdin,
       outputJson: useJson,
     });
-    const fbResult = runCommandFn(engineInfo.binary, fbArgs, { cwd, input: useStdin ? prompt : undefined, maxBuffer: MAX_BUFFER, timeout: spawnTimeoutMs });
+    const fbResult = runCommandFn(engineInfo.binary, fbArgs, { cwd, input: prompt, maxBuffer: MAX_BUFFER, timeout: spawnTimeoutMs });
     rawStdout = stripAnsi(fbResult.stdout ?? "");
     rawStderr = stripAnsi(fbResult.stderr ?? "");
     exitCode = fbResult.status ?? (fbResult.error ? 1 : 0);
@@ -574,39 +579,6 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
     if (structured.streamed) finalMessage = structured.text ?? "";
     else if (structured.text) finalMessage = structured.text;
     partial = Boolean(structured.salvagedText);
-  } else if (engineInfo.engine === "agy") {
-    // Pre-1.1.8: recover the authoritative response and conversation id by
-    // diffing the transcript directories captured before/after the spawn.
-    const rec = recoverAgyResponse(agyBrainRoot, agyBefore);
-    if (!rec.response) {
-      if (exitCode === 0) exitCode = 1;
-      recoveryFailure = classifyCliFailure({
-        engine: engineInfo.engine,
-        status: exitCode,
-        signal: result.signal,
-        error: result.error,
-        stdout: rawStdout,
-        stderr: rawStderr,
-        transcriptReason: rec.reason,
-        noOutput: !finalMessage
-      });
-    } else {
-      recoveryFailure = rec.failure ?? null;
-      if (!rec.confident) {
-        process.stderr.write(`[gemini-companion] Warning: AGY transcript match is not certain (${rec.reason}). Verify the response corresponds to this run.\n`);
-      }
-      finalMessage = String(rec.response).trim();
-      threadId = rec.convDir ?? null; // agy conversation id — resume via --conversation <id>
-      reasoningSummary = rec.thinking ?? reasoningSummary;
-      // Success is defined by a completed transcript row, not the (often killed)
-      // exit code: agy frequently hangs until --print-timeout even on success.
-      if (rec.done) {
-        exitCode = 0;
-      } else {
-        if (exitCode === 0) exitCode = 1;
-        partial = true; // recovered but truncated
-      }
-    }
   } else if (useJson) {
     // For gemini engine with JSON output, extract response text and session_id
     const outer = tryParseJsonFromText(rawStdout);
@@ -701,16 +673,14 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
   // printed before detection runs: a review job queued under `auto` otherwise had
   // no way to say which engine it picked until it finished.
   onProgress?.({ message: `Using ${engineInfo.engine}.`, phase: "reviewing", engine: engineInfo.engine });
-  const agyStructured = engineInfo.engine === "agy" && supportsAgyStructuredOutput(engineInfo.version);
-  const useJson = engineInfo.engine === "gemini" || agyStructured;
+  noticeUnverifiedAgy(engineInfo, onProgress);
+  const agyStructured = engineInfo.engine === "agy";
+  const useJson = true;
 
   let model;
   let effort = null;
   if (engineInfo.engine === "agy") {
     if (requestedModel || requestedEffort) {
-      if (!supportsAgyModelSelection(engineInfo.version)) {
-        throw new Error(`AGY ${engineInfo.version} does not support --model/--effort. AGY 1.1.5 through 1.1.9 accept the flags but ignore them in headless runs. Upgrade to AGY 1.1.10 or newer, or select --engine gemini.`);
-      }
       model = normalizeAgyRequestedModel(requestedModel);
       effort = normalizeAgyEffort(requestedEffort);
     }
@@ -721,15 +691,13 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
     model = normalizeRequestedModel(model ?? requestedModel) ?? "gemini-2.5-flash";
   }
 
-  const useStdin = engineInfo.engine === "gemini"
-    || (engineInfo.engine === "agy" && supportsAgyStdinPrompt(engineInfo.version));
   const spawnTimeoutMs = resolveSpawnTimeoutMs(engineInfo.engine, timeoutSeconds);
 
-  // AGY >=1.1.8 returns the review in a stdout envelope. Older versions need the
-  // transcript, and structured runs snapshot it too so a killed run's already-
-  // billed output can still be recovered (see resolveAgyStructuredResult).
-  // Either way, give agy's --print-timeout a grace window shorter than the hard
-  // spawn kill so it flushes before SIGKILL.
+  // AGY returns the review in a stdout envelope. The transcript snapshot stays
+  // for one case only: a run killed before it printed, whose already-billed
+  // output survives nowhere else (see resolveAgyStructuredResult). Give agy's
+  // --print-timeout a grace window shorter than the hard spawn kill so it
+  // flushes before SIGKILL.
   let agyBrainRoot = null;
   let agyBefore = null;
   let agyPrintTimeoutMs = spawnTimeoutMs;
@@ -749,7 +717,6 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
     outputJson: useJson,
     timeoutMs: engineInfo.engine === "agy" ? agyPrintTimeoutMs : spawnTimeoutMs,
     agyVersion: engineInfo.version,
-    useStdin,
     // Only --deep gets a workspace, and it needs one to mean anything. A default
     // review is single-shot from a diff already inside the prompt; --deep tells
     // the model to go and read dependency manifests, callers and untracked files.
@@ -772,7 +739,7 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
 
   const result = runCommandFn(engineInfo.binary, args, {
     cwd,
-    input: useStdin ? prompt : undefined,
+    input: prompt,
     maxBuffer: MAX_BUFFER,
     timeout: spawnTimeoutMs, // hard kill — grace-later than agy's --print-timeout
   });
@@ -794,9 +761,8 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
       write: false,
       outputJson: useJson,
       timeoutMs: spawnTimeoutMs,
-      useStdin,
     });
-    const fbResult = runCommandFn(engineInfo.binary, fbArgs, { cwd, input: useStdin ? prompt : undefined, maxBuffer: MAX_BUFFER, timeout: spawnTimeoutMs });
+    const fbResult = runCommandFn(engineInfo.binary, fbArgs, { cwd, input: prompt, maxBuffer: MAX_BUFFER, timeout: spawnTimeoutMs });
     rawStdout = stripAnsi(fbResult.stdout ?? "");
     rawStderr = stripAnsi(fbResult.stderr ?? "");
     exitCode = fbResult.status ?? (fbResult.error ? 1 : 0);
@@ -827,37 +793,6 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
       reviewJson = tryParseJsonFromText(reviewText);
     }
     partial = Boolean(structured.salvagedText);
-  } else if (engineInfo.engine === "agy") {
-    // Pre-1.1.8: recover the authoritative review and parse JSON findings from it.
-    const rec = recoverAgyResponse(agyBrainRoot, agyBefore);
-    if (!rec.response) {
-      if (exitCode === 0) exitCode = 1;
-      recoveryFailure = classifyCliFailure({
-        engine: engineInfo.engine,
-        status: exitCode,
-        signal: result.signal,
-        error: result.error,
-        stdout: rawStdout,
-        stderr: rawStderr,
-        transcriptReason: rec.reason,
-        noOutput: !reviewText
-      });
-    } else {
-      // No "match is not certain" warning here either: an ambiguous recovery now
-      // returns no response at all, so reaching this branch means the
-      // conversation was identified. What remains is truncation, which the
-      // exitCode below already reports. See the task path for the full reasoning.
-      recoveryFailure = rec.failure ?? null;
-      reviewText = String(rec.response).trim();
-      reviewJson = tryParseJsonFromText(reviewText);
-      reasoningSummary = rec.thinking ?? reasoningSummary;
-      if (rec.done) {
-        exitCode = 0;
-      } else {
-        if (exitCode === 0) exitCode = 1;
-        partial = true; // recovered but truncated
-      }
-    }
   } else if (useJson) {
     // Gemini --output-format json wraps the response in an outer JSON envelope.
     // The text payload lives at different paths depending on CLI version:
@@ -1019,8 +954,9 @@ export function parseRateLimitResetMs(text) {
 //     arrives in six seconds, which is what a rate limit is.
 //   - "re-spawning it is costly" — true of a review that runs; a refusal came
 //     back in 6s and 11s with every token count at zero (measured, AGY 1.1.24).
-//   - (a third, agy's transcript-recovery path, stopped applying at AGY 1.1.8,
-//     where supportsAgyStructuredOutput routes to the native JSON envelope.)
+//   - (a third, agy's transcript-recovery path, stopped applying at AGY 1.1.8;
+//     since the version floor it is no longer reachable as a primary path at
+//     all, only as salvage for a run killed before it printed.)
 //
 // So the exclusion is narrowed rather than removed, and narrowed by ALLOWLIST:
 // agy retries on `rate-limit` and nothing else. That matters for the warning in
@@ -1164,12 +1100,16 @@ export function probeAgyLogin({ runCommandFn = runCommand, detectEngineFn = dete
   }
 
   const version = engineInfo.version;
-  if (!supportsAgyReadOnlySlashCommands(version)) {
+  // Running on an unreadable version is a risk the user accepted; SPENDING on
+  // one is not the same decision. Below 1.1.11 `/quota` is sent to the model as
+  // prompt text, so a probe there costs a real turn to learn nothing, and an
+  // unreadable version cannot rule that out. Decline rather than bill.
+  if (engineInfo.versionUnverified || agyMeetsFloor(version) !== "ok") {
     return {
       loggedIn: false,
       state: "unknown",
       verifiable: false,
-      detail: `AGY ${version ?? "(unknown version)"} cannot be probed without spending a turn. Read-only slash commands in print mode arrived in AGY 1.1.11; below that, \`/quota\` is sent to the model as prompt text. Upgrade to probe, or run \`agy\` interactively once.`
+      detail: `Cannot probe AGY without risking a billed turn: ${AGY_VERSION_UNVERIFIED_NOTICE} Read-only slash commands are answered without starting a turn only on a supported AGY, so this check is skipped rather than charged. Run \`agy\` interactively once, or \`agy update\`.`
     };
   }
 
@@ -1257,7 +1197,7 @@ export function probeGeminiLogin(cwd = undefined, { runCommandFn = runCommand, d
   const version = engineInfo.version ?? "(unknown version)";
   // Shortest possible request, over the same stdin transport a real turn uses,
   // so what the probe proves is what a real turn would do.
-  const args = buildCliArgs("gemini", { prompt: GEMINI_PROBE_PROMPT, useStdin: true, outputJson: true });
+  const args = buildCliArgs("gemini", { prompt: GEMINI_PROBE_PROMPT, outputJson: true });
   const result = runCommandFn(engineInfo.binary, args, {
     input: GEMINI_PROBE_PROMPT,
     cwd,

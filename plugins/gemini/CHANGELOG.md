@@ -1,6 +1,333 @@
 # Changelog
 
-## Unreleased
+## 0.25.0 - Unreleased
+
+- **BREAKING: AGY 1.1.12 or newer is now required, and an older AGY is refused by
+  name.** Run `agy update`. This replaces seven capability gates
+  (`supportsAgyStdinPrompt` 1.1.2, `supportsAgyStructuredOutput` 1.1.8,
+  `supportsAgySlashCommandOptOut` 1.1.9, `supportsAgyModelSelection` and
+  `supportsAgyWorkspaceDir` 1.1.10, `supportsAgyReadOnlySlashCommands` 1.1.11,
+  `supportsAgyStreamJson` 1.1.12) and every fallback behind them with one check
+  in `detectEngine`.
+
+  The gates were correct when written. What made them worth removing is that
+  they served users no one can see while being the only code the maintainer
+  could not run: six of the suite's eight skipped tests were the old-version
+  paths, skipped on Windows because the AGY stand-in reports Node's version and
+  cannot express a chosen one. Least-run code and least-tested code, the same
+  code. One gate was worse than untested — AGY 1.1.5 through 1.1.9 accept
+  `--model`/`--effort` and then ignore them in headless runs, so below it the
+  plugin quietly ran a model the user did not choose. A refusal that names the
+  version found and the command that fixes it is the honest version of that.
+
+  1.1.12 is the highest floor that removes anything and the lowest that removes
+  everything: every gate sat at or below it, and no behaviour above it is
+  version-branched (AGY 1.1.20's exit-code change is absorbed by `failedExit`
+  without asking the version).
+
+  **A version that cannot be parsed does not block the run.** `agyMeetsFloor`
+  answers `ok` / `too-old` / `unreadable`, and only `too-old` refuses; an
+  unreadable version runs and says it was not checked. The alternative turns one
+  cosmetic change to `agy --version` upstream into an outage for every user at
+  once, and nothing here can tell that apart from an odd local build. The floor
+  is enforced against versions that are readable and too old, never against
+  silence.
+
+  The floor is checked on both routes into AGY, not only the explicit one.
+  `auto` reaches AGY exactly when gemini has no usable credential, so an
+  unsupported AGY there is not a soft fallback — it is the engine, and it is
+  refused by name rather than run with `--model` silently dropped.
+  On that route the refusal does not offer `--engine gemini` as the way out:
+  routing only reached AGY because gemini had no usable credential, so it names
+  both problems instead of sending the user to a second failure. A sub-floor AGY
+  merely sitting on PATH beside a working gemini is not reported at all.
+
+  `setup` now answers `unreadable` on both routes too. The two floor branches had
+  drifted apart: `too-old` already spoke about the AGY that would actually run,
+  while `unreadable` spoke only under an explicit `--engine agy`. So under `auto`
+  with no gemini credential, `/gemini:setup` said nothing about a version it had
+  failed to read, and the first real command then said it — the same fact, two
+  answers, depending on which surface was asked. The narrowing that keeps a
+  stale AGY beside a working gemini unreported is unchanged, and now has a test
+  of its own rather than being a side effect of the narrower condition.
+
+  The version is read from the start of `agy --version` (bare `1.1.25`, or a
+  `agy`/`antigravity`/`v` prefix), not from the first pair of numbers anywhere in
+  the line. An unanchored match read `antigravity (node 18.2.1)` as AGY 18.2.1
+  and certified it; both misreadings are now `unreadable`, which fails open.
+
+  The docs that described the replaced gates are updated with them: the AGY
+  transport fallback (README Security, `docs/known-diffs.md`) contradicted the
+  stdin-only bullet five lines above it, `--probe-agy`'s "1.1.11+" caveat
+  described a version the floor now refuses before the probe is reached, and
+  `docs/MODEL_COMPARISON.md` pointed at `supportsAgyModelSelection`, which no
+  longer exists. The CHANGELOG entries naming those gates are left alone — they
+  record the removal.
+
+  `README.zh-TW.md` was nine passages behind, and the way it stayed behind is
+  worth recording: the floor commit edited it, so it read as done. It updated the
+  one-line requirement at the top and left everything else, which put the
+  prerequisites table (`AGY ≥ 1.0.3`, recommending 1.1.2) in direct contradiction
+  with the same file's opening line (`AGY ≥ 1.1.12`). The English README was then
+  swept for stale passages and the Chinese one was not, because the sweep worked
+  from a list of found passages rather than from a search for the removed
+  identifier. `git grep supportsAgy -- '*.md'` bounds that set in one call and
+  was never run. It now returns only the two sentences that say the gates are
+  gone, plus the CHANGELOG history.
+
+  Brought in line: the feature list, the prerequisites table, `--probe-agy`, the
+  engine-selection list, both JSON-envelope paragraphs, the Security stdin
+  bullet, and the AGY-transport-fallback bullet, which is deleted here as it was
+  in English. The prompting skill's `gemini-prompt-antipatterns.md` reference
+  still told the model to condition on AGY 1.1.8 for the JSON envelope; above
+  the floor that condition is always true.
+
+  `tests/readme-translation-parity.test.mjs` closes the gap that let this
+  happen. Two assertions: the two READMEs cite the same set of version numbers,
+  and each one's AGY prerequisite row states the floor the code enforces, read
+  from `AGY_MINIMUM_VERSION` rather than from the other document. Version
+  numbers are the part of a page that survives translation unchanged, which is
+  what makes the drift mechanically visible at all. Reverting the prerequisites
+  row in either language turns both assertions red; drifting one version number
+  in one file turns only the first; moving the floor in the code turns only the
+  second.
+
+  Two Chinese renderings are corrected while there. "per-plugin data directory"
+  had been carried over as 每外掛資料目錄, which is not a construction Chinese
+  makes; and "non-blocking limitations" as 非阻塞限制, which in Chinese is the
+  concurrency term rather than "these do not block you". Neither is a
+  translation a reader could recover the meaning from.
+
+  A third correction came from asking AGY to review the Chinese README for
+  English-shaped prose: `effort` was rendered 努力 in three places, where the
+  rest of the same file says 推理強度. 努力 is the everyday word for personal
+  exertion, so "別名與努力等級" reads as tiers of trying hard rather than as a
+  reasoning-effort setting. That review was run as a controlled check — the two
+  corrections above were re-injected into an otherwise-correct file — and it
+  found one of them, missed the other, and returned twenty-two items in total,
+  most of which were house voice it wanted flattened. Useful as a source of
+  candidates, not as a verdict.
+
+- **A degraded adversarial review now says why the engine dropped out.** With
+  `--engines gemini,agy` and a sub-floor AGY, the warning read `unavailable:
+  agy.` and stopped there — the refusal that names `agy update` was caught and
+  reduced to the engine's name, so the one path where the user most needed the
+  fix was the one that withheld it. It now carries each engine's reason, in the
+  same `engine (reason)` form the all-engines-unavailable error already used.
+
+- **A missing AGY is now reported as missing.** Three different problems shared
+  one message, and on Windows the likeliest of them — AGY simply not installed —
+  was answered with a lecture about argv injection, because path resolution
+  throws before the friendly "not available" line is ever reached. The security
+  refusal now fires only when `agy` resolves to something that is not an `.exe`,
+  a binary that resolves but cannot run names its path and what it printed, and
+  a missing one gets the install command.
+
+- **The release pipeline now checks what users receive, and says why a version
+  exists.** Three additions to `.github/workflows/release.yml`, none of them
+  touching its permission model:
+
+  - *The tag must be reachable from `main`, and `main` must already offer that
+    version.* Delivery here is the default branch, not the tag: the marketplace
+    source is `main`, so a version becomes installable the moment its bump
+    merges — before this workflow runs. A tag off `main`, or a `main` whose
+    manifest says something else, publishes a release nobody can install.
+    Nothing checked either.
+  - *Release notes carry the changelog section.* The page showed only GitHub's
+    generated list of PR titles, so the reasons — written here — reached nobody.
+    The section is extracted in the job that has a checkout and handed to the
+    publishing job through the environment, never interpolated into its script:
+    whoever can push a tag writes that text, and `${{ }}` inside a `run:` body
+    would hand them a shell in the one job holding a token that can publish.
+  - *A new `verify-published` job runs the plugin from a bare clone of the
+    published tag* — no `npm ci`, no `node_modules`, nothing built, which is how
+    Claude Code resolves a marketplace plugin — and asserts it reports its own
+    version. Everything before it tests the working copy the workflow was
+    handed; this is the only step that tests what a user gets.
+
+- **The AGY positional prompt path is gone, and with it a guard that protected
+  nobody.** `buildCliArgs` carried a branch that put the prompt in argv, plus
+  `assertAgyPromptSafe` refusing a NUL byte or anything above 24,000 characters
+  before it did. That branch existed for AGY below 1.1.2, which the floor now
+  rules out — and every production caller already passed `useStdin: true`, so
+  the guard ran for no one. Only the tests could reach it, through the same
+  injection seam that makes the code testable, which is why a green suite said
+  nothing about it.
+
+  Found by asking a different question of the whole codebase: replace every
+  user-facing message with a sentinel, run the suite, and see which ones no
+  test names. Of 59 messages on the engine, setup and job paths, 28 are held by
+  a test. This was the first of the rest to be judged, and it was dead.
+
+  The three tests that covered it are replaced by the property that made the
+  guard unnecessary: a prompt is never in argv, whatever it contains. The
+  `prompt-too-long` failure category stays — an engine can still say a prompt
+  exceeds its context window — but its `promptNul`/`promptTooLong` flag inputs
+  and the `NUL byte`/`positional prompt` text patterns go with their producer.
+
+- **The error paths nothing had ever run.** The message audit was finished with a
+  second instrument: the whole suite under `NODE_V8_COVERAGE`, which records the
+  spawned CLI runs too, asked which `throw` sites no process reaches. 19 of
+  them. The sentinel pass says which messages a test asserts; coverage says
+  which states are ever entered, and only the second can tell dead code from an
+  untested live state.
+
+  Judging them one by one found one more piece of dead code and one defect:
+
+  - `buildSingleJobSnapshot` carried a second, differently worded "No job found
+    for X" that could not run — `matchJobReference` throws its own first —
+    and if it ever had, it would have said `No job found for "undefined"`,
+    because the only way to reach it is with no reference at all. Replaced by a
+    message about the store, which is what is actually true there.
+  - `/gemini:status` does not scope by session, unlike result and cancel, so its
+    refusal must not offer `--all` as a way to see more. Pinned, so that a
+    well-meant consistency edit cannot add advice for a problem no one has.
+
+  The other 17 were live states no test had entered: an ambiguous job prefix,
+  cancelling with two jobs active, reading a review group mid-run, and ten
+  command-line refusals that the suite could never reach because it drives the
+  companion through its exported functions rather than its argv.
+  `tests/unreached-error-paths.test.mjs` reaches every one of them.
+
+  1 remains, knowingly: readonly-guard's TOCTOU detector, which fires when a
+  path is swapped between an `fstat` and an `lstat` inside one function. It has
+  no injection seam, and a test that pretended to reach it would be worse than
+  the honest note now sitting where it would have gone.
+
+- **The AGY transcript is no longer a version fallback, and `PRIVACY.md` narrows
+  to match.** Removing the 1.1.8 gate was going to delete
+  `scripts/lib/agy-transcript.mjs` outright. It survived because reading the
+  code found a second, live reason for it that the plan had not accounted for:
+  when AGY is killed before it prints, the turn has still run and still been
+  billed, and the transcript is the only surviving copy of what it produced.
+  That path fires on current AGY. So the module stays, its primary-path callers
+  are gone, and the privacy table now says the brain directory is read in that
+  one case rather than "on AGY older than 1.1.8".
+
+- **A stated engine-support policy** (`README.md` §Versioning). The floor moves
+  only when a capability the plugin depends on requires it, never to keep pace
+  with upstream releases; when it moves it moves in a MINOR release whose first
+  CHANGELOG line names the new floor and the upgrade command. There is no
+  support window measured in time.
+
+- **Skipped tests: 8 → 6, and every remaining one runs somewhere in CI.** Five
+  old-version tests were deleted rather than repaired, three were retargeted at a
+  supported AGY, and the two platform-keychain skips (macOS, Linux) were already
+  covered by the matching CI runners. The four still skipped on Windows are
+  skipped because the capturing AGY fixture needs a POSIX shebang and the plugin
+  refuses a `.cmd` shim for AGY on purpose (CVE-2024-27980) — a security
+  property, not a gap to close with a fixture.
+
+- **CI runs on branch pushes, not only on pull requests.** Four tests in the
+  suite are platform-bound — two assert `cmd.exe` argv behaviour and run only on
+  Windows, two read an OS keychain and are skipped off Linux and macOS — so a
+  branch with no PR open was verified on whatever single platform the maintainer
+  happened to be on. `workflow_dispatch` cannot fill that gap: GitHub only
+  offers a manual trigger for workflows already on the default branch, which an
+  unmerged branch is not. `main` stays excluded, because everything reaching it
+  has already run this workflow as a pull request.
+
+- **Five assertions that only ever ran off Windows, fixed.** The first branch-push
+  run failed on all three platforms while the local suite was green, and each
+  failure was a test measuring the host rather than the code:
+
+  - The POSIX AGY stand-in still announced 1.1.2, which the floor above refuses,
+    so three transport tests were asserting the refusal text instead of the
+    transport they name. Both stand-ins now sit above the floor, and the
+    failing-AGY failure category is one value rather than a per-platform branch.
+  - The AGY review transport test drove its response through the transcript,
+    which this release removed as a response source. It now arrives in a stdout
+    envelope, and the transcript carries a marker asserted *not* to appear.
+  - `detectEngine`'s "resolved but cannot run" case used a Windows-shaped path,
+    which is not absolute on POSIX, so off Windows it got the
+    not-an-executable refusal rather than the one under test.
+  - The readiness test for a stale AGY beside a working gemini never injected
+    `geminiCredentialedFn`, so readiness resolved credentials from the machine
+    running the test: green wherever a gemini credential existed, red on every
+    runner. The assertion is about AGY, not about the host.
+
+- **Two flags a command advertised and then refused.** `review.md` and
+  `adversarial-review.md` tell the model to stop on any value not in their
+  allowlist, and `--effort` was in neither list while sitting in both
+  `argument-hint`s; `--engines` was missing from the adversarial one as well,
+  despite being documented in the README and accepted by the runtime. A model
+  following the file correctly had to refuse `--engines gemini,agy`. Both lists
+  now admit them, and a test pins the property rather than the instance: every
+  flag a command's `argument-hint` offers must be one its allowlist admits.
+
+  Found by AGY, scoring this repository against the same rubric as the
+  maintainer's own pass. It reported the flag as undocumented, which is wrong —
+  `README.md:182,208` document it — but the half it got right is the half that
+  matters, and it is not one a self-assessment was going to find.
+
+- **`auto` no longer calls a refused AGY a missing one.** `detectEngine`'s auto
+  branch wrapped AGY path resolution in a bare `catch`, which collapsed two
+  opposite facts into one: AGY absent, and AGY present but refused. On Windows an
+  npm-installed `agy.cmd` resolves, is rejected on purpose (CVE-2024-27980), and
+  the user was then told no AGY binary was found — advised to install what they
+  already had. Absence is still swallowed, because for that one the existing
+  message is right; a refusal is now spoken, and it names why gemini is not the
+  way out (unauthenticated, or not installed at all) rather than offering
+  `--engine gemini` on a route that only reached AGY because gemini was unusable.
+  Which failure occurred travels as a `code` on the error rather than being
+  re-derived from its text.
+
+  Also reported by AGY's independent scoring pass.
+
+- **The last stage of the release pipeline drafts the announcement, and posts
+  nothing.** `scripts/build-social-announcement.mjs` turns a version's changelog
+  section into a post sized for X (280) and Threads (500), and
+  `.github/workflows/announce-release.yml` runs it on `release: published` and
+  writes the result to the job summary for a human to copy.
+
+  It holds no credential on purpose. Automating the posting would buy back a
+  couple of minutes a year — this project releases a handful of times — in
+  exchange for two long-lived social tokens living permanently in repository
+  secrets. Threads is the worse of the two: its long-lived token lasts ~60 days,
+  so a workflow running six times a year would meet an expired one nearly every
+  time, and keeping it alive needs a scheduled job holding a token that can
+  *write* secrets — a higher-value credential than either social account.
+
+  Highlights are not a new convention. Every changelog entry already opens with
+  a bold lead-in written when the change was fresh, and those are the headlines;
+  nothing is paraphrased or summarised, so there is no opportunity for a model
+  to turn a null check into an architecture. Posts that do not fit drop whole
+  headlines from the end rather than cutting a sentence in half.
+
+  The workflow also takes a `workflow_dispatch` version input, so it can be
+  exercised against a release that already exists instead of having its first
+  run be a real one — the failure mode `release.yml`'s own new jobs are still
+  exposed to.
+
+  Nothing reads the release body: the text comes from the changelog in the
+  checkout, which is reviewed content. A new test applies that rule to every
+  workflow — no `${{ }}` inside any `run:` body, because a tag name or release
+  title is written by whoever can push a tag, and interpolation makes it shell
+  source. Mutation-checked in both directions.
+
+- **The release pipeline was rehearsed end to end, and it found two things.**
+  `release.yml`'s new jobs only run on a `v*` tag, so until now their first
+  execution would have been a real release. A throwaway private repository was
+  loaded with this tree, bumped, and tagged, which ran the whole workflow for
+  real: `verify` passed all of its gates, `publish` created a release whose body
+  carries the changelog section above GitHub's generated notes, and
+  `verify-published` failed only because an unauthenticated clone cannot read a
+  private repository — that job's script was checked separately against the real,
+  public `v0.24.4` and reports the right version.
+
+  What the rehearsal caught:
+
+  - **A minor bump must also update three documents**, or `npm test` fails inside
+    `release.yml` *after* the tag is pushed: `SECURITY.md`'s supported line,
+    `PRIVACY.md`'s "Applies to plugin version" line, and the version cell in
+    `docs/COMPARISON.md`. The tests that enforce this are deliberate — the
+    privacy document once claimed 0.16.x for six releases — but nothing said so
+    where someone cutting a release would read it.
+  - **The announcement test was itself a release blocker.** It required three
+    headlines in the newest changelog section; a patch release with one entry
+    would have failed it, at the same point in the pipeline. It now requires one.
+    Found by a dry run with a one-entry section, which is exactly the release it
+    would have blocked.
 
 - **The stop gate no longer treats a review that reviewed nothing as a pass.**
   The hook guarded its review result with `if (!payload)`, which asks whether the

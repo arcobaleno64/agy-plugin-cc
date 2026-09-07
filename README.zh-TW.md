@@ -12,7 +12,7 @@
 
 ## 從這裡開始
 
-你需要 **Claude Code**、**Node.js ≥ 18**，以及**一個**支援的引擎：Gemini CLI ≥ 0.40 或 AGY ≥ 1.0.3。只需安裝並認證你選擇的引擎，不必兩者都裝。Gemini CLI 需要 Standard／Enterprise 帳戶或 API 金鑰；個人帳戶實務上以 AGY 為預設選擇。支援版本與認證細節請見[系統需求](#系統需求)。
+你需要 **Claude Code**、**Node.js ≥ 18**，以及**一個**支援的引擎：Gemini CLI ≥ 0.40 或 AGY ≥ 1.1.12。只需安裝並認證你選擇的引擎，不必兩者都裝。Gemini CLI 需要 Standard／Enterprise 帳戶或 API 金鑰；個人帳戶實務上以 AGY 為預設選擇。支援版本與認證細節請見[系統需求](#系統需求)。
 
 ### 從發布通道安裝
 
@@ -48,8 +48,8 @@ AGY 請用 `/gemini:setup --engine agy` 驗證所選引擎；auto／Gemini 請�
 - 對目前 diff 或 branch 執行 pragmatic code review 與 adversarial review。
 - 用 background task delegation 處理較長時間的 companion-agent 工作。
 - Gemini model aliases、graceful model fallback 與 transient review retry。
-- 具版本分流的 AGY 結果取回：1.1.8 以上採原生 JSON envelope，更舊版本才用 transcript recovery。
-- Gemini 與 AGY 1.1.2 以上採用較安全的 stdin prompt delivery。
+- 單一宣告的 AGY 版本下限（1.1.12）取代七道相容閘門：過舊的 AGY 會被具名拒絕，而不是無聲降級。
+- 兩個引擎皆以 stdin 傳遞 prompt——prompt 永不進入 argv。
 
 | 需求 | 適合使用本外掛的情境 |
 |---|---|
@@ -70,7 +70,7 @@ AGY 請用 `/gemini:setup --engine agy` 驗證所選引擎；auto／Gemini 請�
 - **`/gemini:status`** — 查看作用中與已完成的背景工作。
 - **`/gemini:result`** / **`/gemini:cancel`** — 取得或取消背景工作。
 - **引擎自動偵測** — 兩個引擎皆為第一級支援；`auto` 因 JSON／model 合約先檢查 `gemini`，再檢查 `agy`。
-- **版本感知的 stdin 提示傳遞** — Gemini 固定走 stdin；AGY 1.1.2 以上走自動 print 的 stdin 路徑，舊版或版本不明時保留 positional 相容路徑。
+- **兩個引擎皆以 stdin 傳遞提示** — 提示永不進入 argv，因此不受任何平台的 argv 長度上限截斷，其中的 metacharacter 也不會被重新解讀。
 - **會話生命週期掛鉤** — 自動注入 `GEMINI_COMPANION_SESSION_ID`。會話結束時會**終止本會話仍在執行的背景工作**並移除其紀錄；其他會話的工作不受影響。已完成工作的結果會隨紀錄一併刪除，仍需要的請在會話結束前用 `/gemini:result` 取回。
 
 ---
@@ -81,7 +81,7 @@ AGY 請用 `/gemini:setup --engine agy` 驗證所選引擎；auto／Gemini 請�
 |---|---|---|
 | Node.js | ≥ 18 | [nodejs.org](https://nodejs.org) |
 | Gemini CLI | ≥ 0.40；使用 `gemini` 引擎時必須安裝 | `npm install -g @google/gemini-cli` |
-| AGY | ≥ 1.0.3；建議 ≥ 1.1.2，已於 Windows／Ubuntu WSL2 live 驗證 | _(安裝指令見下)_ |
+| AGY | ≥ 1.1.12（強制）；已於 1.1.24、Windows 與 Ubuntu WSL2 live 驗證。過舊的 AGY 會被拒絕，並附上偵測到的版本與修正指令——低於 1.1.12 時，`--model` 與 `--effort` 在 headless 執行中會被接受後忽略，以 `/` 開頭的提示會被當成命令執行，也沒有 JSON envelope 可讀取答案。請執行 `agy update`。 | _(安裝指令見下)_ |
 | Claude Code | 任意版本 | [claude.ai/code](https://claude.ai/code) |
 
 **安裝 AGY**（使用 `--engine agy` 時必須安裝）：`curl -fsSL https://antigravity.google/cli/install.sh | bash`
@@ -227,7 +227,7 @@ AGY 請用 `/gemini:setup --engine agy` 驗證所選引擎；auto／Gemini 請�
 | 旗標 | 說明 |
 |---|---|
 | `--engine <agy\|gemini>` | 回報該引擎的就緒狀態，而非 auto 路由的預設引擎 |
-| `--probe-agy` | 以唯讀問題驗證 AGY 登入狀態。**免費**——`/quota` 由帳號作答，不會起 turn（需 AGY 1.1.11+；更舊版本會拒絕，setup 會明說） |
+| `--probe-agy` | 以唯讀問題驗證 AGY 登入狀態。**免費**——`/quota` 由帳號作答，不會起 turn。本外掛會執行的 AGY 版本都夠新；只有在版本字串完全讀不到時 probe 才會拒絕，setup 會明說 |
 | `--probe-gemini` | 發出一次真實請求以驗證已儲存的 Gemini 憑證。**不免費**——憑證已失效時不花錢（API 在生成前就拒絕），但憑證有效時會花掉一次 turn。在 `--engine agy` 下會被跳過，並在 `nextSteps` 說明 |
 | `--enable-review-gate` / `--disable-review-gate` | 切換停止時的審查閘門（見 [Review Gate（可選）](#review-gate可選)） |
 
@@ -318,8 +318,8 @@ AGY 請用 `/gemini:setup --engine agy` 驗證所選引擎；auto／Gemini 請�
 
 ### 模型別名說明
 
-- 別名與努力等級集中於單一來源——`plugins/gemini/scripts/lib/model-map.mjs`——且 `npm test` 會以其驗證上表，二者不致漂移。
-- **努力對映**（於提供 `--effort` 但未給 `--model` 時套用）：`none`/`minimal` → `gemini-2.5-flash-lite`；`low`/`medium` → `gemini-3-flash-preview`；`high`/`xhigh` → `gemini-3.1-pro-preview`。
+- 別名與推理強度等級集中於單一來源——`plugins/gemini/scripts/lib/model-map.mjs`——且 `npm test` 會以其驗證上表，二者不致漂移。
+- **推理強度對映**（於提供 `--effort` 但未給 `--model` 時套用）：`none`/`minimal` → `gemini-2.5-flash-lite`；`low`/`medium` → `gemini-3-flash-preview`；`high`/`xhigh` → `gemini-3.1-pro-preview`。
 - **CLI probe snapshot。** 上表最後於 2026-08-05 對 Gemini API 模型清單複驗，所用的六個 id 全數有效。Google 可能隨時下架 preview id。若某別名無法解析，以 `--model <精確 ID>` 覆蓋——任何非已知別名之值將原樣透傳給 CLI。
 - **Gemini 3.5 可用性已變動。** 2026-06-02 實測時 `gemini-3.5-flash` 與 `gemini-3.5-pro` 皆回 `404 ModelNotFound`；至 2026-08-05，`gemini-3.5-flash` 已為 GA，`gemini-3.5-pro` 仍不存在。未知或不可用 model ID 會優雅降級至 GA fallback。
 - **模型優雅降級。** 若所請求之 model id 在你的 gemini CLI 上找不到（preview/已退役 id，或 CLI 版本落差），外掛會**以 GA fallback `gemini-2.5-flash` 重試一次**並印出明確提示——讓過時 id 優雅降級，而非硬性失敗。
@@ -332,7 +332,7 @@ AGY 請用 `/gemini:setup --engine agy` 驗證所選引擎；auto／Gemini 請�
 在 `auto` 模式下，外掛依以下優先順序選擇可用引擎：
 
 1. **`gemini` CLI** — 透過 stdout 輸出；支援 stdin 提示傳遞。
-2. **`agy`** — 第一級支援引擎及 `auto` 的第二候選；AGY 1.1.2 以上以 stdin 接收 prompt 且不帶 `--print`，舊版或版本不明時保留 `agy --print <prompt>`。
+2. **`agy`** — 第一級支援引擎及 `auto` 的第二候選；以 stdin 接收 prompt，不帶 `--print`。低於宣告下限（1.1.12）的 AGY 在偵測階段即被拒絕。
 
 可透過 `--engine` 旗標或 `GEMINI_ENGINE` 環境變數覆蓋。
 
@@ -340,19 +340,18 @@ AGY 請用 `/gemini:setup --engine agy` 驗證所選引擎；auto／Gemini 請�
 
 > **AGY 1.1.10+ 選擇機制：** 使用 `agy models` 所列的 `--model <精確 ID>`，或使用 `--effort <low|medium|high>` 二者之一。Gemini alias 不是有效的 AGY model ID，model 與 effort 不可合併；雙引擎審查不可使用 `--model`，因為 model ID 具引擎特性。Gemini 仍維持其獨立的 alias 與 effort-to-model 映射。
 
-> **AGY 1.1.8+ 改用原生 JSON envelope；更舊版本才退回 transcript recovery。** AGY 1.1.8 加入 `--output-format json`，於 stdout 回傳回應、conversation ID 與終止狀態。自外掛 v0.11.0 起，AGY 1.1.8 以上以該 envelope 為權威來源，完全不讀磁碟 transcript，也不需要 brain root。一項後果：AGY 結果不再顯示推理摘要區塊——envelope 只有 `thinking_tokens` 計數、沒有 thinking 文字（`stream-json` 亦然）。Gemini 引擎不受影響，其推理摘要取自 stderr。
+> **AGY 以原生 JSON envelope 作答。** `--output-format stream-json` 於 stdout 回傳回應、conversation ID 與終止狀態，另附讓中斷的執行仍可判讀的進度事件。該 envelope 即權威來源，不需要 brain root。一項後果：AGY 結果不再顯示推理摘要區塊——envelope 只有 `thinking_tokens` 計數、沒有 thinking 文字。Gemini 引擎不受影響，其推理摘要取自 stderr。
 >
-> AGY 1.1.8 以下仍以 transcript 為權威：舊版 positional `agy --print` 沒有 piped response（上游 [google-gemini/gemini-cli#27466](https://github.com/google-gemini/gemini-cli/issues/27466)，已於 macOS AGY 1.0.7 重現），且 1.1.8 之前沒有任何版本會在 stdout 給出 conversation ID。這些版本的完成回應、DONE 狀態、thinking 與 conversation ID 仍取自磁碟。已知 brain root 為 `~/.gemini/antigravity-cli/brain`（已於 Windows、macOS AGY 1.0.7 與 Linux AGY 1.1.2 驗證）及 `~/.antigravity-cli/brain`（較舊的 Linux 1.0.2，回報）。若在這類版本上找不到 brain root，請先執行一次 `agy`、升級至 1.1.8 以上，或開 issue 回報實際位置。
+> 磁碟 transcript 仍會被讀取，但僅限一種情況，且不再是版本 fallback：AGY 在印出任何東西之前就被殺掉。那個 turn 已經跑過、已經計費，而 transcript 是它產出內容唯一倖存的副本。有印出 envelope 的執行完全不會碰它。已知 brain root 為 `~/.gemini/antigravity-cli/brain` 與 `~/.antigravity-cli/brain`；兩者皆不存在時，該搶救路徑就不會啟動，執行會如實回報它真正遇到的逾時。
 
 ---
 
 ## 安全性
 
-- **Stdin 傳遞**：Gemini prompt 與 AGY 1.1.2 以上 prompt 透過 Node.js `spawnSync` 的 `input` 傳遞，不進入 argv。AGY 1.1.2 以下或版本無法解析時保留 positional 相容路徑與 24,000 字元上限；處理不可信內容時請使用 Gemini 或 AGY 1.1.2 以上。
+- **Stdin 傳遞**：兩個引擎的每一個 prompt 都透過 Node.js `spawnSync` 的 `input` 傳遞，不進入 argv。positional 路徑與其 24,000 字元上限已隨 AGY 版本下限一併移除——需要它們的那些版本在引擎偵測階段就被拒絕。
 - **Windows process 邊界**：Gemini 的 npm `.cmd` shim 以 `shell:true` 啟動，但 prompt 留在 stdin，argv 只有已驗證旗標。AGY 必須解析成絕對 `.exe`，並固定以 `shell:false` 啟動。
 - **Git process 邊界**：repository-derived ref 一律以 literal argv 與 `shell:false` 傳給 Git（Windows 亦同）；Git helper 不繼承 `.cmd` wrapper fallback。此處與上游 Codex 外掛 [v1.0.6 移除 Git shell expansion](https://github.com/openai/codex-plugin-cc/releases/tag/v1.0.6) 的 hardening 方向一致。
 - **DEP0190 警告屬無害**：於 Windows 上可能見到 `(node:NNN) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.`。此處**可安心忽略**——該 deprecation 針對的是在 `shell: true` 下把*提示內容*放入 argv，但本外掛的 gemini 引擎從不如此：提示走 stdin，僅受控旗標進入 argv（且各自驗證，如 model id 須符合 `^[A-Za-z0-9][A-Za-z0-9._-]*$`）。此警告是 Node 對該通用模式的提醒，並非本程式路徑中的實際注入點。
-- **AGY transport 回退**：只有可穩定解析為 1.1.2 以上的版本才啟用 stdin；未知版與 prerelease 字串一律 fail closed 至既有 positional 路徑，不假設上游能力。
 - **未啟用 AGY sandbox**：AGY 1.1.10 在 `--sandbox` 下加入 `.git` 規則，但該旗標不是 filesystem path boundary，本外掛刻意從不傳入。因此 review 與委派任務不會從該模式取得 `.git` 保護。
 - **憑證處理**：`~/.gemini/oauth_creds.json` 之 OAuth 憑證僅用於 `getGeminiLoginStatus()` 檢查 token 是否過期；本外掛從不記錄、複製或傳輸之。
 - **`.gitignore`**：transfer 快照的 `gitDiff` 欄位裝的是完整未提交 diff，因此 `/gemini:transfer` 在建立目錄時會寫入內容為 `*` 的 `.omc/.gitignore`——快照在**你的**版本庫裡就被排除，不只在本專案內。v0.19.0 之前該排除僅存在於本專案自己的 `.gitignore`，在其他版本庫只是「未追蹤」而非「已忽略」，`git add -A` 會一併提交。已存在的 `.omc/.gitignore` 不會被覆寫。工作狀態與日誌則完全不在版本庫內——詳見 [運作原理](#運作原理)。
@@ -393,7 +392,7 @@ Claude Code
 
 背景模式會產生一個分離的 `task-worker` 子程序並立即回傳工作 ID，可透過 `/gemini:status` 查詢；即使 Claude 會話中斷，背景結果仍然存在。
 
-工作狀態寫入 Claude Code 的每外掛資料目錄——`$CLAUDE_PLUGIN_DATA/state/<workspace>-<hash>/`，內含 `state.json` 以及每個工作各一份 `.json` 與 `.log`，最多保留最近 50 筆。**第 51 個工作會刪掉最舊的那個已完成工作**，其結果隨即消失——不論你先前是否讀過，`/gemini:result` 都再也取不回來。外掛會印出警告並列出被刪除的工作，所以這件事不會無聲發生；queued 或 running 的工作永遠不會被刪。在 Claude Code 之外、該變數未設定時，改用 `<系統暫存目錄>/gemini-companion/<workspace>-<hash>/`；該處會被作業系統定期清理，故跨越清理週期仍在執行的工作可能消失。可設定 `GEMINI_COMPANION_DATA` 自行指定位置。
+工作狀態寫入 Claude Code 為每個外掛各自配置的資料目錄——`$CLAUDE_PLUGIN_DATA/state/<workspace>-<hash>/`，內含 `state.json` 以及每個工作各一份 `.json` 與 `.log`，最多保留最近 50 筆。**第 51 個工作會刪掉最舊的那個已完成工作**，其結果隨即消失——不論你先前是否讀過，`/gemini:result` 都再也取不回來。外掛會印出警告並列出被刪除的工作，所以這件事不會無聲發生；queued 或 running 的工作永遠不會被刪。在 Claude Code 之外、該變數未設定時，改用 `<系統暫存目錄>/gemini-companion/<workspace>-<hash>/`；該處會被作業系統定期清理，故跨越清理週期仍在執行的工作可能消失。可設定 `GEMINI_COMPANION_DATA` 自行指定位置。
 
 工作區內的 `.omc/` 是另一回事：它只存放 `/gemini:transfer` 快照，不存工作狀態。
 
@@ -421,7 +420,7 @@ Claude Code
 
 ## 已知限制
 
-以下為已記錄之非阻塞限制——詳見所連結之章節：
+以下限制已記錄在案，但都不阻礙使用——詳見所連結之章節：
 
 - **模型與存取可用性會漂移。** Google 已宣布 2026-06-18 consumer Gemini CLI transition；Gemini CLI 提供的 model IDs 也會隨版本變動。對不可用的 Gemini model ID，本外掛保留 GA fallback。詳見 [模型別名說明](#模型別名說明) 與 [docs/MODEL_COMPARISON.md](docs/MODEL_COMPARISON.md)。
 - **`/gemini:review` 為 prompt／CLI adapter，非原生審查器。** 其將 diff 連同審查 prompt 送出並解析結構化 JSON，而非透過 app-server 審查器，故反饋深度有別於原生。詳見 [Codex app server 與 Gemini CLI adapter](#codex-app-server-與-gemini-cli-adapter)。
@@ -458,8 +457,9 @@ schema、hook 行為、旗標——追隨兩個上游 CLI，而那兩者本身�
 - **PATCH**（`0.23.0` → `0.23.1`）絕不包含。
 
 1.0.0 保留給以下條件同時成立之時：該介面連續三個 MINOR 版本未出現破壞性變更，
-且 AGY 整合不再需要逐版本閘門。兩者目前皆未成立——`scripts/lib/engine.mjs` 仍有
-七個 `supportsAgy*` 閘門，各自依偵測到的 AGY 版本分支。
+且 AGY 整合不再需要逐版本閘門。後者已經成立——七個 `supportsAgy*` 閘門全數移除，
+改為在 `detectEngine` 檢查一次的版本下限，之後不再有任何路徑依 AGY 版本分支。前者
+尚未成立：移除它們的那個破壞性變更就在尚未發布的 0.25.0，計數從那裡重新開始。
 
 ---
 
@@ -477,4 +477,4 @@ MIT © 2026 arcobaleno64。
 
 **衍生自上游**（沿用，Apache-2.0）：斜線命令結構、背景工作模型（enqueue／worker／status／result／cancel）、`.omc/state` 持久化與 job-control 模式、停止時 review-gate 模式、skill 合約佈局，以及 version／manifest 工具（`bump-version`）。
 
-**本倉儲原創**（MIT）：Gemini/AGY 引擎偵測與路由、stdin 提示傳遞、`model-map` 別名／努力來源、AGY 引擎處理、OAuth 狀態檢查，以及 contract 驗證腳本。
+**本倉儲原創**（MIT）：Gemini/AGY 引擎偵測與路由、stdin 提示傳遞、`model-map` 別名／推理強度來源、AGY 引擎處理、OAuth 狀態檢查，以及 contract 驗證腳本。

@@ -119,15 +119,15 @@ Explanation: AGY encodes the effort tier into the model ID when `--model` is sup
 Bad:
 
 ```text
-Pipe legacy or unversioned `agy --print "..."` directly expecting a clean, pipeable answer stream without version checks.
+Pipe `agy --print "..."` yourself and hope the answer arrives on stdout, or write your own version check around it.
 ```
 
 Better:
-- Rely on AGY's stdout JSON envelope as authoritative on AGY 1.1.8 and up (`supportsAgyStructuredOutput` / `supportsAgyStreamJson`).
-- Treat on-disk transcript recovery as the legacy fallback mechanism for AGY versions below 1.1.8.
+- Rely on AGY's stdout JSON envelope as authoritative. The version floor guarantees it is there: an AGY too old to send it is refused by name at engine detection.
+- Treat on-disk transcript recovery as salvage only, for a run killed before it printed.
 - Prefer the **gemini** engine (`--output-format json`) when you need uniform, clean structured output across all environments.
 
-Explanation: older positional `agy --print` releases did not deliver responses over a pipe (upstream google-gemini/gemini-cli#27466). Since plugin v0.11.0, the plugin reads AGY's stdout JSON envelope as authoritative on AGY 1.1.8+, while on-disk transcript recovery remains only as the fallback for AGY versions below 1.1.8. The 1.1.2 path is live-verified on Windows and Ubuntu WSL2; real macOS 1.1.2 remains not run.
+Explanation: older positional `agy --print` releases did not deliver responses over a pipe (upstream google-gemini/gemini-cli#27466). Since plugin v0.11.0 the plugin reads AGY's stdout JSON envelope as authoritative, and since the version floor it does so unconditionally — an AGY that cannot send one is refused at engine detection rather than fallen back from, so no code here chooses between the two transports. On-disk transcript recovery remains only as salvage for a run killed before it printed.
 
 ## Assuming Gemini/AGY behaves like Codex (parity-specific)
 

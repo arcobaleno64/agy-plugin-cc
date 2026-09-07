@@ -14,6 +14,10 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      # The release notes, assembled here because this is the job that has a
+      # checkout. `publish` deliberately has none — see the comment on it.
+      notes: ${{ steps.notes.outputs.body }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
@@ -30,6 +34,31 @@ jobs:
             exit 1
           fi
           echo "Tag and package.json agree on $pkg."
+      # What users install is `main`, not this tag: the marketplace source is the
+      # repository's default branch, so the moment a version bump merges there,
+      # every client can resolve it — before this workflow ever runs. A tag that
+      # is not on main therefore publishes a release for code nobody receives,
+      # and a main whose manifest says a different version means the release page
+      # and the installed plugin disagree. Neither was checked anywhere.
+      - name: Assert the tag is on main, and that main offers this version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          status="$(gh api "repos/${GITHUB_REPOSITORY}/compare/main...${GITHUB_REF_NAME}" -q .status)"
+          case "$status" in
+            identical|behind) ;;
+            *)
+              echo "::error::$GITHUB_REF_NAME is not reachable from main (compare status: $status). Users install from main, so this tag would publish a release nobody can install." >&2
+              exit 1
+              ;;
+          esac
+          published="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.claude-plugin/marketplace.json?ref=main" -q .content | base64 -d | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).metadata.version")"
+          if [ "$published" != "$tag" ]; then
+            echo "::error::main's marketplace.json offers $published, but this tag is v$tag. Merge the version bump to main before tagging." >&2
+            exit 1
+          fi
+          echo "main is at $published and $GITHUB_REF_NAME is reachable from it."
       - run: npm test
       - run: npm run check-version
       - run: npm run verify-contracts
@@ -39,6 +68,20 @@ jobs:
       - run: npm install -g @anthropic-ai/claude-code@2.1.222
       - run: claude plugin validate ./plugins/gemini --strict
       - run: claude plugin validate . --strict
+
+      # The changelog is where a release is explained; the release page was
+      # showing only GitHub's generated list of PR titles, so the explanation
+      # reached nobody. Extracted here rather than in `publish`, which has no
+      # checkout on purpose.
+      - name: Read this version's changelog section
+        id: notes
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          {
+            echo "body<<CHANGELOG_SECTION_EOF"
+            node scripts/changelog-section.mjs "$tag"
+            echo "CHANGELOG_SECTION_EOF"
+          } >> "$GITHUB_OUTPUT"
 
   publish:
     # The only job granted a write token below, and deliberately the only one with
@@ -56,11 +99,19 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          # Through the environment, never interpolated into the script below:
+          # this text comes from a file in the tagged commit, so whoever can push
+          # a tag writes it, and `${{ }}` inside a `run:` body would hand that
+          # writer a shell in the one job holding a token that can publish.
+          CHANGELOG_SECTION: ${{ needs.verify.outputs.notes }}
         run: |
           notes="$(gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" -f tag_name="$GITHUB_REF_NAME" -q .body)"
           released_at="$(TZ='Asia/Taipei' date '+%Y-%m-%d %H:%M:%S')"
           {
             printf 'Released: %s (UTC+8 台北)\n\n' "$released_at"
+            if [ -n "${CHANGELOG_SECTION//[[:space:]]/}" ]; then
+              printf '%s\n\n---\n\n' "$CHANGELOG_SECTION"
+            fi
             printf '%s\n' "$notes"
           } > release-notes.md
           gh release create "$GITHUB_REF_NAME" \
@@ -68,3 +119,38 @@ jobs:
             --title "$GITHUB_REF_NAME" \
             --notes-file release-notes.md \
             --verify-tag
+
+  # Everything above tests the working copy the workflow was handed. This tests
+  # what a user gets: a bare clone of the published ref, with no `npm ci`, no
+  # node_modules, and nothing built — which is exactly how Claude Code resolves a
+  # marketplace plugin. It is also the only check here that would have caught a
+  # release that installs but cannot run.
+  verify-published:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: 22
+      - name: Clone the published tag and run the plugin from it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName
+          git clone --quiet --depth 1 --branch "$GITHUB_REF_NAME" \
+            "https://github.com/${GITHUB_REPOSITORY}.git" published
+          cd published
+          if [ -d node_modules ]; then
+            echo "::error::The published tree ships node_modules; the plugin is meant to run with no installed dependencies." >&2
+            exit 1
+          fi
+          report="$(node plugins/gemini/scripts/gemini-companion.mjs setup --json)"
+          echo "$report"
+          reported="$(printf '%s' "$report" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).pluginVersion")"
+          if [ "$reported" != "$tag" ]; then
+            echo "::error::The published $GITHUB_REF_NAME reports itself as $reported." >&2
+            exit 1
+          fi
+          echo "A bare clone of $GITHUB_REF_NAME runs and reports $reported."

@@ -8,6 +8,7 @@ import {
   probeAgyLogin,
   probeGeminiLogin
 } from "../plugins/gemini/scripts/lib/gemini.mjs";
+import { AGY_MINIMUM_VERSION } from "../plugins/gemini/scripts/lib/engine.mjs";
 import { renderSetupReport } from "../plugins/gemini/scripts/lib/render.mjs";
 import { makeTempDir } from "./helpers.mjs";
 import fs from "node:fs";
@@ -19,8 +20,9 @@ import path from "node:path";
 // The defect this answers: getAgyLoginStatus can only say "unknown", so
 // /gemini:setup told the user to "run an `--engine agy` command to confirm it is
 // logged in" — spend a billed turn, then read the answer out of whether it
-// failed. AGY 1.1.11 answers `/quota` in print mode from the account without
-// starting a turn, which is a real auth check at no token cost.
+// failed. AGY answers `/quota` in print mode from the account
+// without starting a turn (1.1.11+, and this plugin's floor is 1.1.12), which is
+// a real auth check at no token cost.
 // ---------------------------------------------------------------------------
 
 const AGY_ENVELOPE = {
@@ -49,7 +51,7 @@ function stubRun(result) {
 test("the AGY probe asks a read-only question, so it costs no turn", () => {
   const runCommandFn = stubRun({ stdout: `${JSON.stringify(AGY_ENVELOPE)}\n` });
 
-  const status = probeAgyLogin({ runCommandFn, detectEngineFn: agyEngine("1.1.11") });
+  const status = probeAgyLogin({ runCommandFn, detectEngineFn: agyEngine("1.1.24") });
 
   assert.equal(status.loggedIn, true);
   assert.equal(status.state, "verified");
@@ -68,26 +70,13 @@ test("the AGY probe asks a read-only question, so it costs no turn", () => {
   assert.equal(call.binary, "/fake/agy.exe");
 });
 
-// Below 1.1.11 the same input is sent to the model as literal prompt text, so
-// probing would cost a turn and prove nothing.
-test("the AGY probe refuses on a version that would charge for it", () => {
-  const runCommandFn = stubRun({ stdout: `${JSON.stringify(AGY_ENVELOPE)}\n` });
-
-  const status = probeAgyLogin({ runCommandFn, detectEngineFn: agyEngine("1.1.10") });
-
-  assert.equal(status.state, "unknown");
-  assert.equal(status.verifiable, false);
-  assert.match(status.detail, /1\.1\.11/);
-  assert.deepEqual(runCommandFn.calls, [], "no version below 1.1.11 may be spawned for a probe");
-});
-
 test("an unauthenticated AGY is reported as logged out, with proof", () => {
   const runCommandFn = stubRun({
     stdout: JSON.stringify({ ...AGY_ENVELOPE, status: "ERROR", response: "", error: "unauthenticated: login required" }),
     status: 1
   });
 
-  const status = probeAgyLogin({ runCommandFn, detectEngineFn: agyEngine("1.1.11") });
+  const status = probeAgyLogin({ runCommandFn, detectEngineFn: agyEngine("1.1.24") });
 
   assert.equal(status.loggedIn, false);
   assert.equal(status.state, "logged-out");
@@ -99,7 +88,7 @@ test("an unauthenticated AGY is reported as logged out, with proof", () => {
 test("a probe that fails for another reason leaves the state unknown", () => {
   const runCommandFn = stubRun({ stdout: "", stderr: "connection reset", status: 1 });
 
-  const status = probeAgyLogin({ runCommandFn, detectEngineFn: agyEngine("1.1.11") });
+  const status = probeAgyLogin({ runCommandFn, detectEngineFn: agyEngine("1.1.24") });
 
   assert.equal(status.state, "unknown");
   assert.equal(status.verifiable, false);
@@ -122,7 +111,9 @@ function agyStatus(state) {
 // Availability is stubbed alongside the login status. Reading it off the machine
 // makes the assertions below depend on whether AGY happens to be installed:
 // green on a developer box, "not-ready" on every CI runner.
-const AGY_INSTALLED = { available: true, version: "1.1.11" };
+// `detail` is what binaryAvailable actually returns, and since 0.25.0 the floor
+// check reads it. The old `version` key was never read by anything.
+const AGY_INSTALLED = { available: true, detail: "1.1.24" };
 
 test("a verified AGY reaches ready, the state --engine agy could never hold", () => {
   const report = buildSetupReport(makeTempDir(), [], {
@@ -140,6 +131,131 @@ test("a verified AGY reaches ready, the state --engine agy could never hold", ()
 // The reported false alarm: `readyState: "partial"` for an AGY that was in fact
 // working. Unknown still means partial — but it now names a zero-cost way out
 // instead of telling the user to spend a turn finding out.
+// The floor is a readiness fact, so setup answers it before the first command
+// fails on it. An AGY below the floor is named with its version; one whose
+// version cannot be read is reported as unchecked, never as unsupported.
+// A sub-floor AGY sitting on PATH beside a working gemini is not the user's
+// problem. Reporting it produced a report that contradicted itself: ready, with
+// a refusal in nextSteps about an engine the user had not selected.
+test("a stale AGY beside a working gemini is not reported as the user's problem", () => {
+  const report = buildSetupReport(makeTempDir(), [], {
+    engine: "gemini",
+    geminiAvailabilityFn: () => ({ available: true, detail: "0.53.1" }),
+    geminiLoginStatusFn: () => ({ loggedIn: true, state: "verified", detail: "ok" }),
+    // Injected, because readiness resolves credentials through the machine the
+    // test runs on when it is not. Leaving it out made the test pass wherever
+    // the maintainer had a gemini credential and fail on every CI runner, which
+    // is the wrong way round: the assertion is about AGY, not about the host.
+    geminiCredentialedFn: () => true,
+    agyAvailabilityFn: () => ({ available: true, detail: "1.1.9" }),
+    agyLoginStatusFn: () => agyStatus("unknown")
+  });
+
+  assert.equal(report.readyState, "ready");
+  assert.deepEqual(report.nextSteps, [], "a ready report must not carry a refusal about an unselected engine");
+});
+
+// The probe boundary, asserted at the two versions that decide it rather than
+// only at a version comfortably above both.
+test("the probe runs at the floor and declines one release below it", () => {
+  const atFloor = stubRun({ stdout: JSON.stringify(AGY_ENVELOPE) });
+  assert.equal(probeAgyLogin({ runCommandFn: atFloor, detectEngineFn: agyEngine(AGY_MINIMUM_VERSION) }).state, "verified");
+  assert.equal(atFloor.calls.length, 1);
+
+  const belowFloor = stubRun({ stdout: JSON.stringify(AGY_ENVELOPE) });
+  const declined = probeAgyLogin({ runCommandFn: belowFloor, detectEngineFn: agyEngine("1.1.11") });
+  assert.equal(declined.state, "unknown");
+  assert.equal(declined.verifiable, false);
+  assert.deepEqual(belowFloor.calls, [], "a sub-floor AGY must not be spawned for a probe");
+});
+
+test("setup names an AGY below the floor, with the version it found", () => {
+  const report = buildSetupReport(makeTempDir(), [], {
+    engine: "agy",
+    probedAgy: true,
+    agyAvailabilityFn: () => ({ available: true, detail: "1.1.9" }),
+    agyLoginStatusFn: () => agyStatus("verified")
+  });
+
+  const said = report.nextSteps.join(String.fromCharCode(10));
+  assert.match(said, /1\.1\.9 is older than this plugin supports/);
+  assert.match(said, /agy update/);
+});
+
+test("setup says an unreadable AGY version was not checked, not that it is too old", () => {
+  const report = buildSetupReport(makeTempDir(), [], {
+    engine: "agy",
+    probedAgy: true,
+    agyAvailabilityFn: () => ({ available: true, detail: "antigravity (build 8812)" }),
+    agyLoginStatusFn: () => agyStatus("verified")
+  });
+
+  const said = report.nextSteps.join(String.fromCharCode(10));
+  assert.match(said, /Could not read the AGY version/);
+  assert.doesNotMatch(said, /older than this plugin supports/);
+});
+
+// Running on an unreadable version is a risk the user accepted. Spending on one
+// is a different decision: below 1.1.11 `/quota` is billed as an ordinary turn,
+// and an unreadable version cannot rule that out. Reported by adversarial review.
+test("the probe refuses to spend a turn on an AGY whose version it cannot read", () => {
+  const runCommandFn = stubRun({ stdout: `${JSON.stringify(AGY_ENVELOPE)}` });
+
+  const status = probeAgyLogin({
+    runCommandFn,
+    detectEngineFn: () => ({ engine: "agy", binary: "/fake/agy", version: "wobble", versionUnverified: true })
+  });
+
+  assert.equal(status.state, "unknown");
+  assert.equal(status.verifiable, false);
+  assert.deepEqual(runCommandFn.calls, [], "an unverified AGY must not be spawned for a probe");
+});
+
+// Under `auto` an unsupported AGY is still what this machine would route to when
+// gemini has no working credential, so the report must not call it ready.
+test("an AGY below the floor is not ready even when it was not explicitly selected", () => {
+  const report = buildSetupReport(makeTempDir(), [], {
+    agyAvailabilityFn: () => ({ available: true, detail: "1.1.9" }),
+    agyLoginStatusFn: () => agyStatus("verified"),
+    geminiAvailabilityFn: () => ({ available: false, detail: null })
+  });
+
+  assert.notEqual(report.readyState, "ready");
+  assert.match(report.nextSteps.join(String.fromCharCode(10)), /1\.1\.9 is older than this plugin supports/);
+});
+
+// Same reasoning as the test above, for the third answer. The two floor branches
+// answered the same question differently: `too-old` had already widened to the
+// AGY that would actually run, while `unreadable` still spoke only under an
+// explicit `--engine agy`. So under `auto` with no gemini credential, setup said
+// nothing about a version it had failed to read, and the first real command then
+// said it -- the same fact, two answers, depending on which surface was asked.
+test("an unreadable AGY version is reported under auto when it is what would run", () => {
+  const report = buildSetupReport(makeTempDir(), [], {
+    agyAvailabilityFn: () => ({ available: true, detail: "antigravity (build 8812)" }),
+    agyLoginStatusFn: () => agyStatus("verified"),
+    geminiAvailabilityFn: () => ({ available: false, detail: null })
+  });
+
+  assert.match(report.nextSteps.join(String.fromCharCode(10)), /Could not read the AGY version/);
+});
+
+// The fence the `too-old` branch was narrowed for holds for `unreadable` too:
+// widening must not reach an AGY that a working gemini keeps out of the way.
+test("an unreadable AGY version beside a working gemini stays unreported", () => {
+  const report = buildSetupReport(makeTempDir(), [], {
+    engine: "gemini",
+    geminiAvailabilityFn: () => ({ available: true, detail: "0.53.1" }),
+    geminiLoginStatusFn: () => ({ loggedIn: true, state: "verified", detail: "ok" }),
+    geminiCredentialedFn: () => true,
+    agyAvailabilityFn: () => ({ available: true, detail: "antigravity (build 8812)" }),
+    agyLoginStatusFn: () => agyStatus("unknown")
+  });
+
+  assert.equal(report.readyState, "ready");
+  assert.deepEqual(report.nextSteps, []);
+});
+
 test("an unprobed AGY stays partial but is told how to check for free", () => {
   const report = buildSetupReport(makeTempDir(), [], {
     engine: "agy",

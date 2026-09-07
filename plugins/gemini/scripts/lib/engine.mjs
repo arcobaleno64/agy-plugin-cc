@@ -4,15 +4,47 @@ import path from "node:path";
 import { createFailureError } from "./failures.mjs";
 import { binaryAvailable, resolveBinaryPath } from "./process.mjs";
 import { EFFORT_MODEL_MAP, MODEL_ALIASES, VALID_EFFORT_LEVELS } from "./model-map.mjs";
-import { resolveAgyBrainRoot } from "./agy-transcript.mjs";
 import { hasGeminiCredentials } from "./gemini-auth.mjs";
 
 export const ENGINE_ENV = "GEMINI_ENGINE";
-export const AGY_POSITIONAL_PROMPT_SAFE_LIMIT = 24_000;
 export const AGY_EFFORT_LEVELS = new Set(["low", "medium", "high"]);
 
-const AGY_EXECUTABLE_PATH_ERROR =
-  "AGY could not be resolved to an executable .exe path; the plugin refuses to spawn it via the shell to avoid argv injection on Windows. Ensure agy is on PATH or use --engine gemini.";
+// Two different problems that used to share one message. The security refusal is
+// only the right answer when agy IS installed and resolves to something that is
+// not an .exe — for the far more common "not installed", it explained a threat
+// model to someone who just needed an install command. On Windows the friendly
+// message below was unreachable, because path resolution throws first.
+const AGY_EXECUTABLE_PATH_REFUSAL =
+  "AGY resolved to a path that is not an executable .exe; the plugin refuses to spawn it via the shell to avoid argv injection on Windows. Reinstall AGY so `agy` resolves to agy.exe";
+
+// The way out depends on what else this machine has, because under `auto` there
+// is no `--engine gemini` to offer: routing only reached AGY because gemini was
+// not usable, so naming it as the fix sends the user to a second failure. Same
+// rule as agyFloorRefusal, for the same reason.
+function agyExecutablePathRefusal(geminiState = "usable") {
+  if (geminiState === "unauthenticated") {
+    return `${AGY_EXECUTABLE_PATH_REFUSAL}. Gemini CLI is installed but has no usable credential, so there is nothing to fall back to: run \`gemini\` to authenticate, or set GEMINI_API_KEY.`;
+  }
+  if (geminiState === "missing") {
+    return `${AGY_EXECUTABLE_PATH_REFUSAL}. Gemini CLI is not installed either, so no engine is available.`;
+  }
+  return `${AGY_EXECUTABLE_PATH_REFUSAL}, or use --engine gemini.`;
+}
+
+const AGY_NOT_INSTALLED_ERROR =
+  "AGY engine requested but no `agy` binary was found on PATH. Install it with `curl -fsSL https://antigravity.google/cli/install.sh | bash`, or use --engine gemini. See `/gemini:setup`.";
+
+// Which of the two resolution failures happened, kept on the error rather than
+// re-derived by matching its text. `auto` has to tell them apart: one means AGY
+// is absent, the other means it is present and this plugin will not run it.
+export const AGY_NOT_EXECUTABLE = "AGY_NOT_EXECUTABLE";
+export const AGY_NOT_INSTALLED = "AGY_NOT_INSTALLED";
+
+function agyResolutionError(message, code) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
 
 // Model aliases and effort tiers live in model-map.mjs (single source of truth,
 // verified against the README table). Re-exported here for existing importers.
@@ -53,7 +85,14 @@ function resolveAgyExecutablePath({ resolveBinaryPathImpl = resolveBinaryPath } 
   const isAbsolute = typeof resolved === "string" && path.isAbsolute(resolved);
   const isExecutable = process.platform !== "win32" || path.extname(resolved ?? "").toLowerCase() === ".exe";
   if (!isAbsolute || !isExecutable) {
-    throw new Error(AGY_EXECUTABLE_PATH_ERROR);
+    // Ask again without the .exe requirement, purely to tell the two cases
+    // apart: something came back, so AGY is installed and the refusal is about
+    // its shape; nothing came back, so it is simply not on PATH and the user
+    // needs an install command rather than a threat model.
+    const anyPath = resolveBinaryPathImpl("agy", { requireExe: false });
+    throw anyPath
+      ? agyResolutionError(agyExecutablePathRefusal(), AGY_NOT_EXECUTABLE)
+      : agyResolutionError(AGY_NOT_INSTALLED_ERROR, AGY_NOT_INSTALLED);
   }
   return resolved;
 }
@@ -97,75 +136,85 @@ function agyVersionAtLeast(version, minMinor, minPatch) {
   return major > 1 || (major === 1 && (minor > minMinor || (minor === minMinor && patch >= minPatch)));
 }
 
-export function supportsAgyStdinPrompt(version) {
-  return agyVersionAtLeast(version, 1, 2);
-}
-
-// AGY 1.1.5 accepts --model and --effort, but through 1.1.9 it applied them
-// after model configuration had already been initialized, so a headless `-p`
-// run silently fell back to the persisted or default model. AGY 1.1.10 fixed
-// that; anything older is treated as not supporting selection at all rather
-// than reporting a selection the run will not honor.
-export function supportsAgyModelSelection(version) {
-  return agyVersionAtLeast(version, 1, 10);
-}
-
-// AGY 1.1.9 expands slash commands and skills in print mode. Plugin prompts
-// carry raw user text at position 0, so a task beginning with "/" would be
-// executed as an AGY command instead of read as instructions.
-export function supportsAgySlashCommandOptOut(version) {
-  return agyVersionAtLeast(version, 1, 9);
-}
-
-// AGY 1.1.8 added --output-format json: a stdout envelope carrying the response,
-// the conversation id, and a terminal status. Before it, the on-disk transcript
-// was the only reliable source for all three.
-export function supportsAgyStructuredOutput(version) {
-  return agyVersionAtLeast(version, 1, 8);
-}
-
-// `--output-format stream-json` emits one JSON object per line as the turn
-// happens, instead of a single envelope at the end. That is the difference
-// between a timed-out run reporting nothing and one reporting how far it got —
-// and, when the timeout lands while the answer is being written, keeping that
-// part of it.
+// THE AGY FLOOR
+// -------------
+// This used to be seven capability gates, one per AGY release that changed what
+// the plugin could ask for: stdin prompts (1.1.2), the JSON envelope (1.1.8),
+// slash-command opt-out (1.1.9), model selection and --add-dir (1.1.10),
+// read-only slash commands (1.1.11), stream-json (1.1.12). Each carried a
+// fallback for the versions below it.
 //
-// Gated at 1.1.12 because that is the version it was measured on: `--help`
-// lists stream-json among --output-format's values there, and a real turn was
-// captured to confirm the event shape. `--output-format` itself arrived in
-// 1.1.8, but which of its values existed when is not something this repository
-// can check, and the existing convention here is to fail closed rather than
-// assume an upstream capability. A version below this keeps plain json, which
-// still works.
-export function supportsAgyStreamJson(version) {
-  return agyVersionAtLeast(version, 1, 12);
+// They are gone, and the reason is not tidiness. Those fallbacks ran only for
+// users this project cannot see, and they were the only code the maintainer
+// could not exercise locally: the Windows AGY stand-in reports Node's version,
+// so six of the suite's eight skipped tests were exactly the old-version paths.
+// Least-run code, least-tested code, same code.
+//
+// One of them was worse than untested. AGY 1.1.5 through 1.1.9 accept --model
+// and then ignore it in headless runs, so below that gate the plugin quietly
+// ran a model the user did not choose. A declared floor turns that into a
+// refusal that names the fix.
+//
+// 1.1.12 is the highest floor that removes anything and the lowest that removes
+// everything: every gate sat at or below it, and no post-1.1.12 behaviour the
+// plugin depends on is version-branched (AGY 1.1.20's exit-code change is
+// absorbed by failedExit in gemini.mjs, without asking the version).
+export const AGY_MINIMUM_VERSION = "1.1.12";
+const AGY_MINIMUM_MINOR = 1;
+const AGY_MINIMUM_PATCH = 12;
+
+// Three states, not a boolean, because "too old" and "cannot tell" call for
+// opposite answers. agyVersionAtLeast returns false for both, which is why the
+// floor cannot be expressed with it alone: an unreadable version string would
+// be refused exactly like a real 1.1.0.
+//
+// A version that cannot be parsed does NOT block the run. The alternative makes
+// an upstream cosmetic change to `agy --version` an outage for every user at
+// once, and the plugin has no way to tell that apart from a genuinely odd
+// build. The floor is enforced against versions that are readable and too old,
+// never against silence.
+// The version has to be the version, not the first pair of numbers on the line.
+// An unanchored match reads `antigravity (node 18.2.1)` as AGY 18.2.1 and
+// certifies it, and reads `agy 2 (build 1.1)` as 1.1 and refuses a build newer
+// than the floor. Anchoring costs nothing on the real output — AGY 1.1.25 prints
+// a bare `1.1.25`, and the test stand-in prints `agy 1.1.24` — and turns both
+// misreadings into "unreadable", which is the direction that fails open. The
+// whole match is handed to agyVersionAtLeast rather than its digits, so a
+// prerelease suffix still disqualifies the build.
+const AGY_VERSION_AT_START = /^(?:agy|antigravity)?[ \t]*(?:version[ \t]*)?v?(\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?)/i;
+
+export function agyMeetsFloor(version) {
+  const found = AGY_VERSION_AT_START.exec(String(version ?? "").trim());
+  if (!found) return "unreadable";
+  // A two-segment version is a version, not an unreadable string: "1.1" is
+  // decidably below 1.1.12 and must be refused rather than waved through as
+  // "could not tell". Padded to X.Y.0, the lowest patch it could mean and
+  // therefore the safe reading.
+  const candidate = found[1];
+  const normalized = /^\d+\.\d+$/.test(candidate) ? candidate + ".0" : candidate;
+  return agyVersionAtLeast(normalized, AGY_MINIMUM_MINOR, AGY_MINIMUM_PATCH) ? "ok" : "too-old";
 }
 
-// AGY 1.1.11 answers the read-only slash commands (`/usage`, `/quota`,
-// `/credits`, `/model`, `/effort`, `/skills`) in print mode without starting an
-// agent turn, spending quota, or leaving a conversation behind. That is what
-// makes a non-interactive AGY auth check possible at all: `/quota` needs the
-// account to answer, so a SUCCESS envelope proves authentication, and measured
-// on 1.1.11 it reports `num_turns: 0` with every token count at zero.
-//
-// Below 1.1.11 the same input is sent to the model as literal prompt text, so
-// the probe would cost a real turn and prove nothing. Gate on the version.
-export function supportsAgyReadOnlySlashCommands(version) {
-  return agyVersionAtLeast(version, 1, 11);
+// `--engine gemini` is only a way out when gemini can actually run. Under `auto`
+// this refusal is reached precisely because gemini had no usable credential, so
+// offering it there sends the user to a second failure. Reported by adversarial
+// review: the refusal was hiding the other half of the problem.
+export function agyFloorRefusal(version, { geminiUsable = true } = {}) {
+  return (
+    `AGY ${String(version ?? "").trim() || "(unknown)"} is older than this plugin supports. ` +
+    `agy-plugin-cc requires AGY ${AGY_MINIMUM_VERSION} or newer: below it, --model and --effort are ` +
+    "accepted and then ignored in headless runs, slash commands in a prompt are executed rather than " +
+    "read, and there is no JSON envelope to take the response from. Run `agy update`" +
+    (geminiUsable
+      ? ", or use `--engine gemini`."
+      : ". Gemini CLI is not a way out here: it has no usable credential either, which is why routing " +
+        "reached AGY at all. Run `gemini` to authenticate it, or set GEMINI_API_KEY. See `/gemini:setup`.")
+  );
 }
 
-// --add-dir puts a directory in AGY's workspace, which is what makes the model
-// treat it as "here". Without it a read-only turn reports its cwd as
-// ~/.gemini/antigravity-cli/scratch and every relative path misses — measured on
-// 1.1.10, 2026-08-05, alongside --new-project (which orients the same way but is
-// reserved for write turns).
-//
-// Gated at 1.1.10 because that is the only version the flag was exercised on. It
-// may well predate that; an unverified lower bound would be a guess, and a guess
-// here spawns an unknown flag at an older AGY instead of degrading quietly.
-export function supportsAgyWorkspaceDir(version) {
-  return agyVersionAtLeast(version, 1, 10);
-}
+export const AGY_VERSION_UNVERIFIED_NOTICE =
+  `Could not read the AGY version, so it was not checked. This plugin needs AGY ${AGY_MINIMUM_VERSION} or newer; ` +
+  "if something behaves oddly, run `agy update` first.";
 
 export function detectEngine(requestedEngine = null, options = {}) {
   const {
@@ -183,17 +232,19 @@ export function detectEngine(requestedEngine = null, options = {}) {
   if (normalized === "agy") {
     const binary = resolveAgyExecutablePath(options);
     const status = binaryAvailableFn(binary, ["--version"]);
-    if (!status.available) throw new Error("AGY engine requested but agy binary is not available.");
-    const version = status.detail ?? "unknown";
-    // Below 1.1.8 the on-disk transcript is the only source for the response,
-    // DONE status, and conversation id, so a missing brain dir must fail loud.
-    // From 1.1.8 the JSON envelope carries all three and the dir is optional.
-    if (!supportsAgyStructuredOutput(version) && !resolveAgyBrainRoot()) {
+    // Reached when agy resolves but cannot answer --version: present on PATH,
+    // not runnable. Distinct again from "not installed", which never gets here.
+    if (!status.available) {
       throw new Error(
-        "AGY engine requested but no transcript brain dir was found. AGY below 1.1.8 has no structured stdout, so the plugin requires the on-disk transcript for the completed response and conversation id. Run `agy` once interactively to initialize it, upgrade to AGY 1.1.8 or newer, or use `--engine gemini`."
+        `AGY was found at ${binary} but could not run: ${status.detail ?? "no output"}. Reinstall AGY, or use --engine gemini.`
       );
     }
-    return { engine: "agy", binary, version };
+    const version = status.detail ?? "unknown";
+    const floor = agyMeetsFloor(version);
+    if (floor === "too-old") throw new Error(agyFloorRefusal(version));
+    // "unreadable" runs anyway; the caller surfaces the notice once so the user
+    // knows the check did not happen rather than believing it passed.
+    return { engine: "agy", binary, version, versionUnverified: floor === "unreadable" };
   }
 
   if (normalized === "gemini") {
@@ -218,19 +269,37 @@ export function detectEngine(requestedEngine = null, options = {}) {
   }
 
   let agyBinary = null;
+  // A bare `catch` here reported an AGY the plugin had *refused* as an AGY that
+  // did not exist: on Windows an npm-installed `agy.cmd` resolves fine, is
+  // rejected on purpose (CVE-2024-27980), and the user was then told no AGY
+  // binary was found — sent to reinstall something already installed. Absence is
+  // the only failure `auto` may swallow, because for that one the message below
+  // is already the right answer.
+  let agyRefused = false;
   try {
     agyBinary = resolveAgyExecutablePath(options);
-  } catch {
+  } catch (error) {
     agyBinary = null;
+    agyRefused = error?.code === AGY_NOT_EXECUTABLE;
   }
   const agyStatus = agyBinary ? binaryAvailableFn(agyBinary, ["--version"]) : { available: false };
   if (agyStatus.available) {
-    return { engine: "agy", binary: agyBinary, version: agyStatus.detail ?? "unknown" };
+    // The floor applies to the engine that will run, not to the way it was
+    // chosen. Reaching here means gemini has no usable credential, so an AGY
+    // below the floor is not a fallback — it is the only thing left, and running
+    // it would silently ignore --model and read slash commands out of the prompt.
+    const agyVersion = agyStatus.detail ?? "unknown";
+    const agyFloor = agyMeetsFloor(agyVersion);
+    if (agyFloor === "too-old") throw new Error(agyFloorRefusal(agyVersion, { geminiUsable: false }));
+    return { engine: "agy", binary: agyBinary, version: agyVersion, versionUnverified: agyFloor === "unreadable" };
   }
 
   // Nothing usable. Distinguish "no engine installed" from "gemini installed but
   // unauthenticated", because the fix differs and the second case used to be
   // reported as a confusing downstream API error.
+  if (agyRefused) {
+    throw new Error(agyExecutablePathRefusal(geminiStatus.available ? "unauthenticated" : "missing"));
+  }
   if (geminiStatus.available) {
     throw new Error(
       "Gemini CLI is installed but has no usable credential, and no AGY binary was found. Run `gemini` to authenticate, set GEMINI_API_KEY, or install AGY. See `/gemini:setup`."
@@ -253,43 +322,21 @@ export function formatAgyTimeout(timeoutMs) {
   return `${Math.max(1, Math.round(timeoutMs / 1000))}s`;
 }
 
-function assertAgyPromptSafe(prompt) {
-  const value = String(prompt ?? "");
-  if (value.includes("\0")) {
-    throw createFailureError({
-      promptNul: true,
-      engine: "agy",
-      summary: "AGY prompt contains a NUL byte and cannot be passed as a positional argument.",
-      nextStep: "Remove NUL bytes from the prompt or use `--engine gemini`, which sends prompts over stdin."
-    });
-  }
-  if (value.length > AGY_POSITIONAL_PROMPT_SAFE_LIMIT) {
-    throw createFailureError({
-      promptTooLong: true,
-      engine: "agy",
-      summary: `AGY positional prompt is ${value.length} characters, above the ${AGY_POSITIONAL_PROMPT_SAFE_LIMIT.toLocaleString("en-US")} character safe limit.`,
-      nextStep: "Shorten the prompt or use `--engine gemini`, which sends prompts over stdin."
-    });
-  }
-}
-
 export function buildCliArgs(engine, options = {}) {
-  const { prompt = "", model, effort, write = false, resumeLast = false, resumeThreadId = null, outputJson = false, timeoutMs, useStdin = false, agyVersion = null, workspaceDir = null } = options;
+  const { prompt = "", model, effort, write = false, resumeLast = false, resumeThreadId = null, outputJson = false, timeoutMs, agyVersion = null, workspaceDir = null } = options;
 
   if (engine === "agy") {
-    // AGY >=1.1.2 auto-enters print mode when a prompt is piped on stdin; adding
-    // --print would consume the following flag as its own prompt argument. Older
-    // versions retain the positional form and its Windows argv safety checks.
-    const args = [];
-    if (!useStdin) {
-      assertAgyPromptSafe(prompt);
-      args.push("--print", prompt);
-    }
-    // The prompt is raw user text at position 0, so opt out of AGY's print-mode
-    // slash-command and skill expansion wherever the flag exists (1.1.9+).
-    if (supportsAgySlashCommandOptOut(agyVersion)) {
-      args.push("--disable-slash-commands");
-    }
+    // The prompt is always piped on stdin, so there is no positional form left to
+    // build: AGY auto-enters print mode when it reads one, and adding --print
+    // would consume the following flag as its own prompt argument. The positional
+    // branch this used to carry — with its NUL-byte and 24,000-character argv
+    // guards — existed for AGY below 1.1.2, which the declared floor rules out.
+    // Every production caller already passed useStdin: true, so the guards ran
+    // for nobody and only the tests could reach them.
+    //
+    // The prompt is untrusted text, so opt out of AGY's print-mode slash-command
+    // and skill expansion.
+    const args = ["--disable-slash-commands"];
     const agyModel = normalizeAgyRequestedModel(model);
     const agyEffort = normalizeAgyEffort(effort);
     // AGY accepts each flag, but the locally reported model IDs reject the
@@ -300,11 +347,11 @@ export function buildCliArgs(engine, options = {}) {
     }
     if (agyModel) args.push("--model", agyModel);
     if (agyEffort) args.push("--effort", agyEffort);
-    if (outputJson && supportsAgyStructuredOutput(agyVersion)) {
+    if (outputJson) {
       // stream-json is a superset of what json returns: the same terminal
       // envelope arrives as the final event, preceded by the progress that
       // makes a cut-off run legible. See supportsAgyStreamJson for the gate.
-      args.push("--output-format", supportsAgyStreamJson(agyVersion) ? "stream-json" : "json");
+      args.push("--output-format", "stream-json");
     }
     // No --dangerously-skip-permissions. AGY's headless print mode auto-approves
     // file edits and shell commands with or without it — measured on 1.1.10,
@@ -356,7 +403,7 @@ export function buildCliArgs(engine, options = {}) {
       args.push("--conversation", resumeThreadId);
     } else if (write) {
       args.push("--new-project");
-    } else if (workspaceDir && supportsAgyWorkspaceDir(agyVersion)) {
+    } else if (workspaceDir) {
       // Read-only turns were left unoriented until v0.16.4, which cost them the
       // ability to investigate anything: `/gemini:rescue` without --write is
       // documented for exactly that, and on AGY it was reading a scratch dir.
@@ -367,8 +414,8 @@ export function buildCliArgs(engine, options = {}) {
     return args;
   }
 
-  // gemini — when useStdin is true the caller passes prompt via stdin; omit -p here
-  const args = useStdin ? [] : ["-p", prompt];
+  // gemini — the prompt is piped on stdin too, so no -p is built here either.
+  const args = [];
   if (model) args.push("-m", model);
   // --yolo IS a real gate here, unlike AGY's --dangerously-skip-permissions —
   // measured on gemini CLI 0.53.1, 2026-08-05. Without it a headless run is not

@@ -20,6 +20,7 @@ its list and then wrote out yourself — chosen, never copied:
 - `--scope <value>`: `auto`, `working-tree`, `branch`
 - `--engine <value>`: `auto`, `gemini`, `agy`
 - `--model <value>`: an alias (`flash`, `pro`, `lite`, …) or an id matching `^[A-Za-z0-9][A-Za-z0-9._-]*$`
+- `--effort <value>`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`
 - `--timeout <seconds>`: only if it is entirely digits and between 30 and 3600
 - `--deep`, `--wait`, `--background`, `--json`: literal flags, no value
 

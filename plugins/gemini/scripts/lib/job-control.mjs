@@ -384,7 +384,15 @@ export function buildSingleJobSnapshot(cwd, reference, options = {}) {
   const exactGroup = reference ? jobs.filter((job) => job.groupId === reference) : [];
   const selected = exactGroup[0] ?? matchJobReference(jobs, reference);
   if (!selected) {
-    throw new Error(`No job found for "${reference}". Run /gemini:status to inspect known jobs.`);
+    // Only reachable with no reference at all: `matchJobReference` throws its own
+    // "No job found for X" when a reference matches nothing, so the branch that
+    // used to stand here — a second, differently worded copy of that message —
+    // could not run, and said `No job found for "undefined"` if it ever had.
+    //
+    // No `--all` advice either, unlike the result path: this function searches
+    // every job in the workspace already, so a scope-widening flag would name a
+    // fix for a problem the user does not have.
+    throw new Error("No Gemini jobs found in this workspace yet.");
   }
 
   const grouped = selected.groupId

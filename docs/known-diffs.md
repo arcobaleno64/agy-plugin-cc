@@ -48,9 +48,10 @@ campaign matrix for the full three-way comparison.
 
 ## Security posture (shared with siblings)
 
-- **AGY prompt transport is version-gated.** Stable AGY 1.1.2+ receives free
-  text through stdin; older, prerelease, and unparseable versions retain the
-  positional fallback with NUL and 24,000-character preflight checks. AGY is
+- **AGY prompt transport is stdin-only.** Every AGY the plugin runs receives
+  free text through stdin. The positional fallback, and the NUL and
+  24,000-character preflight checks that guarded it, went with the version
+  floor: the versions that needed them are refused at engine detection. AGY is
   resolved to an absolute `.exe` and spawned with `shell:false`; if that cannot
   be guaranteed, `detectEngine` fails closed rather than falling back to a bare
   name. The `quoteForWindowsShell` helper is a no-op safety net for
@@ -83,6 +84,7 @@ reuses the same aggregating pattern as `status` and `result`.*
 - **gemini engine end-to-end** depends on Gemini API auth; the CLI OAuth path is
   retired upstream and will not be restored (owner-confirmed 2026-07-14;
   observed `API_KEY_INVALID`). With the gemini engine effectively unavailable,
-  the plugin's agy path is the practical route — on AGY 1.1.8+ it reads the native
-  JSON envelope, and transcript recovery is the fallback for older AGY only; the
-  gemini path remains for environments where a working key exists.
+  the plugin's agy path is the practical route — it reads the native JSON
+  envelope, which the version floor guarantees. Transcript recovery is no longer
+  a version fallback; it survives only as salvage for a run killed before it
+  printed. The gemini path remains for environments where a working key exists.
