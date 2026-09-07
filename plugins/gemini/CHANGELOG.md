@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.26.0 - Unreleased
+
+- **A refused AGY version is no longer filed as something worth retrying.** The
+  refusal reached the user intact — it is the job's summary, naming the floor and
+  `agy update` — but `classifyCliFailure` had no arm for it, so it landed in
+  `unknown`: marked retryable, with "retry with a narrower prompt if needed" as
+  the next step. A version floor is the one failure a retry provably cannot fix,
+  and prompt size is not what was refused.
+
+  The new `engine-unsupported` category sits ahead of `auth` rather than after
+  it, and that order is the point. When gemini has no usable credential either,
+  the refusal explains why routing reached AGY at all, and that sentence contains
+  the word "authenticate" — which the auth arm matches. Measured on both
+  variants: the auth pattern fires on that one and not the other, so an arm
+  placed later would have sent a user whose AGY is merely old to `/gemini:setup`.
+
+  Found while reproducing #150, which asked a different question and is answered
+  in a comment rather than a change: `prepareBackgroundSelection` resolves the
+  engine only when a model or an effort has to be validated against it. Detection
+  costs about 155 ms here, but cost is not the reason — with neither flag given,
+  paying it would resolve an engine in order to discard the answer.
+
 ## 0.25.0 - 2026-09-07 - A declared AGY floor, and a stop gate that stops guessing
 
 - **BREAKING: AGY 1.1.12 or newer is now required, and an older AGY is refused by

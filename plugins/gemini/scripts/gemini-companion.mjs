@@ -1123,6 +1123,19 @@ function prepareEngineSelection(engineInfo, model, effort) {
   return { model: normalizeRequestedModel(requestedModel), effort: requestedEffort };
 }
 
+// Resolves the engine only when the request needs one to be understood. That is
+// the whole rule: prepareEngineSelection returns on the same condition one level
+// down, and normalising a model or an effort is the only thing here that has to
+// know which engine it is for -- AGY and gemini take different model IDs, and
+// "cannot combine --model with --effort" is an AGY rule alone. With neither
+// given there is nothing to validate against.
+//
+// The visible consequence (#150): on a sub-floor AGY, `--background` with a
+// model refuses before a job exists, and without one queues a job whose worker
+// hits the same refusal, which the launch message already points at with
+// `/gemini:status`. Left as it is deliberately. Detection is not free -- ~155 ms
+// measured on Windows, four to five git calls -- but cost is not the reason;
+// spending it here would resolve an engine in order to discard the answer.
 function prepareBackgroundSelection(request, detectEngineFn) {
   const model = request.model ?? null;
   const effort = request.effort ?? null;

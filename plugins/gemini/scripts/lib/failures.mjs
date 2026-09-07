@@ -1,5 +1,6 @@
 export const FAILURE_CATEGORIES = new Set([
   "binary-missing",
+  "engine-unsupported",
   "auth",
   "quota",
   "rate-limit",
@@ -21,6 +22,18 @@ const DEFAULTS = {
     retryable: false,
     summary: "Required CLI binary is not available.",
     nextStep: "Install and initialize either supported engine, then select it with `--engine gemini` or `--engine agy`."
+  },
+  // The engine is installed and answers --version; the version is the problem.
+  // Not retryable in the strong sense -- the same request will be refused
+  // identically until the binary is replaced -- which is what separates it from
+  // `binary-missing`, where the retry at least has somewhere to go.
+  "engine-unsupported": {
+    retryable: false,
+    summary: "The engine is older than this plugin supports.",
+    // The refusal itself already names the floor, what breaks below it, and
+    // whether the other engine is a way out, and it survives as `summary`. This
+    // adds the one thing it cannot say about itself: retrying changes nothing.
+    nextStep: "Run `agy update`, then rerun. A version refusal cannot be retried into success; the summary says whether the other engine is a way out."
   },
   auth: {
     retryable: false,
@@ -236,6 +249,14 @@ export function classifyCliFailure(input = {}) {
 
   if (data.cancelled || /cancel(l)?ed|aborted|SIGINT/i.test(structuredText) || signal === "SIGINT") {
     return normalizeFailure("cancelled", data);
+  }
+  // Ahead of `auth` deliberately. The floor refusal's own text mentions
+  // authenticating when gemini has no usable credential either -- that sentence
+  // is there to explain why routing reached AGY at all -- and `auth` matches on
+  // `authenticat`, so a later arm would file a version refusal as a login
+  // problem and send the user to `/gemini:setup` instead of `agy update`.
+  if (/older than this plugin supports|requires AGY \d+\.\d+\.\d+ or newer/i.test(structuredText)) {
+    return normalizeFailure("engine-unsupported", data);
   }
   if (code === "ENOENT" || /command not found|not recognized as .*command|binary .*not (found|available)|No Gemini or AGY engine found|engine requested but .*binary is not available/i.test(structuredText)) {
     return normalizeFailure("binary-missing", data);

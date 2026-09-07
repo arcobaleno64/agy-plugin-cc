@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { classifyCliFailure } from "../plugins/gemini/scripts/lib/failures.mjs";
+import { agyFloorRefusal } from "../plugins/gemini/scripts/lib/engine.mjs";
 
 test("classifyCliFailure identifies auth failures", () => {
   const failure = classifyCliFailure({ stderr: "OAuth token expired. Run gemini to authenticate." });
@@ -86,6 +87,37 @@ test("classifyCliFailure identifies timeout failures", () => {
 test("a timeout's next step names the flag that raises the budget", () => {
   const failure = classifyCliFailure({ error: Object.assign(new Error("spawn timed out"), { code: "ETIMEDOUT" }) });
   assert.match(failure.nextStep, /--timeout/, `the fix must be named: ${failure.nextStep}`);
+});
+
+// The real refusal, not a paraphrase: the classifier matches on its wording, so
+// a test writing its own sentence would keep passing after the two drift apart.
+// Found while reproducing #150 -- a queued background job did fail with the
+// refusal as its summary, but filed under `unknown`, marked retryable, and
+// advised "retry with a narrower prompt". A version floor is the one failure a
+// retry provably cannot fix.
+test("an AGY version refusal is not retryable, and says what does fix it", () => {
+  for (const geminiUsable of [true, false]) {
+    const message = agyFloorRefusal("1.0.3", { geminiUsable });
+    const failure = classifyCliFailure({ error: new Error(message), errorMessage: message });
+
+    assert.equal(failure.category, "engine-unsupported", `geminiUsable=${geminiUsable}`);
+    assert.equal(failure.retryable, false, "the same request is refused identically until the binary changes");
+    assert.match(failure.nextStep, /agy update/, failure.nextStep);
+    assert.doesNotMatch(failure.nextStep, /narrower prompt/, "prompt size is not what was refused");
+  }
+});
+
+// The ordering fence. When gemini has no usable credential either, the refusal
+// explains why routing reached AGY at all -- and that sentence says
+// "authenticate", which the `auth` arm matches. Measured: the auth pattern does
+// fire on this variant and not on the other, so an arm placed after it would
+// send a user whose AGY is merely old to `/gemini:setup`.
+test("a version refusal that mentions authenticating is still a version refusal", () => {
+  const message = agyFloorRefusal("1.0.3", { geminiUsable: false });
+  assert.match(message, /authenticate/, "the premise of this test, not an assumption");
+
+  const failure = classifyCliFailure({ error: new Error(message), errorMessage: message });
+  assert.equal(failure.category, "engine-unsupported");
 });
 
 test("classifyCliFailure identifies model-unavailable failures", () => {
