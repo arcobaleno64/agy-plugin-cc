@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "subjectCommit": "bb19c7330a033855ef680d6f2aae6bbf9ee7ca50",
+  "reviewedAt": "2026-09-08T10:20:00Z",
+  "adjudications": [
+    {
+      "queryId": "WRITE_AND_SANDBOX_BOUNDARY",
+      "status": "not-detected",
+      "rationale": "The results concern Claude Code sandboxing, AGY, or other plugins. None identifies the canonical project or answers whether it can write or supplies a filesystem sandbox.",
+      "evidencePaths": [
+        "plugins/gemini/scripts/lib/engine.mjs",
+        "plugins/gemini/scripts/lib/readonly-guard.mjs",
+        "tests/gemini-mcp.test.mjs",
+        "tests/runtime.test.mjs",
+        "docs/THREAT-MODEL.md"
+      ]
+    },
+    {
+      "queryId": "DATA_HANDLING_BOUNDARY",
+      "status": "not-detected",
+      "rationale": "The results concern other AGY plugins or generic AGY behavior. None identifies arcobaleno64/agy-plugin-cc or answers its hosted-service and data-handling boundary.",
+      "evidencePaths": [
+        "PRIVACY.md",
+        "docs/THREAT-MODEL.md",
+        "plugins/gemini/scripts/lib/git.mjs",
+        "plugins/gemini/scripts/lib/prompts.mjs",
+        "tests/runtime.test.mjs"
+      ]
+    },
+    {
+      "queryId": "MCP_SCOPE",
+      "status": "not-detected",
+      "rationale": "The results are generic MCP guidance and unrelated projects. None identifies the canonical project or its verified MCP tool surface.",
+      "evidencePaths": [
+        "plugins/gemini/.mcp.json",
+        "plugins/gemini/scripts/gemini-mcp.mjs",
+        "tests/gemini-mcp.test.mjs"
+      ]
+    }
+  ]
+}
