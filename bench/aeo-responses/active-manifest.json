@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "captureSetId": "2026-08-29-chatgpt-web-search",
-  "subjectCommit": "d7d68e2f508c3deae11158601733df26b50abcdc",
-  "evaluatorCommit": "52acf3b1801db7ede10403484105507fbe41e3f6",
+  "captureSetId": "2026-09-08-chatgpt-work-web-search",
+  "subjectCommit": "bb19c7330a033855ef680d6f2aae6bbf9ee7ca50",
+  "evaluatorCommit": "bb19c7330a033855ef680d6f2aae6bbf9ee7ca50",
   "provenanceLevel": "self-attested",
-  "surface": "ChatGPT web search",
-  "capturedAt": "2026-08-29T11:15:00Z",
-  "captureMethod": "Each benchmark query was submitted verbatim as an independent web search. The ordered title and URL of each returned organic result were transcribed; news results and snippets were excluded.",
+  "surface": "ChatGPT Work web search",
+  "capturedAt": "2026-09-08T10:13:08Z",
+  "captureMethod": "Each benchmark query was submitted verbatim as an independent web-search request. The ordered title and URL of each returned organic result were transcribed; news results and snippets were excluded.",
   "resultPolicy": "First 10 organic results, or every organic result when fewer than 10 were returned.",
-  "manualAdjudicationFile": "2026-08-29-web-search/manual-adjudication.json",
-  "manualAdjudicationSha256": "7cd7c2917aa4372b42df073cbf6871f50a35ab84a1bcd73212ad0b6c0d6f0c16",
+  "manualAdjudicationFile": "2026-09-08-web-search/manual-adjudication.json",
+  "manualAdjudicationSha256": "838c7dd7f17a78408634f3266b76716df1dbb3d29f05fe75e43d9f106ef04bbc",
   "session": {
     "fresh": true,
     "webSearch": "on"
@@ -19,33 +19,33 @@
   "captures": [
     {
       "queryId": "BRAND_IDENTITY",
-      "responseFile": "2026-08-29-web-search/BRAND_IDENTITY.md",
-      "responseSha256": "80851a9d5428d99184bb72d34b92314a9b4bfe1eec1addf9330eb4dea775e9c9"
+      "responseFile": "2026-09-08-web-search/BRAND_IDENTITY.md",
+      "responseSha256": "adc20674ffb22067d62be58e4a474b7baf40ba7259ca14d5cd6ea815ecc867da"
     },
     {
       "queryId": "DUAL_ENGINE_DISCOVERY",
-      "responseFile": "2026-08-29-web-search/DUAL_ENGINE_DISCOVERY.md",
-      "responseSha256": "56123259205a9dd0e1e43b672e5212b3097cc0a5a39c5f92ef0501abad6da758"
+      "responseFile": "2026-09-08-web-search/DUAL_ENGINE_DISCOVERY.md",
+      "responseSha256": "8ced1024e971a2b68baa78d63f7c434b83380d58f0e3144d3367be6c758d9e2d"
     },
     {
       "queryId": "ADVERSARIAL_REVIEW_DISCOVERY",
-      "responseFile": "2026-08-29-web-search/ADVERSARIAL_REVIEW_DISCOVERY.md",
-      "responseSha256": "174b5bbd07bcc3ced1b8d8b539a0f97663c2107d88416efe26b8cce01157dcde"
+      "responseFile": "2026-09-08-web-search/ADVERSARIAL_REVIEW_DISCOVERY.md",
+      "responseSha256": "dc7902fe5a8794de1714d0bc2219c54aed7bf364b86b6bd118b47947fe5ff1b5"
     },
     {
       "queryId": "WRITE_AND_SANDBOX_BOUNDARY",
-      "responseFile": "2026-08-29-web-search/WRITE_AND_SANDBOX_BOUNDARY.md",
-      "responseSha256": "b67eb0f8576678ee9ea0efc55b5f49125990c41f7732d89a7e91e089fdd5e92b"
+      "responseFile": "2026-09-08-web-search/WRITE_AND_SANDBOX_BOUNDARY.md",
+      "responseSha256": "0fe7a564e196a5618427ab8b24776c372048b3bdf6ec79c3bdf0f37bcbec8d30"
     },
     {
       "queryId": "DATA_HANDLING_BOUNDARY",
-      "responseFile": "2026-08-29-web-search/DATA_HANDLING_BOUNDARY.md",
-      "responseSha256": "55ea8ad142ef8d0fbc1e1e24b0daaf34aad9cb9431ef10094216f92ec2d87857"
+      "responseFile": "2026-09-08-web-search/DATA_HANDLING_BOUNDARY.md",
+      "responseSha256": "341a305b6f0edb2d9caa56ce49b30beccda22df63bac3076ff349941c009835a"
     },
     {
       "queryId": "MCP_SCOPE",
-      "responseFile": "2026-08-29-web-search/MCP_SCOPE.md",
-      "responseSha256": "22ef273d22afec4a5238f4ebb4a6e75dcb59300d2c669856c86da4f5ad931bd8"
+      "responseFile": "2026-09-08-web-search/MCP_SCOPE.md",
+      "responseSha256": "68d725c8947b25f94297930cf7d29fb12db6d5f9ba72dd58009bc93f8407b7b3"
     }
   ]
 }
