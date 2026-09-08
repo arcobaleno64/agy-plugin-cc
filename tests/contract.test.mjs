@@ -184,6 +184,30 @@ This is an independent, community-maintained project. Use the linked repository 
   assert.ok(Buffer.byteLength(html) + Buffer.byteLength(llms) + Buffer.byteLength(sitemap) + Buffer.byteLength(css) < 100 * 1024, "the static site must stay below 100 KiB");
 });
 
+test("llms navigation points to tracked authoritative source files that still exist", () => {
+  const llms = fs.readFileSync(path.join(ROOT, "site", "llms.txt"), "utf8");
+  const links = [...llms.matchAll(/\[[^\]\r\n]+\]\((https:\/\/[^)\s]+)\)/g)].map((match) => match[1]);
+  // These two live surfaces are not repository files. Their reachability stays
+  // in the post-deployment gate, not a network-dependent unit test.
+  const liveSurfaces = new Set([CANONICAL_SITE_URL, `${CANONICAL_REPOSITORY_URL}/releases`]);
+  const prefix = `${CANONICAL_REPOSITORY_URL}/blob/main/`;
+  const tracked = run("git", ["ls-files", "-z"], { cwd: ROOT });
+  assert.equal(tracked.status, 0, tracked.stderr);
+  const trackedFiles = new Set(tracked.stdout.split("\0").filter(Boolean));
+
+  assert.equal(links.length, 11, "llms navigation must retain its eleven reviewed links");
+  assert.equal(new Set(links).size, links.length, "llms navigation must not duplicate targets");
+  const sourceLinks = links.filter((url) => !liveSurfaces.has(url));
+  assert.equal(sourceLinks.length, 9, "llms navigation must retain nine repository source links");
+  for (const url of sourceLinks) {
+    assert.ok(url.startsWith(prefix), `llms source must use the canonical main branch: ${url}`);
+    const relative = url.slice(prefix.length);
+    assert.ok(trackedFiles.has(relative), `llms source is not tracked: ${relative}`);
+    assert.ok(fs.existsSync(path.join(ROOT, relative)), `llms source is missing: ${relative}`);
+    assert.ok(fs.lstatSync(path.join(ROOT, relative)).isFile(), `llms source must be a regular file: ${relative}`);
+  }
+});
+
 test("the canonical site deploys only its allowlisted source from main", () => {
   const workflow = fs.readFileSync(path.join(ROOT, ".github", "workflows", "pages.yml"), "utf8");
   const normalized = workflow.replace(/\r\n/g, "\n");
