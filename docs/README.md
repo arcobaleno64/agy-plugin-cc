@@ -20,6 +20,7 @@ Start with the [README](../README.md). Nothing here is required reading to use t
 | [`version-sources.md`](version-sources.md) | Which file is authoritative for each version string, and what keeps them in lockstep. |
 | [`verifying-without-credentials.md`](verifying-without-credentials.md) | How to exercise the engine paths without a Gemini or AGY account. |
 | [`evidence.md`](evidence.md) | The rule this repository investigates by: nothing counts as evidence until it has been seen to fail. Includes the traps already paid for. |
+| [`DISCOVERABILITY-DECISIONS.md`](DISCOVERABILITY-DECISIONS.md) | Rejected and deferred discoverability tactics, the evidence-based reason for each decision, and the condition required to revisit it. |
 | [`ROADMAP.md`](ROADMAP.md) | Every item in the handover playbook, triaged against HEAD: already done, premise verified and worth doing, blocked on something that does not exist, wrong as written, or a non-goal. Read this before acting on the playbook. Traditional Chinese. |
 
 ## Dated records — never rewritten
