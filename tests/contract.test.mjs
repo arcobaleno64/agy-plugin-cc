@@ -93,9 +93,10 @@ test("the isolated canonical site stays factual, dependency-free, and motion-opt
     .filter(Boolean)
     .map((file) => path.relative("site", file))
     .sort();
-  assert.deepEqual(files, ["index.html", "sitemap.xml", "styles.css"], "tracked site/ sources must remain an explicit allowlist");
+  assert.deepEqual(files, ["index.html", "llms.txt", "sitemap.xml", "styles.css"], "tracked site/ sources must remain an explicit allowlist");
 
   const html = fs.readFileSync(path.join(siteRoot, "index.html"), "utf8");
+  const llms = fs.readFileSync(path.join(siteRoot, "llms.txt"), "utf8").replace(/\r\n/g, "\n");
   const sitemap = fs.readFileSync(path.join(siteRoot, "sitemap.xml"), "utf8").replace(/\r\n/g, "\n");
   const css = fs.readFileSync(path.join(siteRoot, "styles.css"), "utf8");
   const escapedDescription = CANONICAL_DESCRIPTION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -126,6 +127,32 @@ test("the isolated canonical site stays factual, dependency-free, and motion-opt
     url: CANONICAL_SITE_URL,
     sameAs: CANONICAL_REPOSITORY_URL,
   });
+  assert.equal(llms, `# agy-plugin-cc
+
+> ${CANONICAL_DESCRIPTION}
+
+This is an independent, community-maintained project. Use the linked repository documents as authoritative evidence for installation, behavior, privacy, security, and versioning. This file is a curated navigation aid, not a complete specification, access policy, or claim of ranking or recommendation.
+
+## Start Here
+
+- [Canonical site](${CANONICAL_SITE_URL}): Concise project identity, installation path, representative workflows, and trust boundaries.
+- [README](${CANONICAL_REPOSITORY_URL}/blob/main/README.md): Requirements, installation, commands, engine selection, updates, and limitations.
+- [Traditional Chinese README](${CANONICAL_REPOSITORY_URL}/blob/main/README.zh-TW.md): Traditional Chinese project guide.
+
+## Product and Boundaries
+
+- [FAQ](${CANONICAL_REPOSITORY_URL}/blob/main/docs/FAQ.md): Evidence-linked answers about identity, engines, reviews, writes, sandboxing, data handling, MCP, installation, and updates.
+- [Traditional Chinese FAQ](${CANONICAL_REPOSITORY_URL}/blob/main/docs/FAQ.zh-TW.md): Traditional Chinese evidence-linked FAQ.
+- [Privacy](${CANONICAL_REPOSITORY_URL}/blob/main/PRIVACY.md): Data paths, review inputs, automated sends, retention, and operator boundaries.
+- [Security](${CANONICAL_REPOSITORY_URL}/blob/main/SECURITY.md): Supported versions, reporting, and security limitations.
+- [Threat model](${CANONICAL_REPOSITORY_URL}/blob/main/docs/THREAT-MODEL.md): Assets, trust boundaries, threats, mitigations, and residual risk.
+- [Comparison](${CANONICAL_REPOSITORY_URL}/blob/main/docs/COMPARISON.md): Factual scope and positioning comparisons without ranking claims.
+
+## Versioning
+
+- [Version sources](${CANONICAL_REPOSITORY_URL}/blob/main/docs/version-sources.md): Authoritative version locations and release-channel behavior.
+- [Releases](${CANONICAL_REPOSITORY_URL}/releases): Published release records and changelogs.
+`);
   assert.equal(sitemap, `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
@@ -154,7 +181,7 @@ test("the isolated canonical site stays factual, dependency-free, and motion-opt
   assert.doesNotMatch(css, /@import|url\s*\(\s*["']?https?:/i, "site CSS must not load third-party assets");
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
   assert.match(css, /animation:\s*none\s*!important/);
-  assert.ok(Buffer.byteLength(html) + Buffer.byteLength(sitemap) + Buffer.byteLength(css) < 100 * 1024, "the static site must stay below 100 KiB");
+  assert.ok(Buffer.byteLength(html) + Buffer.byteLength(llms) + Buffer.byteLength(sitemap) + Buffer.byteLength(css) < 100 * 1024, "the static site must stay below 100 KiB");
 });
 
 test("the canonical site deploys only its allowlisted source from main", () => {
