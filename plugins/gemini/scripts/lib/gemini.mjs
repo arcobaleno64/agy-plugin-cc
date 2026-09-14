@@ -361,12 +361,28 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
 
   const envelopeText = typeof envelope.response === "string" ? envelope.response.trim() : "";
 
-  // An envelope with no response is what AGY's own print timeout produces:
-  // {"status":"ERROR","response":"","error":"timeout waiting for response"}.
+  // From AGY 1.1.28 the envelope no longer says whether the turn finished. An
+  // expired --print-timeout used to produce {"status":"ERROR","response":""};
+  // now it exits 0 with a SUCCESS envelope and says so only on stderr:
+  //   [agy] print timeout after 12s with turn in progress; returning partial output
+  // (measured on 1.2.2, 2026-09-14, twice, both before any answer text). With an
+  // empty response the check below already refused success. With text in it —
+  // not measured, but what "returning partial output" promises — a cut-off
+  // answer would pass for a complete one. AGY's own statement that the turn was
+  // still in progress outranks the status it printed. Anchored on "turn in
+  // progress" so a finished turn whose background tasks outlived the timeout is
+  // not caught by it.
+  const cutOffMidTurn = /print timeout after \S+ with turn in progress/i.test(String(rawStderr ?? ""));
+
+  // An envelope with no response is what AGY's own print timeout produces.
   // Under stream-json the deltas already received are the only surviving copy of
   // whatever had been written, so they are used rather than reporting nothing.
   // They never override a real response — only fill a gap the envelope left.
-  const salvaged = envelopeText ? "" : stream.partialText().trim();
+  // A response from a cut-off turn is itself salvage: whatever was written, and
+  // no more.
+  const salvaged = envelopeText
+    ? (cutOffMidTurn ? envelopeText : "")
+    : stream.partialText().trim();
   const text = envelopeText || salvaged;
 
   // Whether the salvaged text is a finished response block or a sentence cut in
@@ -383,7 +399,7 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
   // Success still requires the envelope's own response. Salvaged text is partial
   // by definition; calling it success would let a cut-off run pass for a
   // complete one.
-  const succeeded = envelope.status === "SUCCESS" && Boolean(envelopeText);
+  const succeeded = envelope.status === "SUCCESS" && Boolean(envelopeText) && !cutOffMidTurn;
 
   return {
     // Which of the two output shapes actually arrived. The caller needs it to
