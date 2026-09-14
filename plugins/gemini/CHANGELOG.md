@@ -2,6 +2,28 @@
 
 ## 0.26.0 - Unreleased
 
+- **An AGY quota that resets in hours is reported as exhausted quota, not as a
+  rate limit to retry.** AGY words both horizons as one sentence — "Individual
+  quota reached. ... Resets in <duration>." — measured as `Resets in 58s` on
+  1.1.24 and `Resets in 2h39m52s` on 1.2.2. Both landed in `rate-limit`: marked
+  retryable, told to "narrow the request", which no prompt size can fix. A reset
+  stated in hours or days now classifies as `quota` (not retryable, "wait for
+  quota reset … or retry with a different available engine"); the reset time
+  itself is still in `detail`. Seconds and minutes stay `rate-limit`, so the
+  58-second case keeps its one waited retry in `runGeminiReviewResilient`.
+
+  This does not shorten the wait. Since AGY 1.2.1 an exhausted quota is retried
+  inside AGY before it reports — six attempts over 96 seconds in one measured
+  run, until `--print-timeout` ended it — and nothing the plugin passes turns
+  that off.
+
+- **AGY's print-timeout status lines no longer appear under "Reasoning:".**
+  `[agy] print timeout after … with turn in progress` and `terminating N
+  background task(s) on exit` (1.1.28+, measured on 1.2.2) were the last stderr
+  lines of a cut-off run, so they became its reasoning summary. They are now
+  filtered like the Node and terminal notices already are; the failure still says
+  `timeout`, and `stderr` still carries them verbatim.
+
 - **An AGY turn cut off by its print timeout can no longer pass for a finished
   one.** From AGY 1.1.28 an expired `--print-timeout` exits 0 with a `SUCCESS`
   envelope; the only sign the turn did not finish is a stderr line, `print

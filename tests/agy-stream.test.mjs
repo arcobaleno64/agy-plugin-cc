@@ -343,6 +343,27 @@ test("the measured 1.2.2 print timeout with nothing written is a timeout", async
   assert.equal(result.failure.category, "timeout");
 });
 
+test("AGY's print-timeout status lines are not reported as reasoning", async () => {
+  const measuredStderr = `${PRINT_TIMEOUT_STDERR}terminating 1 background task(s) on exit\n`;
+  const result = await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
+    runCommandFn: stubRun({ stdout: cutOffSuccess(""), stderr: measuredStderr, status: 0 }),
+    detectEngineFn: agyEngine("1.2.2")
+  });
+
+  assert.equal(result.reasoningSummary, null);
+  assert.equal(result.failure.category, "timeout", "the timeout is still what the failure says");
+  assert.equal(result.stderr, measuredStderr, "and the lines are still there verbatim");
+});
+
+test("a real stderr line next to AGY's status lines still surfaces as reasoning", async () => {
+  const result = await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
+    runCommandFn: stubRun({ stdout: cutOffSuccess(""), stderr: `warning: something the user should see\n${PRINT_TIMEOUT_STDERR}`, status: 0 }),
+    detectEngineFn: agyEngine("1.2.2")
+  });
+
+  assert.equal(result.reasoningSummary, "warning: something the user should see");
+});
+
 test("a finished turn is still a success when only its background tasks were cut off", async () => {
   // This line was seen on 1.2.2 next to the print-timeout line, not alone. That a
   // finished answer whose background tasks outlive the timeout prints it without

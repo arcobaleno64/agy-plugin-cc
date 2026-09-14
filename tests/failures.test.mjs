@@ -59,6 +59,32 @@ test("classifyCliFailure treats a per-minute limit id as a retryable rate limit"
   assert.equal(failure.retryable, true);
 });
 
+// AGY words both horizons as one sentence and states the period only in its
+// reset. Measured verbatim on 1.2.2 (hours) and 1.1.24 (seconds).
+test("classifyCliFailure treats an AGY quota that resets in hours as durable quota", () => {
+  const failure = classifyCliFailure({
+    stderr: "API error (attempt 3): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h39m52s."
+  });
+  assert.equal(failure.category, "quota");
+  assert.equal(failure.retryable, false);
+  assert.doesNotMatch(failure.nextStep, /narrow the request/, "a smaller prompt does not refill a quota");
+});
+
+test("classifyCliFailure keeps an AGY quota that resets in seconds or minutes a rate limit", () => {
+  for (const reset of ["58s", "4m10s", "30 minutes"]) {
+    const failure = classifyCliFailure({
+      stderr: `RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in ${reset}.`
+    });
+    assert.equal(failure.category, "rate-limit", reset);
+  }
+});
+
+test("classifyCliFailure reads hours and days spelled out, not only the h/d suffix", () => {
+  for (const reset of ["2 hours", "1hr", "3 days", "3d"]) {
+    assert.equal(classifyCliFailure({ stderr: `429 Individual quota reached. Resets in ${reset}.` }).category, "quota", reset);
+  }
+});
+
 test("classifyCliFailure keeps a bare RESOURCE_EXHAUSTED retryable rather than unknown", () => {
   // No 429 in the text: without RESOURCE_EXHAUSTED in the rate-limit branch this
   // would fall past every category to `unknown`.
