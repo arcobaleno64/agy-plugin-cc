@@ -2,6 +2,30 @@
 
 ## 0.26.0 - Unreleased
 
+- **An AGY turn cut off by its print timeout can no longer pass for a finished
+  one.** From AGY 1.1.28 an expired `--print-timeout` exits 0 with a `SUCCESS`
+  envelope; the only sign the turn did not finish is a stderr line, `print
+  timeout after <d> with turn in progress; returning partial output`. Measured on
+  1.2.2 (2026-09-14) twice, both times before any answer was written, so the
+  response was empty and the existing "SUCCESS needs a response" check already
+  refused it. The same envelope carrying text was not reached in two attempts —
+  how long AGY thinks before answering varies too much to aim a timeout into the
+  middle of it — but that is what the stderr line promises, and it would have
+  been returned as a complete answer, or as a finished review. That stderr line
+  now outranks the envelope status: the text is kept as partial output and the
+  run is a `timeout` failure. It is anchored on "turn in progress", on the
+  assumption (from the 1.1.28 notes, not measured) that a finished answer whose
+  background tasks outlived the timeout does not print that phrase and so stays
+  a success. AGY 1.1.12–1.1.27 are unaffected: their timeout envelope is `ERROR`.
+
+  Checked against AGY 1.1.28 through 1.2.2 with nothing else to change: the
+  version floor reads `1.2.2`, every flag `buildCliArgs` passes is still in
+  `agy --help`, `/quota` still answers without a turn, and a normal read-only
+  turn honours `--add-dir` and `--disable-slash-commands`. An exhausted quota is
+  also exit 0 now, with an `ERROR` envelope, and is still classified
+  `rate-limit`; since 1.2.1 AGY retries that 429 in-process, so it can take the
+  whole timeout to report rather than failing at once.
+
 - **A refused AGY version is no longer filed as something worth retrying.** The
   refusal reached the user intact — it is the job's summary, naming the floor and
   `agy update` — but `classifyCliFailure` had no arm for it, so it landed in

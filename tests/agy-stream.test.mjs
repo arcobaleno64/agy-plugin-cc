@@ -268,6 +268,96 @@ test("a SUCCESS envelope with an empty response does not let salvaged text pass 
   assert.notEqual(result.status, 0);
 });
 
+// --- AGY 1.1.28+: an expired print timeout exits 0 with a SUCCESS envelope ----
+//
+// The stderr line and the empty-response stream are captured from AGY 1.2.2
+// (2026-09-14, `--print-timeout 12s`, timeout landed before any answer text).
+// The SUCCESS-with-text shape is not measured: it is what the stderr line's
+// "returning partial output" promises, and it is the case that would otherwise
+// pass for a complete answer.
+
+const PRINT_TIMEOUT_STDERR = "[agy] print timeout after 12s with turn in progress; returning partial output\n";
+const CUT_CONV = "5f0ddadc-71df-4481-bce9-47e39ff85d9f";
+
+function cutOffSuccess(response, { answeredStep = null } = {}) {
+  return [
+    `{"event":"init","conversation_id":"${CUT_CONV}","init":{"cwd":"C:\\\\repo","tools":["view_file"]}}`,
+    `{"event":"step_update","step_update":{"conversation_id":"${CUT_CONV}","step_index":0,"state":"DONE","step_type":"user_input"}}`,
+    ...(answeredStep
+      ? [`{"event":"step_update","step_update":{"conversation_id":"${CUT_CONV}","step_index":1,"state":"${answeredStep}","step_type":"agent_response","text_delta":${JSON.stringify(response)}}}`]
+      : []),
+    `{"event":"result","result":{"conversation_id":"${CUT_CONV}","status":"SUCCESS","response":${JSON.stringify(response)},"duration_seconds":0,"num_turns":1,"usage":{"input_tokens":0,"output_tokens":0,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":0}}}`
+  ].join("\n");
+}
+
+test("a SUCCESS envelope from a turn AGY says it cut off is not a success", async () => {
+  const result = await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
+    runCommandFn: stubRun({ stdout: cutOffSuccess("The keeper climbed the stairs and"), stderr: PRINT_TIMEOUT_STDERR, status: 0 }),
+    detectEngineFn: agyEngine("1.2.2")
+  });
+
+  assert.notEqual(result.status, 0, "exit 0 and SUCCESS do not outrank AGY's own 'turn in progress'");
+  assert.equal(result.partial, true);
+  assert.equal(result.finalMessage, "The keeper climbed the stairs and", "what was written is still handed over");
+  assert.equal(result.failure.category, "timeout");
+  assert.match(result.failure.summary, /partial output preserved/);
+});
+
+test("a cut-off review is partial, not a finished review", async () => {
+  const findings = JSON.stringify({ verdict: "approve", summary: "s", findings: [], next_steps: [] });
+  const result = await runGeminiReview("/repo", { prompt: "review this", engine: "agy" }, {
+    runCommandFn: stubRun({ stdout: cutOffSuccess(findings), stderr: PRINT_TIMEOUT_STDERR, status: 0 }),
+    detectEngineFn: agyEngine("1.2.2")
+  });
+
+  assert.equal(result.partial, true);
+  assert.ok(result.failure, "an approve verdict from a turn that never finished is not an approval");
+  assert.equal(result.reviewJson?.verdict, "approve", "but the review it wrote is kept, not dropped");
+});
+
+test("a cut-off turn whose response block finished is a timeout that points at the text, not at a retry", async () => {
+  // AGY can finish an answer block and keep working (gi-2026-08-17-b2d9), so a
+  // turn "in progress" may already hold a whole answer. It is still not called
+  // a success; it gets the same read-before-retrying advice as the pre-1.1.28
+  // ERROR shape (gi-2026-08-17-c4a1).
+  const result = await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
+    runCommandFn: stubRun({ stdout: cutOffSuccess("the whole answer", { answeredStep: "DONE" }), stderr: PRINT_TIMEOUT_STDERR, status: 0 }),
+    detectEngineFn: agyEngine("1.2.2")
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.equal(result.partial, true);
+  assert.equal(result.failure.category, "timeout");
+  assert.match(result.failure.summary, /the recovered response block is complete/);
+  assert.match(result.failure.nextStep, /Read the recovered response below/);
+});
+
+test("the measured 1.2.2 print timeout with nothing written is a timeout", async () => {
+  const result = await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
+    runCommandFn: stubRun({ stdout: cutOffSuccess(""), stderr: PRINT_TIMEOUT_STDERR, status: 0 }),
+    detectEngineFn: agyEngine("1.2.2")
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.equal(result.partial, false);
+  assert.equal(result.failure.category, "timeout");
+});
+
+test("a finished turn is still a success when only its background tasks were cut off", async () => {
+  // This line was seen on 1.2.2 next to the print-timeout line, not alone. That a
+  // finished answer whose background tasks outlive the timeout prints it without
+  // "turn in progress" is an assumption from the 1.1.28 notes, not a measurement;
+  // this pins what the plugin does under that assumption.
+  const result = await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
+    runCommandFn: stubRun({ stdout: cutOffSuccess("the whole answer"), stderr: "terminating 1 background task(s) on exit\n", status: 0 }),
+    detectEngineFn: agyEngine("1.2.2")
+  });
+
+  assert.equal(result.status, 0);
+  assert.equal(result.partial, false);
+  assert.equal(result.failure ?? null, null);
+});
+
 // --- what a run with no text at all hands back -------------------------------
 //
 // gi-2026-08-17-b2d9: AGY timed out after 194,226 tokens with every one of its
