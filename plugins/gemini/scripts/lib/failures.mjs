@@ -318,7 +318,17 @@ export function classifyCliFailure(input = {}) {
   // reach the same refusal, so each wasted attempt is minutes, not seconds. It is
   // accepted because the periods that are nameable are now named above, leaving
   // only the genuinely ambiguous case in this branch.
-  if (/spend(ing)? cap|billing account|monthly (spend|quota|limit)|per.?day|daily (quota|limit)|exceeded your (monthly|daily)/i.test(structuredText)) {
+  //
+  // AGY needs the same split and names its period differently: one sentence,
+  // "Individual quota reached. ... Resets in <duration>.", for both horizons.
+  // Measured `Resets in 58s` on 1.1.24 (retried once by runGeminiReviewResilient)
+  // and `Resets in 2h39m52s` on 1.2.2 — the exhausted 5-hour window. A reset
+  // stated in hours or days is durable on any horizon a turn cares about, so it is
+  // matched positively; minutes and seconds stay `rate-limit`.
+  if (
+    /spend(ing)? cap|billing account|monthly (spend|quota|limit)|per.?day|daily (quota|limit)|exceeded your (monthly|daily)/i.test(structuredText) ||
+    /resets? in\s+\d+\s*(?:h(?:ours?|rs?)?|d(?:ays?)?)(?![a-z])/i.test(structuredText)
+  ) {
     return normalizeFailure("quota", data);
   }
   if (/\b429\b|too many requests|rate.?limit|quota|RESOURCE_EXHAUSTED/i.test(structuredText)) {

@@ -128,7 +128,12 @@ const REASONING_NOISE = [
   /Using a terminal with at least 256-color/i,
   /true color/i,
   /Ripgrep is not available/i,
-  /Falling back to GrepTool/i
+  /Falling back to GrepTool/i,
+  // AGY 1.1.28+ headless status lines (measured on 1.2.2, 2026-09-14). They
+  // report how the run ended, which `failure` already carries and `stderr` keeps
+  // verbatim; under "Reasoning:" they read as the model's thinking.
+  /^\[agy\] print timeout after \S+ with turn in progress/i,
+  /^terminating \d+ background task\(s\) on exit$/i
 ];
 
 function isReasoningNoise(line) {
