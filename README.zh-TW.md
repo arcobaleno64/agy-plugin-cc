@@ -10,7 +10,7 @@
 
 ## 相關專案
 
-[`agy-security-audit`](https://github.com/arcobaleno64/agy-security-audit) 是獨立的 Antigravity CLI（`agy`）外掛，用於以證據為本的多階段安全保證與弱點驗證。它原生執行於 Antigravity CLI 內；不隨 `agy-plugin-cc` 一併提供，也不是使用 `agy-plugin-cc` 的必要條件。
+[`agy-security-audit`](https://github.com/arcobaleno64/agy-security-audit) 是獨立的 Antigravity CLI（`agy`）外掛，用於以證據為本的多階段安全保證與弱點驗證。它原生執行於 Antigravity CLI 內。兩個專案都不會隨另一個一併提供，也不是使用另一個的必要條件。
 
 ---
 

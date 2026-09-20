@@ -10,7 +10,7 @@ Ported from [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) 
 
 ## Related project
 
-[`agy-security-audit`](https://github.com/arcobaleno64/agy-security-audit) is a separate Antigravity CLI (`agy`) plugin for evidence-backed, multi-stage security assurance and vulnerability verification. It runs natively inside Antigravity CLI; it is neither bundled with nor required by `agy-plugin-cc`.
+[`agy-security-audit`](https://github.com/arcobaleno64/agy-security-audit) is a separate Antigravity CLI (`agy`) plugin for evidence-backed, multi-stage security assurance and vulnerability verification. It runs natively inside Antigravity CLI. Neither project is bundled with or required by the other.
 
 ---
 
