@@ -265,21 +265,32 @@ const AGY_STATUS_CATEGORY = new Map([
   ["unauthenticated", "auth"]
 ]);
 
-// Returns the prose with every structured line removed, plus the category the
-// first recognised status settles on. Two lines are stripped rather than one:
-// with a single non-global replace, a second line carrying `Aborted` walked
-// straight back into the cancelled arm.
+// A canonical status this plugin knows how to read is answered directly. One
+// that it does not is left exactly where it is: an unmapped status is not a
+// licence to delete the line, because the line is often the only place a
+// classifiable phrase exists. Two measured cases say so — the fallback text
+// rides along in `short_error` (`{"status":"Internal","short_error":"Individual
+// quota reached. Resets in 2h39m52s."}` reaches the quota arm only through that
+// text), and the wire spelling `RESOURCE_EXHAUSTED` is matched by the rate-limit
+// arm while the CamelCase `ResourceExhausted` is not. Stripping on presence
+// alone turned a durable quota refusal back into a retryable `unknown`, undoing
+// what 20980ed fixed.
 //
-// A line is only removed once it has yielded a `status`. The two shapes that do
-// not are the fallback form, {"short_error":"..."}, whose text is the only
-// description of the failure that exists, and a line too malformed to parse.
-// Both stay in the prose, because removing them would delete the evidence the
-// arms below read.
+// That leaves the one token that is actively wrong. `Aborted` is gRPC's
+// concurrency or transaction abort, and the cancelled arm's `aborted` claims it
+// as a user cancellation — after which the auth and quota arms never run. Only
+// that value is blanked out of the text, and only inside the structured line, so
+// everything else on it still reaches the arms below. Putting all 17 canonical
+// statuses through classifyCliFailure, in both CamelCase and SCREAMING_SNAKE,
+// measured `Aborted` as the only value that needed it.
+const AGY_MISLEADING_STATUS = new Set(["aborted"]);
+
 function splitAgyErrorLine(text) {
   const source = String(text ?? "");
-  let stripped = source;
+  let rewritten = "";
+  let cursor = 0;
   let category = null;
-  let removedAny = false;
+  let changed = false;
   for (const match of source.matchAll(AGY_ERROR_LINE)) {
     let status = null;
     try {
@@ -289,12 +300,25 @@ function splitAgyErrorLine(text) {
       continue;
     }
     if (!status) continue;
-    stripped = stripped.replace(match[0], "");
-    removedAny = true;
-    category = category ?? AGY_STATUS_CATEGORY.get(status) ?? null;
+    const mapped = AGY_STATUS_CATEGORY.get(status);
+    if (mapped) {
+      category = category ?? mapped;
+      continue;
+    }
+    if (!AGY_MISLEADING_STATUS.has(status)) continue;
+    // Splice by index rather than by text: the same JSON can appear again in
+    // surrounding prose (an engine echoing a previous attempt), and a literal
+    // replace rewrites the leftmost copy, which is the echo. No test pins this
+    // — either way an un-blanked copy of the token survives, so the category
+    // comes out the same and only the prose differs — so it is written the
+    // correct way rather than the testable way.
+    rewritten += source.slice(cursor, match.index) + match[0].replace(/"status"\s*:\s*"[^"]*"/i, '"status":""');
+    cursor = match.index + match[0].length;
+    changed = true;
   }
-  if (!removedAny) return { text, category: null };
-  return { text: stripped.replace(/\n{2,}/g, "\n").trim(), category };
+  if (category) return { text: source, category };
+  if (!changed) return { text, category: null };
+  return { text: rewritten + source.slice(cursor), category: null };
 }
 
 export function classifyCliFailure(input = {}) {
