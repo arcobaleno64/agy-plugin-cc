@@ -2,6 +2,34 @@
 
 ## 0.26.0 - Unreleased
 
+- **A gRPC `Aborted` in AGY's structured error line is no longer read as a user
+  cancellation.** AGY 1.2.6 added `AGY_ERROR: {"status":...,"code":...,"retryable":...,"error_id":...}`
+  on stderr, whose `status` carries gRPC canonical names. The cancelled arm
+  matches `aborted`, so that line filed an ABORTED — a concurrency or
+  transaction abort — as a cancellation, after which the auth and quota arms
+  never ran. Putting all 17 canonical statuses through `classifyCliFailure`
+  measured `Aborted` as the only misfile. The structured line is now cut out of
+  the prose before the arms run, and only statuses whose meaning is unambiguous
+  are mapped from it: `Canceled`/`Cancelled` to `cancelled` and `Unauthenticated`
+  to `auth`, both of which the prose arms already reached. `ResourceExhausted`
+  and `PermissionDenied` are deliberately left unmapped — the quota arm splits
+  durable from transient on wording this line does not carry — so they keep
+  falling through to `unknown`, where they land today.
+
+  A line is only removed once it has yielded a `status`. The fallback shape,
+  `{"short_error":"..."}`, and a line too malformed to parse both stay in the
+  prose, because there that line is the only description of the failure. Every
+  `AGY_ERROR` line is removed, not just the first: with a single replace, a
+  second line carrying `Aborted` walked straight back into the cancelled arm.
+
+  Not observed live. Six probes on AGY 1.2.7 — a rejected `--model`, an expired
+  `--print-timeout`, an invalid `--json-schema`, an unknown `--project`, a stale
+  `--conversation`, and a 191k-token prompt — each failed some other way, so the
+  field names come from the 1.2.7 binary (`printmode.agentErrorPayload`, emitted
+  by `(*AgentError).structuredLine`) rather than from a captured run. Nothing
+  depends on the line arriving, and an unparseable one leaves behaviour exactly
+  as it was before 1.2.6.
+
 - **An AGY quota that resets in hours is reported as exhausted quota, not as a
   rate limit to retry.** AGY words both horizons as one sentence — "Individual
   quota reached. ... Resets in <duration>." — measured as `Resets in 58s` on

@@ -234,6 +234,69 @@ function transcriptCategory(reason) {
   return null;
 }
 
+// AGY 1.2.6+ prints a structured failure line on stderr alongside its prose:
+//   AGY_ERROR: {"status":"<canonical>","code":<n>,"retryable":<bool>,"error_id":"..."}
+// Field names were read out of the 1.2.7 binary (printmode.agentErrorPayload,
+// emitted by (*AgentError).structuredLine); the fallback form it also carries is
+// {"short_error":"..."}. Never observed live: six probes on 1.2.7 — rejected
+// --model, expired --print-timeout, invalid --json-schema, unknown --project,
+// stale --conversation, and a 191k-token prompt — each failed some other way,
+// so this is read defensively and nothing depends on it arriving.
+//
+// The line has to come out of the prose before the arms below run. Its values
+// are gRPC canonical statuses, and `Aborted` — a concurrency or transaction
+// abort, not a user cancellation — matches the `aborted` in the cancelled arm.
+// Once that arm wins, auth and quota never run. Measured by putting all 17
+// canonical statuses through classifyCliFailure: `Aborted` was the only misfile.
+const AGY_ERROR_LINE = /^[ \t]*AGY_ERROR:[ \t]*(\{.*\})[ \t]*$/gm;
+
+// Only the statuses whose meaning is unambiguous are mapped, so that cutting a
+// line out never loses a classification that was already right. `Unauthenticated`
+// is here because the auth arm reaches it today through the `unauth` substring,
+// and dropping the line would have silently demoted it to `unknown`.
+// `ResourceExhausted` is deliberately absent: the quota arm splits durable from
+// transient on wording this line does not carry, so it keeps falling through to
+// `unknown`, which is where it lands today. `PermissionDenied` likewise — the
+// auth arm matches `permission denied` with a space, so the token never reached
+// it in the first place.
+const AGY_STATUS_CATEGORY = new Map([
+  ["canceled", "cancelled"],
+  ["cancelled", "cancelled"],
+  ["unauthenticated", "auth"]
+]);
+
+// Returns the prose with every structured line removed, plus the category the
+// first recognised status settles on. Two lines are stripped rather than one:
+// with a single non-global replace, a second line carrying `Aborted` walked
+// straight back into the cancelled arm.
+//
+// A line is only removed once it has yielded a `status`. The two shapes that do
+// not are the fallback form, {"short_error":"..."}, whose text is the only
+// description of the failure that exists, and a line too malformed to parse.
+// Both stay in the prose, because removing them would delete the evidence the
+// arms below read.
+function splitAgyErrorLine(text) {
+  const source = String(text ?? "");
+  let stripped = source;
+  let category = null;
+  let removedAny = false;
+  for (const match of source.matchAll(AGY_ERROR_LINE)) {
+    let status = null;
+    try {
+      const parsed = JSON.parse(match[1]);
+      status = typeof parsed?.status === "string" ? parsed.status.trim().toLowerCase() : null;
+    } catch {
+      continue;
+    }
+    if (!status) continue;
+    stripped = stripped.replace(match[0], "");
+    removedAny = true;
+    category = category ?? AGY_STATUS_CATEGORY.get(status) ?? null;
+  }
+  if (!removedAny) return { text, category: null };
+  return { text: stripped.replace(/\n{2,}/g, "\n").trim(), category };
+}
+
 export function classifyCliFailure(input = {}) {
   const data = typeof input === "string" ? { message: input } : (input ?? {});
   const already = explicitFailure(data);
@@ -243,7 +306,12 @@ export function classifyCliFailure(input = {}) {
 
   const trusted = combinedTrustedText(data);
   const stdout = compactText(data.stdout);
-  const structuredText = data.structured === true ? `${trusted}\n${stdout}` : trusted;
+  const rawStructuredText = data.structured === true ? `${trusted}\n${stdout}` : trusted;
+  const agyError = splitAgyErrorLine(rawStructuredText);
+  if (agyError.category) {
+    return normalizeFailure(agyError.category, data);
+  }
+  const structuredText = agyError.text;
   const code = errorCode(data);
   const signal = compactText(data.signal);
 
