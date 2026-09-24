@@ -241,16 +241,17 @@ h3 {
   stroke-width: 2;
 }
 
+/* One pass around the loop, then rest. The whole motion stays under five
+   seconds (WCAG 2.2.2), and the resting frame is the reduced-motion frame.
+   Offsets are in pathLength units: a 10-unit dash centred on a node sits
+   inside its circle (Claude 0, engine 28.3, evidence 63.1). */
 .orbit-signal {
   stroke: url(#line-gradient);
-  stroke-width: 4;
-  stroke-dasharray: 2 34;
-  animation: orbit-flow 9s linear infinite;
-}
-
-.signal-two {
-  opacity: 0.45;
-  animation-delay: -4.5s;
+  stroke-width: 5;
+  stroke-dasharray: 10 110;
+  stroke-dashoffset: 5;
+  opacity: 0;
+  animation: signal-lap 4.8s ease-in-out 0.6s both;
 }
 
 .node circle {
@@ -273,22 +274,42 @@ h3 {
   text-transform: uppercase;
 }
 
+.node-claude circle {
+  animation: claude-active 4.8s ease-in-out 0.6s both;
+}
+
 .node-engine circle {
   stroke: rgba(112, 214, 255, 0.48);
-  animation: node-pulse 4.5s ease-in-out infinite;
+  animation: engine-active 4.8s ease-in-out 0.6s both;
 }
 
 .node-evidence circle {
   stroke: rgba(255, 112, 166, 0.4);
+  animation: evidence-active 4.8s ease-in-out 0.6s both;
 }
 
-@keyframes orbit-flow {
-  to { stroke-dashoffset: -216; }
+/* Claude hands off, the engine reviews, evidence returns, Claude continues. */
+@keyframes signal-lap {
+  0%, 8% { stroke-dashoffset: 5; opacity: 1; }
+  30%, 46% { stroke-dashoffset: -23.34; }
+  66%, 76% { stroke-dashoffset: -58.09; }
+  96%, 99% { stroke-dashoffset: -95; opacity: 1; }
+  100% { stroke-dashoffset: -95; opacity: 0; }
 }
 
-@keyframes node-pulse {
-  0%, 100% { stroke-width: 1.5; }
-  50% { stroke-width: 4; }
+@keyframes claude-active {
+  0%, 8%, 96% { stroke: #a78bfa; stroke-width: 4; }
+  16%, 88%, 100% { stroke: rgba(191, 202, 239, 0.22); stroke-width: 1.5; }
+}
+
+@keyframes engine-active {
+  0%, 24%, 54%, 100% { stroke: rgba(112, 214, 255, 0.48); stroke-width: 1.5; }
+  30%, 46% { stroke: #70d6ff; stroke-width: 4; }
+}
+
+@keyframes evidence-active {
+  0%, 60%, 84%, 100% { stroke: rgba(255, 112, 166, 0.4); stroke-width: 1.5; }
+  66%, 76% { stroke: #ff70a6; stroke-width: 4; }
 }
 
 .section {
@@ -465,16 +486,37 @@ footer p {
 
   .hero {
     min-height: auto;
+    row-gap: 0;
   }
 
+  /* Lift the loop diagram up to just under the headline, so its one pass
+     plays on the first screen instead of below the fold. The header nav
+     keeps "Start here" visible above it. */
   .hero-copy {
+    display: contents;
+  }
+
+  .hero-copy > * {
+    order: 3;
+  }
+
+  .hero .eyebrow {
     order: 1;
+  }
+
+  .hero h1 {
+    order: 1;
+  }
+
+  .hero .canonical-description {
+    margin-bottom: 0;
   }
 
   .hero-visual {
     order: 2;
     width: min(100%, 37rem);
     justify-self: center;
+    margin-bottom: 1.5rem;
   }
 
   .workflow-steps,
@@ -509,7 +551,7 @@ footer p {
   }
 
   .hero-visual {
-    margin: 0 -0.4rem;
+    margin: 0 -0.4rem 1.5rem;
   }
 
   footer {
