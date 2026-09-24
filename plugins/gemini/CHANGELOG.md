@@ -2,6 +2,37 @@
 
 ## 0.26.0 - Unreleased
 
+- **A gRPC `Aborted` in AGY's structured error line is no longer read as a user
+  cancellation.** AGY 1.2.6 added `AGY_ERROR: {"status":...,"code":...,"retryable":...,"error_id":...}`
+  on stderr, whose `status` carries gRPC canonical names. The cancelled arm
+  matches `aborted`, so that line filed an ABORTED — a concurrency or
+  transaction abort — as a cancellation, after which the auth and quota arms
+  never ran. Putting all 17 canonical statuses through `classifyCliFailure`, in
+  both CamelCase and SCREAMING_SNAKE, measured `Aborted` as the only misfile.
+
+  Only that value is blanked out, and only inside the structured line. A status
+  the plugin maps — `Canceled`/`Cancelled` to `cancelled`, `Unauthenticated` to
+  `auth`, all three classifications the prose arms already reached — is answered
+  directly. Every other status is left completely alone, because the line is
+  often the only place a classifiable phrase exists: the fallback text rides
+  along in `short_error`, and the wire spelling `RESOURCE_EXHAUSTED` is matched
+  by the rate-limit arm while the CamelCase `ResourceExhausted` is not. An
+  earlier draft removed the whole line whenever a status was present, which
+  turned a durable quota refusal back into a retryable `unknown` told to narrow
+  the prompt — undoing what the quota split below fixes.
+
+  The prose word `aborted` is untouched. It has been in the cancelled matcher
+  since `failures.mjs` was created, with no recorded reason and no test, so only
+  the structured value was taken away from it.
+
+  Not observed live. Six probes on AGY 1.2.7 — a rejected `--model`, an expired
+  `--print-timeout`, an invalid `--json-schema`, an unknown `--project`, a stale
+  `--conversation`, and a 191k-token prompt — each failed some other way, so the
+  field names come from the 1.2.7 binary (`printmode.agentErrorPayload`, emitted
+  by `(*AgentError).structuredLine`) rather than from a captured run. Nothing
+  depends on the line arriving, and a line that will not parse leaves behaviour
+  exactly as it was before 1.2.6.
+
 - **An AGY quota that resets in hours is reported as exhausted quota, not as a
   rate limit to retry.** AGY words both horizons as one sentence — "Individual
   quota reached. ... Resets in <duration>." — measured as `Resets in 58s` on

@@ -366,3 +366,114 @@ test("truncating an already-truncated detail is a no-op, and keeps the real tota
   assert.match(twice.detail, /truncated; 5000 characters total/, "the engine's real size, not the truncated one");
   assert.ok(once.detail.length <= 2000, `marker must fit inside the cap, got ${once.detail.length}`);
 });
+
+// AGY 1.2.6 added `AGY_ERROR: {...}` on stderr, whose `status` carries gRPC
+// canonical names. `Aborted` means a concurrency or transaction abort; the
+// cancelled arm matches `aborted`, so it was filed as a user cancellation and
+// the auth and quota arms below never ran.
+//
+// The cases below split three ways on purpose, because an earlier draft that
+// removed the whole line regressed two of them: a recognised status is answered
+// directly, an unrecognised one is left completely alone (its text is often the
+// only classifiable thing present), and only the `aborted` value is blanked out.
+const agyErrorLine = (status, extra = "") =>
+  `AGY_ERROR: {"status":"${status}","code":10,"retryable":false,"error_id":"e-7"${extra}}`;
+
+test("an AGY_ERROR status of Aborted is not a cancellation", () => {
+  const failure = classifyCliFailure({ engine: "agy", status: 3, stderr: agyErrorLine("Aborted") });
+  assert.notEqual(failure.category, "cancelled", "gRPC ABORTED is a transaction abort, not a user cancel");
+  assert.equal(failure.category, "unknown");
+});
+
+test("the wire spelling ABORTED is caught too", () => {
+  const failure = classifyCliFailure({ engine: "agy", status: 3, stderr: agyErrorLine("ABORTED") });
+  assert.notEqual(failure.category, "cancelled");
+});
+
+test("an AGY_ERROR status of Canceled is still a cancellation", () => {
+  for (const status of ["Canceled", "Cancelled", "CANCELED"]) {
+    const failure = classifyCliFailure({ engine: "agy", status: 3, stderr: agyErrorLine(status) });
+    assert.equal(failure.category, "cancelled", `${status} must stay a cancellation`);
+  }
+});
+
+test("an AGY_ERROR status of Unauthenticated is still an auth failure", () => {
+  // Reached today through the `unauth` substring in the auth arm.
+  const failure = classifyCliFailure({ engine: "agy", status: 3, stderr: agyErrorLine("Unauthenticated") });
+  assert.equal(failure.category, "auth");
+});
+
+// The prose arm is the fence this change deliberately left standing: `aborted`
+// has been in the cancelled matcher since failures.mjs was created, with no
+// recorded reason, so only the value inside the structured line was taken away.
+test("the word aborted in engine prose is still a cancellation", () => {
+  const failure = classifyCliFailure({ engine: "agy", status: 1, stderr: "the operation was aborted by the user" });
+  assert.equal(failure.category, "cancelled");
+});
+
+// Review finding on the first draft. It removed any line that carried a status
+// at all, so a status this plugin does not map took the rest of the line with
+// it — including the only text that could be classified. That turned a durable
+// quota refusal (not retryable, "wait for quota reset") into a retryable
+// `unknown` told to narrow the prompt, undoing 20980ed.
+test("an unmapped status does not cost the line its text", () => {
+  const failure = classifyCliFailure({
+    engine: "agy",
+    status: 3,
+    stderr: `AGY_ERROR: {"status":"Internal","short_error":"Individual quota reached. Resets in 2h39m52s."}`
+  });
+  assert.equal(failure.category, "quota");
+  assert.equal(failure.retryable, false, "a reset hours away must not be retried");
+});
+
+// Same draft, same cause. The arms match the wire spelling case-insensitively,
+// so removing the line threw away a classification that exists today.
+test("an unmapped status in wire spelling keeps the classification it has", () => {
+  const cases = [
+    [`AGY_ERROR: {"status":"RESOURCE_EXHAUSTED","code":8}`, "rate-limit"],
+    [`AGY_ERROR: {"status":"NOT_FOUND","code":5}`, "model-unavailable"]
+  ];
+  for (const [stderr, expected] of cases) {
+    assert.equal(classifyCliFailure({ engine: "agy", status: 3, stderr }).category, expected, stderr);
+  }
+});
+
+// Blanking the value rather than the line is what makes this possible: the
+// misleading token goes, everything beside it on the same line stays.
+test("Aborted beside a quota message reaches the quota arm", () => {
+  const failure = classifyCliFailure({
+    engine: "agy",
+    status: 3,
+    stderr: `AGY_ERROR: {"status":"Aborted","short_error":"Individual quota reached. Resets in 2h39m52s."}`
+  });
+  assert.equal(failure.category, "quota");
+});
+
+test("the short_error fallback keeps its text, because it is the only description", () => {
+  const failure = classifyCliFailure({
+    engine: "agy",
+    status: 3,
+    stderr: `AGY_ERROR: {"short_error":"OAuth token expired, run /login to authenticate"}`
+  });
+  assert.equal(failure.category, "auth", "a line with no status must not be touched");
+});
+
+test("a second AGY_ERROR line cannot smuggle Aborted back into the cancelled arm", () => {
+  const failure = classifyCliFailure({
+    engine: "agy",
+    status: 3,
+    stderr: `${agyErrorLine("Internal")}\n${agyErrorLine("Aborted")}`
+  });
+  assert.notEqual(failure.category, "cancelled");
+});
+
+test("a matching but unparseable AGY_ERROR line is left in the prose", () => {
+  // Distinct from a line with no closing brace, which never matches at all.
+  const failure = classifyCliFailure({ engine: "agy", status: 3, stderr: `AGY_ERROR: {not: json}` });
+  assert.equal(failure.category, "unknown");
+});
+
+test("an AGY_ERROR line with no closing brace changes nothing", () => {
+  const failure = classifyCliFailure({ engine: "agy", status: 3, stderr: "AGY_ERROR: {not json at all" });
+  assert.equal(failure.category, "unknown");
+});

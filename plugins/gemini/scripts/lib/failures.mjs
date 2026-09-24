@@ -234,6 +234,93 @@ function transcriptCategory(reason) {
   return null;
 }
 
+// AGY 1.2.6+ prints a structured failure line on stderr alongside its prose:
+//   AGY_ERROR: {"status":"<canonical>","code":<n>,"retryable":<bool>,"error_id":"..."}
+// Field names were read out of the 1.2.7 binary (printmode.agentErrorPayload,
+// emitted by (*AgentError).structuredLine); the fallback form it also carries is
+// {"short_error":"..."}. Never observed live: six probes on 1.2.7 — rejected
+// --model, expired --print-timeout, invalid --json-schema, unknown --project,
+// stale --conversation, and a 191k-token prompt — each failed some other way,
+// so this is read defensively and nothing depends on it arriving.
+//
+// The line has to come out of the prose before the arms below run. Its values
+// are gRPC canonical statuses, and `Aborted` — a concurrency or transaction
+// abort, not a user cancellation — matches the `aborted` in the cancelled arm.
+// Once that arm wins, auth and quota never run. Measured by putting all 17
+// canonical statuses through classifyCliFailure: `Aborted` was the only misfile.
+const AGY_ERROR_LINE = /^[ \t]*AGY_ERROR:[ \t]*(\{.*\})[ \t]*$/gm;
+
+// Only the statuses whose meaning is unambiguous are mapped, so that cutting a
+// line out never loses a classification that was already right. `Unauthenticated`
+// is here because the auth arm reaches it today through the `unauth` substring,
+// and dropping the line would have silently demoted it to `unknown`.
+// `ResourceExhausted` is deliberately absent: the quota arm splits durable from
+// transient on wording this line does not carry, so it keeps falling through to
+// `unknown`, which is where it lands today. `PermissionDenied` likewise — the
+// auth arm matches `permission denied` with a space, so the token never reached
+// it in the first place.
+const AGY_STATUS_CATEGORY = new Map([
+  ["canceled", "cancelled"],
+  ["cancelled", "cancelled"],
+  ["unauthenticated", "auth"]
+]);
+
+// A canonical status this plugin knows how to read is answered directly. One
+// that it does not is left exactly where it is: an unmapped status is not a
+// licence to delete the line, because the line is often the only place a
+// classifiable phrase exists. Two measured cases say so — the fallback text
+// rides along in `short_error` (`{"status":"Internal","short_error":"Individual
+// quota reached. Resets in 2h39m52s."}` reaches the quota arm only through that
+// text), and the wire spelling `RESOURCE_EXHAUSTED` is matched by the rate-limit
+// arm while the CamelCase `ResourceExhausted` is not. Stripping on presence
+// alone turned a durable quota refusal back into a retryable `unknown`, undoing
+// what 20980ed fixed.
+//
+// That leaves the one token that is actively wrong. `Aborted` is gRPC's
+// concurrency or transaction abort, and the cancelled arm's `aborted` claims it
+// as a user cancellation — after which the auth and quota arms never run. Only
+// that value is blanked out of the text, and only inside the structured line, so
+// everything else on it still reaches the arms below. Putting all 17 canonical
+// statuses through classifyCliFailure, in both CamelCase and SCREAMING_SNAKE,
+// measured `Aborted` as the only value that needed it.
+const AGY_MISLEADING_STATUS = new Set(["aborted"]);
+
+function splitAgyErrorLine(text) {
+  const source = String(text ?? "");
+  let rewritten = "";
+  let cursor = 0;
+  let category = null;
+  let changed = false;
+  for (const match of source.matchAll(AGY_ERROR_LINE)) {
+    let status = null;
+    try {
+      const parsed = JSON.parse(match[1]);
+      status = typeof parsed?.status === "string" ? parsed.status.trim().toLowerCase() : null;
+    } catch {
+      continue;
+    }
+    if (!status) continue;
+    const mapped = AGY_STATUS_CATEGORY.get(status);
+    if (mapped) {
+      category = category ?? mapped;
+      continue;
+    }
+    if (!AGY_MISLEADING_STATUS.has(status)) continue;
+    // Splice by index rather than by text: the same JSON can appear again in
+    // surrounding prose (an engine echoing a previous attempt), and a literal
+    // replace rewrites the leftmost copy, which is the echo. No test pins this
+    // — either way an un-blanked copy of the token survives, so the category
+    // comes out the same and only the prose differs — so it is written the
+    // correct way rather than the testable way.
+    rewritten += source.slice(cursor, match.index) + match[0].replace(/"status"\s*:\s*"[^"]*"/i, '"status":""');
+    cursor = match.index + match[0].length;
+    changed = true;
+  }
+  if (category) return { text: source, category };
+  if (!changed) return { text, category: null };
+  return { text: rewritten + source.slice(cursor), category: null };
+}
+
 export function classifyCliFailure(input = {}) {
   const data = typeof input === "string" ? { message: input } : (input ?? {});
   const already = explicitFailure(data);
@@ -243,7 +330,12 @@ export function classifyCliFailure(input = {}) {
 
   const trusted = combinedTrustedText(data);
   const stdout = compactText(data.stdout);
-  const structuredText = data.structured === true ? `${trusted}\n${stdout}` : trusted;
+  const rawStructuredText = data.structured === true ? `${trusted}\n${stdout}` : trusted;
+  const agyError = splitAgyErrorLine(rawStructuredText);
+  if (agyError.category) {
+    return normalizeFailure(agyError.category, data);
+  }
+  const structuredText = agyError.text;
   const code = errorCode(data);
   const signal = compactText(data.signal);
 
