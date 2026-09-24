@@ -202,6 +202,9 @@ This is an independent, community-maintained project. Use the linked repository 
   assert.doesNotMatch(css, /@import|url\s*\(\s*["']?https?:/i, "site CSS must not load third-party assets");
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
   assert.match(css, /animation:\s*none\s*!important/);
+  assert.doesNotMatch(css, /\binfinite\b/, "hero motion must stop on its own (WCAG 2.2.2)");
+  const durations = [...css.matchAll(/animation:\s*[\w-]+\s+([\d.]+)s/g)].map(([, seconds]) => Number(seconds));
+  assert.ok(durations.length > 0 && durations.every(seconds => seconds <= 5), "each hero animation must move for five seconds or less");
   assert.ok(Buffer.byteLength(html) + Buffer.byteLength(llms) + Buffer.byteLength(sitemap) + Buffer.byteLength(css) < 100 * 1024, "the static site must stay below 100 KiB");
 });
 
