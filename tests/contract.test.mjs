@@ -93,7 +93,7 @@ test("the isolated canonical site stays factual, dependency-free, and motion-opt
     .filter(Boolean)
     .map((file) => path.relative("site", file))
     .sort();
-  assert.deepEqual(files, ["index.html", "llms.txt", "sitemap.xml", "styles.css"], "tracked site/ sources must remain an explicit allowlist");
+  assert.deepEqual(files, ["icon.svg", "index.html", "llms.txt", "og.jpg", "sitemap.xml", "styles.css"], "tracked site/ sources must remain an explicit allowlist");
 
   const html = fs.readFileSync(path.join(siteRoot, "index.html"), "utf8");
   const llms = fs.readFileSync(path.join(siteRoot, "llms.txt"), "utf8").replace(/\r\n/g, "\n");
@@ -108,7 +108,18 @@ test("the isolated canonical site stays factual, dependency-free, and motion-opt
   assert.match(html, /<meta name="viewport" content="width=device-width, initial-scale=1">/);
   assert.ok(html.includes(`<title>${CANONICAL_SITE_TITLE}</title>`));
   assert.ok(html.includes('<link rel="stylesheet" href="styles.css">'));
-  assert.equal((html.match(/<link\b/gi) ?? []).length, 2, "site must not load additional link resources");
+  assert.ok(html.includes('<link rel="icon" href="icon.svg" type="image/svg+xml">'));
+  assert.equal((html.match(/<link\b/gi) ?? []).length, 3, "site must not load additional link resources");
+  // Link previews: platforms require an absolute URL, and the image must ship with the site.
+  assert.ok(html.includes(`<meta property="og:image" content="${CANONICAL_SITE_URL}og.jpg">`));
+  assert.ok(html.includes(`<meta name="twitter:image" content="${CANONICAL_SITE_URL}og.jpg">`));
+  assert.ok(html.includes('<meta name="twitter:card" content="summary_large_image">'));
+  assert.ok(html.includes('<meta property="og:image:width" content="1200">'));
+  assert.ok(html.includes('<meta property="og:image:height" content="630">'));
+  assert.match(html, /<meta property="og:image:alt" content="[^"]+">/);
+  assert.ok(fs.statSync(path.join(siteRoot, "og.jpg")).size < 200 * 1024, "the preview image must stay below 200 KiB");
+  // WCAG 2.5.3: an aria-label on the brand link would hide its visible "agy" mark from voice control.
+  assert.match(html, /<a class="brand" href="[^"]+">/);
   assert.match(html, new RegExp(`<meta name="description" content="${escapedDescription}">`));
   assert.ok(html.includes(`<meta property="og:title" content="${CANONICAL_SITE_TITLE}">`));
   assert.match(html, new RegExp(`<meta property="og:description" content="${escapedDescription}">`));
@@ -126,6 +137,16 @@ test("the isolated canonical site stays factual, dependency-free, and motion-opt
     description: CANONICAL_DESCRIPTION,
     url: CANONICAL_SITE_URL,
     sameAs: CANONICAL_REPOSITORY_URL,
+    applicationCategory: "DeveloperApplication",
+    // Mirrors the CI matrix (ubuntu, windows, macos) and the visible prerequisites.
+    operatingSystem: "Windows, macOS, Linux",
+    softwareRequirements: "Claude Code; Node.js 18 or newer; Gemini CLI or Antigravity CLI (agy)",
+    isAccessibleForFree: true,
+    license: [
+      `${CANONICAL_REPOSITORY_URL}/blob/main/LICENSE`,
+      `${CANONICAL_REPOSITORY_URL}/blob/main/LICENSE-APACHE-2.0`,
+    ],
+    author: { "@type": "Person", name: "arcobaleno64", url: "https://github.com/arcobaleno64" },
   });
   assert.equal(llms, `# agy-plugin-cc
 
