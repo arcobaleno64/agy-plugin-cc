@@ -1,4 +1,4 @@
-# agy-plugin-cc — Gemini / Antigravity Companion for Claude Code
+# agy-plugin-cc — Gemini CLI / Antigravity CLI Companion for Claude Code
 
 agy-plugin-cc is a Claude Code companion for running Gemini CLI or Antigravity CLI (agy) as a cross-model task delegate and code reviewer, with pragmatic and adversarial review, MCP tools, and background jobs.
 
@@ -7,6 +7,10 @@ agy-plugin-cc is a Claude Code companion for running Gemini CLI or Antigravity C
 Ported from [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) (Apache-2.0), retaining a familiar slash-command and background-job workflow while adapting behavior to Gemini/AGY capabilities and documenting intentional divergences.
 
 > **Independent project.** `agy-plugin-cc` is community-maintained and is **not affiliated with, endorsed by, or sponsored by Google LLC or Anthropic**. "Gemini" and "Antigravity" are trademarks of Google LLC and "Claude" is a trademark of Anthropic; all are used here only to name the tools this plugin works with. You install and authenticate those tools yourself, and their terms govern what they do with what is sent to them.
+
+## Related project
+
+[`agy-security-audit`](https://github.com/arcobaleno64/agy-security-audit) is a separate Antigravity CLI (`agy`) plugin for evidence-backed, multi-stage security assurance and vulnerability verification. It runs natively inside Antigravity CLI. Neither project is bundled with or required by the other.
 
 ---
 
