@@ -1,0 +1,8 @@
+{
+  "forbidden": [
+    ".claude/delegation-guard.json",
+    "plugins/gemini/scripts/lib/readonly-guard.mjs",
+    "plugins/gemini/scripts/lib/secrets.mjs",
+    "plugins/gemini/scripts/stop-review-gate-hook.mjs"
+  ]
+}
