@@ -193,6 +193,17 @@ const canLink = (() => {
     fs.rmSync(probe, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 })();
+const canFileLink = (() => {
+  const probe = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-filelinkcheck-'));
+  try {
+    fs.symlinkSync(path.join(probe, 'missing'), path.join(probe, 'link'), 'file');
+    return true;
+  } catch {
+    return false;
+  } finally {
+    fs.rmSync(probe, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+})();
 for (const [label, linkAt] of [['.omc', '.omc'], ['.omc/transfers', path.join('.omc', 'transfers')]]) {
   test(`a transfer refuses to follow a ${label} link out of the workspace`, { skip: !canLink }, (t) => {
     const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-escape-repo-'));
@@ -230,7 +241,7 @@ for (const [label, linkAt] of [['.omc', '.omc'], ['.omc/transfers', path.join('.
 // The content is fixed (`*\n`), so this creates or truncates rather than
 // exfiltrating. It is still a repository choosing a path outside itself and
 // getting a write there.
-test('a transfer refuses a dangling .omc/.gitignore link', { skip: !canLink }, (t) => {
+test('a transfer refuses a dangling .omc/.gitignore link', { skip: !canFileLink }, (t) => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-ignore-link-'));
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-ignore-out-'));
   t.after(() => {
