@@ -417,8 +417,13 @@ export function classifyCliFailure(input = {}) {
   // and `Resets in 2h39m52s` on 1.2.2 — the exhausted 5-hour window. A reset
   // stated in hours or days is durable on any horizon a turn cares about, so it is
   // matched positively; minutes and seconds stay `rate-limit`.
+  //
+  // AGY 1.2.15 added a third wording for the same durable state: once the plan
+  // quota is used up and the AI credits balance cannot cover the request it stops
+  // at once with "Your AI credits balance is too low to continue." That sentence
+  // has no quota, 429 or reset duration, so none of the arms above or below saw it.
   if (
-    /spend(ing)? cap|billing account|monthly (spend|quota|limit)|per.?day|daily (quota|limit)|exceeded your (monthly|daily)/i.test(structuredText) ||
+    /spend(ing)? cap|billing account|monthly (spend|quota|limit)|per.?day|daily (quota|limit)|exceeded your (monthly|daily)|credits balance is too low/i.test(structuredText) ||
     /resets? in\s+\d+\s*(?:h(?:ours?|rs?)?|d(?:ays?)?)(?![a-z])/i.test(structuredText)
   ) {
     return normalizeFailure("quota", data);
