@@ -10,39 +10,17 @@ import { fileURLToPath } from "node:url";
 const PLUGIN_ROOT = path.resolve(fileURLToPath(new URL("../plugins/gemini", import.meta.url)));
 const SERVER = JSON.parse(fs.readFileSync(path.join(PLUGIN_ROOT, ".mcp.json"), "utf8")).mcpServers.gemini;
 
-// The two hosts that read this manifest disagree about it, and neither reading
-// is negotiable:
-//
-//   Claude Code substitutes ${CLAUDE_PLUGIN_ROOT} in command/args/env, and has
-//   no cwd field at all -- the server inherits the host's working directory.
-//
-//   Codex passes command/args/env through literally (verified with
-//   `codex mcp get gemini --json`) and resolves cwd against the plugin
-//   directory. A ${CLAUDE_PLUGIN_ROOT} in args reaches node as those 21
-//   characters; a ${CLAUDE_PLUGIN_ROOT} in cwd fails process creation on
-//   Windows with ERROR_DIRECTORY (267).
-//
-// So the manifest carries the plugin root twice -- expanded through env for the
-// host that substitutes, and implied by cwd for the host that does not -- and
-// the bootstrap in args picks whichever one arrived intact. Each case below is
-// one host's reading; all three must answer initialize.
-async function initialize(t, { cwd, expand, dropEnv }) {
-  const ex = (s) => (expand ? s.replaceAll("${CLAUDE_PLUGIN_ROOT}", PLUGIN_ROOT) : s);
-
-  // Each case must pin exactly one host's reading, so the manifest's own entry is
-  // the only source of GEMINI_PLUGIN_ROOT. Inheriting it would let "Codex
-  // forwards no env at all" quietly take the env path and pass for the wrong
-  // reason -- and it is genuinely set in the environment whenever this suite is
-  // run from a turn delegated through this plugin.
-  const env = { ...process.env };
-  delete env.GEMINI_PLUGIN_ROOT;
-  if (!dropEnv) {
-    for (const [key, value] of Object.entries(SERVER.env ?? {})) env[key] = ex(value);
-  }
+// Claude Code substitutes ${CLAUDE_PLUGIN_ROOT} in command/args/env and has no
+// cwd field -- the server inherits the host's working directory. The directory's
+// validator only follows a literal `${CLAUDE_PLUGIN_ROOT}/<file>` path, so the
+// manifest is exactly that and nothing computed. Codex passes args through
+// literally and is deliberately not supported by this manifest.
+async function initialize({ cwd }) {
+  const ex = (s) => s.replaceAll("${CLAUDE_PLUGIN_ROOT}", PLUGIN_ROOT);
 
   const child = spawn(ex(SERVER.command), SERVER.args.map(ex), {
     cwd,
-    env,
+    env: { ...process.env },
     stdio: ["pipe", "pipe", "pipe"]
   });
 
@@ -62,7 +40,7 @@ async function initialize(t, { cwd, expand, dropEnv }) {
       });
       child.once("error", (e) => { clearTimeout(timer); reject(e); });
       // Exit code 0 with no reply is the failure this test exists to catch: the
-      // bootstrap loaded a module that then started no stdio loop.
+      // entry guard did not recognise the launch path and started no stdio loop.
       child.once("exit", (code) => {
         clearTimeout(timer);
         reject(new Error(`MCP server exited before answering initialize (code ${code}): ${stderr.trim() || "no stderr"}`));
@@ -79,19 +57,20 @@ async function initialize(t, { cwd, expand, dropEnv }) {
   }
 }
 
-test("the manifest never puts a placeholder anywhere Codex reads literally", () => {
-  assert.equal(SERVER.cwd, ".", "cwd must be the plugin dir by relative path, never ${CLAUDE_PLUGIN_ROOT}");
-  assert.ok(!SERVER.command.includes("${"), "command must not carry a placeholder");
-  for (const arg of SERVER.args) {
-    assert.ok(!arg.includes("${CLAUDE_PLUGIN_ROOT}"), `args must not carry a placeholder Codex would pass through: ${arg}`);
-  }
-  assert.equal(SERVER.env?.GEMINI_PLUGIN_ROOT, "${CLAUDE_PLUGIN_ROOT}", "env is where the substituting host hands over the plugin root");
+test("the manifest launches one literal script path under CLAUDE_PLUGIN_ROOT, nothing computed", () => {
+  // Removing the old `node -e` bootstrap is what lets the directory validator
+  // read the launch command; a computed path or inline program blocks submission.
+  assert.equal(SERVER.command, "node");
+  assert.deepEqual(SERVER.args, ["${CLAUDE_PLUGIN_ROOT}/scripts/gemini-mcp.mjs"]);
+  assert.equal(SERVER.cwd, undefined, "Claude Code has no cwd field; a relative cwd would not mean the plugin dir there");
+  assert.equal(SERVER.env, undefined, "the plugin root is no longer handed over by env");
+  assert.ok(fs.existsSync(path.join(PLUGIN_ROOT, "scripts", "gemini-mcp.mjs")), "the literal path must exist in the plugin");
 });
 
-test("Claude Code's reading launches the server: placeholders expanded, cwd inherited", async (t) => {
+test("Claude Code's reading launches the server: placeholder expanded, cwd inherited", async () => {
   const tempCwd = fs.mkdtempSync(path.join(os.tmpdir(), "gemini-mcp-launch-"));
   try {
-    const reply = await initialize(t, { cwd: tempCwd, expand: true });
+    const reply = await initialize({ cwd: tempCwd });
     assert.equal(reply.id, 1);
     assert.equal(reply.result.serverInfo.name, "gemini");
     assert.equal(typeof reply.result.protocolVersion, "string");
@@ -100,31 +79,9 @@ test("Claude Code's reading launches the server: placeholders expanded, cwd inhe
   }
 });
 
-test("Codex's reading launches the server: args literal, cwd is the plugin dir", async (t) => {
-  const reply = await initialize(t, { cwd: PLUGIN_ROOT, expand: false });
-  assert.equal(reply.result.serverInfo.name, "gemini");
-});
-
-test("Codex's reading still launches the server when it forwards no env at all", async (t) => {
-  const reply = await initialize(t, { cwd: PLUGIN_ROOT, expand: false, dropEnv: true });
-  assert.equal(reply.result.serverInfo.name, "gemini");
-});
-
 test("importing the server module starts no stdio loop", async () => {
   const module = await import(new URL("../plugins/gemini/scripts/gemini-mcp.mjs", import.meta.url));
   assert.ok(module, "module must import without taking over stdin");
-});
-
-test("the bootstrap arg carries no character cmd.exe would read as an operator", () => {
-  // Hosts spawn `node` directly today, so this string reaches argv verbatim. It
-  // is one `shell: true` away from being parsed instead -- a common Windows
-  // workaround for resolving .cmd shims -- and there `>` is a redirect that
-  // creates a file and `|` splits the command. The bootstrap is expressible
-  // without any of them at no behavioral cost, so it is.
-  const bootstrap = SERVER.args.find((a) => a.includes("gemini-mcp.mjs"));
-  for (const ch of [">", "<", "|", "&", "^"]) {
-    assert.ok(!bootstrap.includes(ch), `bootstrap must not contain ${ch}, which cmd.exe would treat as an operator`);
-  }
 });
 
 test("starting the server consumes GEMINI_MCP_STDIO instead of passing it to children", async () => {
