@@ -1,7 +1,7 @@
 ---
 description: Delegate investigation, an explicit fix request, or follow-up rescue work to the Gemini rescue subagent
 argument-hint: "[--background|--wait] [--resume|--fresh] [--engine <agy|gemini>] [--model <flash|pro|lite>] [--effort <none|minimal|low|medium|high|xhigh>] [--timeout <seconds>] [what Gemini should investigate, solve, or continue]"
-allowed-tools: Bash(node:*), AskUserQuestion, Agent
+allowed-tools: Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs:*), Bash(node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs":*), AskUserQuestion, Agent
 ---
 
 Invoke the `gemini:gemini-rescue` subagent via the `Agent` tool (`subagent_type: "gemini:gemini-rescue"`), forwarding the raw user request as the prompt.

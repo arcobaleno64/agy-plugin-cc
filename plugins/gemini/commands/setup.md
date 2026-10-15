@@ -1,7 +1,7 @@
 ---
 description: Check whether Gemini CLI / AGY is ready and optionally toggle the stop-time review gate
 argument-hint: '[--engine <agy|gemini>] [--probe-agy] [--probe-gemini] [--enable-review-gate|--disable-review-gate]'
-allowed-tools: Bash(node:*), Bash(npm:*), Bash(curl:*), AskUserQuestion
+allowed-tools: Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs:*), Bash(node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs":*), AskUserQuestion
 ---
 
 ## Those arguments must never reach a shell
