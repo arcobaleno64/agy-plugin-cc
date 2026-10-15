@@ -2,7 +2,7 @@
 description: Show active and recent Gemini jobs for this repository, including review-gate status
 argument-hint: '[job-id] [--wait] [--timeout-ms <ms>] [--all]'
 disable-model-invocation: true
-allowed-tools: Bash(node:*)
+allowed-tools: Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs:*), Bash(node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs":*)
 ---
 
 !`node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" status`

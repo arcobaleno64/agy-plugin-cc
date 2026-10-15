@@ -2,7 +2,7 @@
 description: Cancel an active background Gemini job in this repository
 argument-hint: '[job-id | group-id] [--all]'
 disable-model-invocation: true
-allowed-tools: Bash(node:*)
+allowed-tools: Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs:*), Bash(node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs":*)
 ---
 
 !`node "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-companion.mjs" status`
