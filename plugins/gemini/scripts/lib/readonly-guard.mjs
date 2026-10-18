@@ -24,7 +24,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { getWorkingTreeState } from "./git.mjs";
-import { runCommandChecked } from "./process.mjs";
+import { runCommand, runCommandChecked } from "./process.mjs";
 
 function readIndex(cwd) {
   const output = runCommandChecked("git", ["ls-files", "--stage", "-z"], { cwd, shell: false, maxBuffer: 64 * 1024 * 1024 }).stdout;
@@ -93,8 +93,56 @@ function fingerprintEntry(cwd, entry, state, index) {
     .digest("hex");
 }
 
+// A clean working tree does not mean a quiet repository. A turn can commit its
+// edits (HEAD moves, the tree stays clean), plant a hook that runs on the user's
+// next commit, or rewrite `.git/config` (aliases, `core.hooksPath`,
+// `core.fsmonitor` all execute commands). None of those appear in the
+// working-tree state, so each is fingerprinted on its own.
+function resolveGitPath(cwd, name) {
+  return path.resolve(cwd, runCommandChecked("git", ["rev-parse", "--git-path", name], { cwd, shell: false }).stdout.trim());
+}
+
+function fingerprintGitFile(absolute) {
+  let current;
+  try {
+    current = fs.lstatSync(absolute);
+  } catch (error) {
+    if (error?.code === "ENOENT") return "missing";
+    throw error;
+  }
+  if (current.isSymbolicLink()) return `link:${fs.readlinkSync(absolute)}`;
+  if (!current.isFile()) return `other:${current.mode}`;
+  return `file:${current.mode}:${crypto.createHash("sha256").update(fs.readFileSync(absolute)).digest("hex")}`;
+}
+
+function fingerprintGitDirectory(absolute) {
+  let names;
+  try {
+    names = fs.readdirSync(absolute).sort();
+  } catch (error) {
+    if (error?.code === "ENOENT") return "missing";
+    throw error;
+  }
+  return crypto.createHash("sha256")
+    .update(JSON.stringify(names.map((name) => [name, fingerprintGitFile(path.join(absolute, name))])))
+    .digest("hex");
+}
+
+function snapshotGitState(cwd) {
+  // An unborn branch has no HEAD commit yet; that is a state to compare, not an error.
+  const headResult = runCommand("git", ["rev-parse", "--verify", "-q", "HEAD"], { cwd, shell: false });
+  const head = headResult.status === 0 ? headResult.stdout.trim() : "unborn";
+  const ref = runCommand("git", ["symbolic-ref", "-q", "HEAD"], { cwd, shell: false }).stdout.trim() || "detached";
+  return {
+    head,
+    ref,
+    hooks: fingerprintGitDirectory(resolveGitPath(cwd, "hooks")),
+    config: fingerprintGitFile(resolveGitPath(cwd, "config"))
+  };
+}
+
 /**
- * @returns {{ comparable: boolean, entries: string[], fingerprints: Record<string, string>, reason: string | null }}
+ * @returns {{ comparable: boolean, entries: string[], fingerprints: Record<string, string>, git: { head: string, ref: string, hooks: string, config: string } | null, reason: string | null }}
  */
 export function snapshotWorkspace(cwd) {
   try {
@@ -105,6 +153,7 @@ export function snapshotWorkspace(cwd) {
       comparable: true,
       entries,
       fingerprints: Object.fromEntries(entries.map((entry) => [entry, fingerprintEntry(cwd, entry, state, index)])),
+      git: snapshotGitState(cwd),
       reason: null
     };
   } catch (error) {
@@ -112,6 +161,7 @@ export function snapshotWorkspace(cwd) {
       comparable: false,
       entries: [],
       fingerprints: {},
+      git: null,
       reason: error instanceof Error ? error.message : String(error)
     };
   }
@@ -135,11 +185,18 @@ export function detectWrites(before, cwd) {
     return { checked: false, written: [], reason: after.reason };
   }
   const entries = new Set([...before.entries, ...after.entries]);
-  return {
-    checked: true,
-    written: [...entries].filter((entry) => before.fingerprints?.[entry] !== after.fingerprints?.[entry]).sort(),
-    reason: null
-  };
+  const written = [...entries].filter((entry) => before.fingerprints?.[entry] !== after.fingerprints?.[entry]).sort();
+  // Repository-level state sits outside the working tree, so a clean tree must
+  // not mask it. Snapshots taken before this field existed carry no `git` and are
+  // skipped rather than reported as changed.
+  if (before.git && after.git) {
+    if (before.git.head !== after.git.head || before.git.ref !== after.git.ref) {
+      written.push(`.git/HEAD (${before.git.ref} ${before.git.head.slice(0, 7)} -> ${after.git.ref} ${after.git.head.slice(0, 7)})`);
+    }
+    if (before.git.hooks !== after.git.hooks) written.push(".git/hooks");
+    if (before.git.config !== after.git.config) written.push(".git/config");
+  }
+  return { checked: true, written, reason: null };
 }
 
 /**

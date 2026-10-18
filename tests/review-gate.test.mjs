@@ -206,3 +206,39 @@ test("the review mark does not reorder the job store's eviction queue", () => {
   assert.deepEqual(after, before, "marking a job as reviewed must not change its eviction position");
   assert.equal(after[0], "task-new", "the newest job stays at the head");
 });
+
+// ---------------------------------------------------------------------------
+// Which part of the repository the gate reviews. A write task that commits its
+// edits leaves a clean tree; reviewing only `working-tree` then returns
+// `empty: true`, which used to fail open on every Stop without being consumed.
+// ---------------------------------------------------------------------------
+
+import { resolveGateScopes } from "../plugins/gemini/scripts/stop-review-gate-hook.mjs";
+
+test("a clean tree whose HEAD moved is reviewed through the starting commit", () => {
+  assert.deepEqual(
+    resolveGateScopes({ dirty: false, head: "bbb", baseHeadCommit: "aaa" }),
+    [["--base", "aaa"]]
+  );
+});
+
+test("a dirty tree on top of new commits reviews both", () => {
+  assert.deepEqual(
+    resolveGateScopes({ dirty: true, head: "bbb", baseHeadCommit: "aaa" }),
+    [["--scope", "working-tree"], ["--base", "aaa"]]
+  );
+});
+
+test("a dirty tree with an unmoved HEAD keeps the working-tree scope", () => {
+  assert.deepEqual(
+    resolveGateScopes({ dirty: true, head: "aaa", baseHeadCommit: "aaa" }),
+    [["--scope", "working-tree"]]
+  );
+});
+
+test("a task with no recorded base falls back to the working tree", () => {
+  assert.deepEqual(
+    resolveGateScopes({ dirty: false, head: "bbb", baseHeadCommit: null }),
+    [["--scope", "working-tree"]]
+  );
+});

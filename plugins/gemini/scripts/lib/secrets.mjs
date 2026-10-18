@@ -21,7 +21,9 @@ const SECRET_PATTERNS = [
 ];
 
 export function isSecretFile(filepath) {
-  const filename = String(filepath ?? "").split(/[\\/]/).pop() ?? "";
+  // A path git quoted (`"dir/.env"`) leaves a trailing quote on the last segment,
+  // which defeats every end-anchored pattern below.
+  const filename = (String(filepath ?? "").split(/[\\/]/).pop() ?? "").replace(/^"+|"+$/g, "");
   return SECRET_PATTERNS.some((pattern) => pattern.test(filename));
 }
 

@@ -263,8 +263,8 @@ AGY 請用 `/gemini:setup --engine agy` 驗證所選引擎；auto／Gemini 請�
 | 工具 | 必填 | 選填 | 保證唯讀 | 連外 |
 |---|---|---|---|---|
 | `gemini_rescue` | `workspace`、`prompt` | `write`、`model`、`effort`、`engine`、`timeout` | 否 | 是 |
-| `gemini_review` | `workspace` | `base`、`scope`、`model`、`engine`、`deep`、`timeout` | 否 | 是 |
-| `gemini_adversarial_review` | `workspace` | `base`、`scope`、`model`、`engine`、`deep`、`focus`、`timeout` | 否 | 是 |
+| `gemini_review` | `workspace` | `base`、`scope`、`model`、`effort`、`engine`、`deep`、`timeout` | 否 | 是 |
+| `gemini_adversarial_review` | `workspace` | `base`、`scope`、`model`、`effort`、`engine`、`deep`、`focus`、`timeout` | 否 | 是 |
 | `gemini_job_status` | `workspace`、`jobId` | — | 是 | 否 |
 | `gemini_job_result` | `workspace`、`jobId` | — | 是 | 否 |
 | `gemini_job_cancel` | `workspace`、`jobId` | — | 否 | 否 |

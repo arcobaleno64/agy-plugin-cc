@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { isSecretFile, checkGitConflict, pruneOldTransfers, buildTransferSnapshot, assertContained } from '../plugins/gemini/scripts/lib/transfer-context.mjs';
+import { isSecretFile, checkGitConflict, pruneOldTransfers, buildTransferSnapshot, assertContained, collectGitContext } from '../plugins/gemini/scripts/lib/transfer-context.mjs';
 import { parseTransferArgs } from '../plugins/gemini/scripts/transfer.mjs';
 import { initGitRepo, run } from './helpers.mjs';
 
@@ -324,4 +324,46 @@ test('assertContained fails closed when it cannot inspect the path', (t) => {
   assert.doesNotThrow(
     () => assertContained(repo, target, '.omc', { lstatImpl: () => { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; } })
   );
+});
+
+test('isSecretFile still matches a path git left quoted', () => {
+  assert.equal(isSecretFile('"dir/.env"'), true);
+  assert.equal(isSecretFile('"src/index.js"'), false);
+});
+
+// Three ways the old `git diff --name-only` lost a change: staged edits were
+// invisible, a non-ASCII directory made git quote the path (so `.env"` missed the
+// secret pattern and its content shipped), and an unborn branch has no HEAD.
+test('collectGitContext reports staged and unstaged changes and withholds a secret under a non-ASCII path', (t) => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-ctx-test-'));
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true }));
+  initGitRepo(repo);
+  run('git', ['config', 'core.quotepath', 'true'], { cwd: repo });
+  fs.mkdirSync(path.join(repo, '設定'));
+  fs.writeFileSync(path.join(repo, '設定', '.env'), 'TOKEN=old\n');
+  fs.writeFileSync(path.join(repo, 'staged.js'), 'a\n');
+  fs.writeFileSync(path.join(repo, 'unstaged.js'), 'a\n');
+  run('git', ['add', '-A'], { cwd: repo });
+  run('git', ['commit', '-m', 'init'], { cwd: repo });
+
+  fs.writeFileSync(path.join(repo, '設定', '.env'), 'TOKEN=SUPERSECRET\n');
+  fs.writeFileSync(path.join(repo, 'staged.js'), 'b\n');
+  fs.writeFileSync(path.join(repo, 'unstaged.js'), 'b\n');
+  run('git', ['add', 'staged.js'], { cwd: repo });
+
+  const { diff } = collectGitContext(repo);
+  assert.match(diff, /\+\+\+ b\/staged\.js/, 'a staged-only change must be included');
+  assert.match(diff, /\+\+\+ b\/unstaged\.js/);
+  assert.match(diff, /\[REDACTED SECRET FILE CONTENT\]/);
+  assert.doesNotMatch(diff, /SUPERSECRET/);
+});
+
+test('collectGitContext includes staged files on a branch with no commits yet', (t) => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-ctx-unborn-'));
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true }));
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, 'new.js'), 'x\n');
+  run('git', ['add', 'new.js'], { cwd: repo });
+
+  assert.match(collectGitContext(repo).diff, /\+\+\+ b\/new\.js/);
 });

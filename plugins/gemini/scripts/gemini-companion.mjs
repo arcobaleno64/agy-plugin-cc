@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { parseArgs, normalizeArgv } from "./lib/args.mjs";
 import { agyFloorRefusal, agyMeetsFloor, AGY_MINIMUM_VERSION, AGY_VERSION_UNVERIFIED_NOTICE, detectEngine, ENGINE_ENV, normalizeAgyEffort, normalizeAgyRequestedModel, normalizeRequestedModel, VALID_EFFORT_LEVELS } from "./lib/engine.mjs";
-import { collectReviewContext, describeReviewTarget, ensureGitRepository, resolveReviewTarget } from "./lib/git.mjs";
+import { collectReviewContext, describeReviewTarget, ensureGitRepository, getHeadCommit, resolveReviewTarget } from "./lib/git.mjs";
 import { readStdinIfPiped } from "./lib/fs.mjs";
 import { binaryAvailable, terminateProcessTree } from "./lib/process.mjs";
 import { loadPromptTemplate, interpolateTemplate } from "./lib/prompts.mjs";
@@ -671,10 +671,13 @@ export function buildReviewPrompt(request) {
   if (context.isEmpty) return { context, prompt: null };
 
   const template = loadPromptTemplate(ROOT_DIR, templateName);
+  // Both values land inside tags the template closes itself; a literal closing
+  // tag in a reviewed diff or a focus string would end the block early and leave
+  // the rest of the text outside it, as instructions.
   const basePrompt = interpolateTemplate(template, {
     TARGET_LABEL: context.target.label,
-    USER_FOCUS: request.focusText || "No extra focus provided.",
-    REVIEW_INPUT: context.content
+    USER_FOCUS: (request.focusText || "No extra focus provided.").replaceAll("</task>", "&lt;/task&gt;"),
+    REVIEW_INPUT: context.content.replaceAll("</repository_context>", "&lt;/repository_context&gt;")
   });
   return {
     context,
@@ -940,6 +943,10 @@ function getJobKindLabel(kind, jobClass) {
 // createJobProgressUpdater — which is what a running job under `auto` reports.
 function createCompanionJob({ prefix, kind, title, workspaceRoot, jobClass, summary, write = false, engine = null, groupId = null }) {
   const requestedEngine = engine === "auto" ? null : engine;
+  // The stop-review gate needs to know where a write task started: a task that
+  // commits its edits leaves a clean tree, and only `baseHeadCommit..HEAD` still
+  // shows them.
+  const baseHeadCommit = write ? getHeadCommit(workspaceRoot) : null;
   return createJobRecord({
     id: generateJobId(prefix),
     kind,
@@ -949,6 +956,7 @@ function createCompanionJob({ prefix, kind, title, workspaceRoot, jobClass, summ
     jobClass,
     summary,
     write,
+    ...(baseHeadCommit ? { baseHeadCommit } : {}),
     ...(requestedEngine ? { engine: requestedEngine } : {}),
     ...(groupId ? { groupId } : {})
   });
