@@ -94,6 +94,29 @@ test("MCP can run an adversarial review, not only the standard one", async () =>
   assert.equal(calls[0].focusText, "the migration path");
 });
 
+test("both review tools declare effort and forward it, rejecting unknown values", async () => {
+  const workspace = makeTempDir();
+  const calls = [];
+  const runtime = {
+    dispatchBackgroundReview(input) {
+      calls.push(input);
+      return { jobId: "review-effort-1", status: "queued" };
+    }
+  };
+
+  const listed = await handleRequest({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+  for (const name of ["gemini_review", "gemini_adversarial_review"]) {
+    const declared = listed.tools.find((tool) => tool.name === name).inputSchema.properties.effort;
+    assert.deepEqual(declared.enum, ["none", "minimal", "low", "medium", "high", "xhigh"], `${name} must declare effort`);
+    await handleRequest(toolRequest(name, { workspace, effort: "low" }), { runtime });
+  }
+  assert.deepEqual(calls.map((call) => call.effort), ["low", "low"]);
+
+  const rejected = await handleRequest(toolRequest("gemini_review", { workspace, effort: "turbo" }), { runtime });
+  assert.equal(rejected.isError, true);
+  assert.equal(calls.length, 2, "an invalid effort must not reach the dispatcher");
+});
+
 // The standard review takes no focus argument on the slash surface either, and a
 // silently ignored argument is worse than an absent one.
 test("gemini_review still queues the standard template and takes no focus", async () => {
@@ -284,6 +307,7 @@ test("handleRequest delegates rescue and review to injected runtime dispatchers"
     workspace,
     scope: "working-tree",
     engine: "agy",
+    effort: "xhigh",
     deep: true
   }), { runtime });
   assert.equal(review.structuredContent.jobId, "review-1");
@@ -302,6 +326,7 @@ test("handleRequest delegates rescue and review to injected runtime dispatchers"
       base: undefined,
       scope: "working-tree",
       model: undefined,
+      effort: "xhigh",
       engine: "agy",
       deep: true,
       timeoutSeconds: null,

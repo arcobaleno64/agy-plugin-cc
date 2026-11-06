@@ -177,15 +177,31 @@ export function collectGitContext(cwd = process.cwd()) {
     statusOutput = '';
   }
 
-  let diffFiles = [];
+  // `diff HEAD` covers staged and unstaged in one pass. An unborn branch has no
+  // HEAD, so there the two halves are read separately and merged.
+  let hasHead = true;
   try {
-    const rawFileList = execFileSync('git', ['diff', '--name-only'], execOpts).trim();
-    if (rawFileList) {
-      diffFiles = rawFileList.split('\n').map((f) => f.trim()).filter(Boolean);
-    }
+    execFileSync('git', ['rev-parse', '--verify', '-q', 'HEAD'], execOpts);
   } catch {
-    diffFiles = [];
+    hasHead = false;
   }
+  const diffBases = hasHead ? [['HEAD']] : [['--cached'], []];
+
+  // -z: paths arrive NUL-separated and unquoted. Without it git wraps non-ASCII
+  // names in quotes with octal escapes, so a quoted `.env` kept its trailing
+  // quote and slipped past isSecretFile.
+  const diffFileSet = new Set();
+  for (const base of diffBases) {
+    try {
+      const rawFileList = execFileSync('git', ['diff', ...base, '--name-only', '-z', '--no-ext-diff'], execOpts);
+      for (const f of rawFileList.split('\0')) {
+        if (f) diffFileSet.add(f);
+      }
+    } catch {
+      // A failed half leaves the other half's files in place.
+    }
+  }
+  const diffFiles = [...diffFileSet];
 
   let diffSummary = [];
   let totalChars = 0;
@@ -204,7 +220,10 @@ export function collectGitContext(cwd = process.cwd()) {
     }
 
     try {
-      const fileDiff = execFileSync('git', ['diff', '--', file], execOpts).trim();
+      const fileDiff = diffBases
+        .map((base) => execFileSync('git', ['diff', ...base, '--no-ext-diff', '--', file], execOpts).trim())
+        .filter(Boolean)
+        .join('\n');
       if (!fileDiff) continue;
 
       if (fileDiff.length > MAX_FILE_CHARS) {

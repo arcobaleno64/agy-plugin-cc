@@ -164,6 +164,51 @@ test("describeReadOnlyWrites tolerates a missing detection", () => {
   assert.equal(describeReadOnlyWrites(undefined), null);
 });
 
+// --- a clean working tree is not a quiet repository -------------------------
+// Commits, hooks and .git/config sit outside the working-tree state, so a turn
+// that only touched those used to come back as 'checked, nothing changed'.
+
+function commitAll(repo, message) {
+  run('git', ['add', '-A'], { cwd: repo });
+  return run('git', ['commit', '-m', message], { cwd: repo });
+}
+
+test('a commit made during the turn is reported even though the tree stays clean', () => {
+  const repo = tempRepo();
+  fs.writeFileSync(path.join(repo, 'seed.txt'), 'seed', 'utf8');
+  commitAll(repo, 'seed');
+  const before = snapshotWorkspace(repo);
+
+  fs.writeFileSync(path.join(repo, 'sneaky.txt'), 'x', 'utf8');
+  commitAll(repo, 'sneaky');
+
+  const detection = detectWrites(before, repo);
+  assert.equal(detection.checked, true);
+  assert.equal(detection.written.length, 1);
+  assert.match(detection.written[0], /^\.git\/HEAD/);
+  assert.match(describeReadOnlyWrites(detection), /\.git\/HEAD/);
+});
+
+test('a hook planted during the turn is reported', () => {
+  const repo = tempRepo();
+  const before = snapshotWorkspace(repo);
+  fs.writeFileSync(path.join(repo, '.git', 'hooks', 'pre-commit'), "#!/bin/sh\n", "utf8");
+  assert.deepEqual(detectWrites(before, repo).written, ['.git/hooks']);
+});
+
+test('a .git/config change during the turn is reported', () => {
+  const repo = tempRepo();
+  const before = snapshotWorkspace(repo);
+  run('git', ['config', 'alias.st', 'status'], { cwd: repo });
+  assert.deepEqual(detectWrites(before, repo).written, ['.git/config']);
+});
+
+test('an untouched repository reports no repository-level change', () => {
+  const repo = tempRepo();
+  const before = snapshotWorkspace(repo);
+  assert.deepEqual(detectWrites(before, repo).written, []);
+});
+
 // --- touchedFiles is a measurement, not a guess -----------------------------
 // It used to be a regex for filename-shaped tokens in the model's reply. That
 // reported files merely mentioned — including ones absent from the workspace —

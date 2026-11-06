@@ -263,8 +263,8 @@ The plugin also ships an MCP server (`.mcp.json` → `scripts/gemini-mcp.mjs`), 
 | Tool | Required | Optional | Guaranteed read-only | Reaches Google |
 |---|---|---|---|---|
 | `gemini_rescue` | `workspace`, `prompt` | `write`, `model`, `effort`, `engine`, `timeout` | no | yes |
-| `gemini_review` | `workspace` | `base`, `scope`, `model`, `engine`, `deep`, `timeout` | no | yes |
-| `gemini_adversarial_review` | `workspace` | `base`, `scope`, `model`, `engine`, `deep`, `focus`, `timeout` | no | yes |
+| `gemini_review` | `workspace` | `base`, `scope`, `model`, `effort`, `engine`, `deep`, `timeout` | no | yes |
+| `gemini_adversarial_review` | `workspace` | `base`, `scope`, `model`, `effort`, `engine`, `deep`, `focus`, `timeout` | no | yes |
 | `gemini_job_status` | `workspace`, `jobId` | — | yes | no |
 | `gemini_job_result` | `workspace`, `jobId` | — | yes | no |
 | `gemini_job_cancel` | `workspace`, `jobId` | — | no | no |
