@@ -2,7 +2,7 @@
 description: Export the current workspace context into a transfer snapshot and generate ready-to-run AGY / Gemini CLI handoff commands
 argument-hint: '[--engine <gemini|agy|auto>] [--model <id>] [--effort <low|medium|high|xhigh>] [instructions...]'
 disable-model-invocation: true
-allowed-tools: Bash(node:*), Write
+allowed-tools: Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/transfer.mjs:*), Bash(node "${CLAUDE_PLUGIN_ROOT}/scripts/transfer.mjs":*), Write
 ---
 
 The user's raw arguments, as text and nothing else:
