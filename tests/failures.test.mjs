@@ -85,6 +85,25 @@ test("classifyCliFailure reads hours and days spelled out, not only the h/d suff
   }
 });
 
+// AGY 1.2.15 stopped retrying an exhausted plan quota that credits cannot cover
+// and says so in one sentence with no quota, 429 or reset duration in it. Before
+// the credits arm it read `unknown` bare and `rate-limit` under a
+// RESOURCE_EXHAUSTED AGY_ERROR line, both retryable, so a refusal that cannot
+// succeed was retried. The sentence is pinned from the changelog; a live
+// emission was not observed, hence the two carriers.
+test("classifyCliFailure treats AGY's credits-balance-too-low refusal as durable quota", () => {
+  const sentence = "Your AI credits balance is too low to continue.";
+  const carriers = {
+    prose: sentence,
+    "AGY_ERROR with a canonical RESOURCE_EXHAUSTED status": `AGY_ERROR: {"short_error":"${sentence}","status":"RESOURCE_EXHAUSTED","error_code":429,"code_kind":"http","retryable":true}`
+  };
+  for (const [label, stderr] of Object.entries(carriers)) {
+    const failure = classifyCliFailure({ stderr, engine: "agy" });
+    assert.equal(failure.category, "quota", label);
+    assert.equal(failure.retryable, false, label);
+  }
+});
+
 test("classifyCliFailure keeps a bare RESOURCE_EXHAUSTED retryable rather than unknown", () => {
   // No 429 in the text: without RESOURCE_EXHAUSTED in the rate-limit branch this
   // would fall past every category to `unknown`.

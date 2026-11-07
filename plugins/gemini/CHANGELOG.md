@@ -2,6 +2,20 @@
 
 ## 0.26.0 - Unreleased
 
+- **AGY's "credits balance is too low" refusal is reported as exhausted quota,
+  not retried.** AGY 1.2.15 stops at once, instead of retrying for about two and
+  a half minutes, when the plan quota is used up and the AI credits balance
+  cannot cover the request, and says "Your AI credits balance is too low to
+  continue." That sentence has no `quota`, `429` or reset duration in it, so it
+  matched no arm: bare it read `unknown`, and inside an `AGY_ERROR` line with
+  status `RESOURCE_EXHAUSTED` it read `rate-limit`, both retryable. A refusal
+  that no retry can change was retried, at minutes per attempt. It now matches
+  the durable-quota arm and is not retried.
+
+  Not observed live: the sentence comes from the 1.2.15 release notes, and
+  reproducing it needs an account with both the plan quota and the credits
+  exhausted. A real emission worded differently would not match.
+
 - **A gRPC `Aborted` in AGY's structured error line is no longer read as a user
   cancellation.** AGY 1.2.6 added `AGY_ERROR: {"status":...,"code":...,"retryable":...,"error_id":...}`
   on stderr, whose `status` carries gRPC canonical names. The cancelled arm
