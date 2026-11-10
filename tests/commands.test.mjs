@@ -135,7 +135,8 @@ test("review and adversarial-review are deterministic runners (no fork)", () => 
   for (const name of ["review.md", "adversarial-review.md"]) {
     const source = readCommand(name);
     assert.match(source, /disable-model-invocation:\s*true/, `${name} must disable model invocation`);
-    assert.match(source, /Bash\(git:\*\)/, `${name} must allow git`);
+    assert.match(source, /Bash\(git status:\*\), Bash\(git diff:\*\)/, `${name} must allow only git status and git diff`);
+    assert.doesNotMatch(source, /Bash\(git:\*\)/, `${name} must not pre-approve every git subcommand`);
     assert.doesNotMatch(source, /context:\s*fork/, `${name} must not use context: fork`);
   }
 });
@@ -168,7 +169,11 @@ test("setup treats Gemini CLI and AGY as first-class conditional dependencies", 
   const source = readCommand("setup.md");
   assert.match(source, /Install Gemini CLI \(Recommended\)/);
   assert.match(source, /--engine agy/, "AGY install must be gated behind --engine agy");
-  assert.match(source, /Bash\(curl:\*\)/, "the first-class AGY installer must be allowed to invoke curl");
+  // The installers run only after AskUserQuestion; they are approved per call
+  // by the user, never pre-approved by allowed-tools.
+  const frontmatter = source.split("---")[1] ?? "";
+  assert.doesNotMatch(frontmatter, /Bash\((curl|npm):/, "installers must not be pre-approved in allowed-tools");
+  assert.match(source, /curl -fsSL https:\/\/antigravity\.google\/cli\/install\.sh/, "the AGY install step must stay documented");
   assert.match(source, /first-class supported engines/i);
   assert.doesNotMatch(source, /AGY is an optional fallback/i);
 });
@@ -183,7 +188,7 @@ test("setup authenticates by running gemini, not a nonexistent `gemini login`", 
 test("transfer is a deterministic runner that calls scripts/transfer.mjs", () => {
   const source = readCommand("transfer.md");
   assert.match(source, /disable-model-invocation:\s*true/);
-  assert.match(source, /allowed-tools:\s*Bash\(node:\*\), Write/);
+  assert.match(source, /allowed-tools:.*Bash\(node \$\{CLAUDE_PLUGIN_ROOT\}\/scripts\/transfer\.mjs:\*\).*, Write/);
   // Instructions are free text and now travel in a file, never on a command
   // line. The command no longer pre-executes anything, because a pre-execution
   // block cannot avoid interpolating them.
