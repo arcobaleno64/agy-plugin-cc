@@ -2107,13 +2107,13 @@ test("stop-gate fails OPEN with a visible warning when the review cannot run", (
   assert.match(result.stderr, /review gate skipped/i);
 });
 
-test("stop-gate does not consume the mark when the review had nothing to review", () => {
-  // The gate reviews `--scope working-tree` because the plugin never commits.
-  // Nothing stops the edits being committed between the write task finishing and
-  // Stop firing, and then the review returns `{ empty: true, result: null }` with
-  // exit 0. That is a truthy payload carrying no verdict: the hook used to take
-  // it for a passing review, stamp the job as reviewed, and let Stop through
-  // without a word. The edits were then marked reviewed forever, unseen.
+test("stop-gate consumes the mark when nothing is in scope, and says so if the base is unknown", () => {
+  // Edits committed between the write task finishing and Stop firing leave a clean
+  // tree, so `--scope working-tree` returns `{ empty: true, result: null }` with
+  // exit 0. Leaving the mark unspent re-armed the gate on every later Stop, each
+  // time failing open again. An empty answer is final: spend the mark. A job that
+  // recorded no `baseHeadCommit` cannot be reviewed any other way, so the silence
+  // is replaced by a visible warning rather than a pass.
   const { repo, binDir } = setupRepo("adversarial");
   commit(repo, "src/app.js", "export const value = 1;\n");
   seedState(
@@ -2127,19 +2127,31 @@ test("stop-gate does not consume the mark when the review had nothing to review"
   assert.equal(result.status, 0, result.stderr);
   const decision = JSON.parse(result.stdout);
   assert.ok(!("decision" in decision), "fail open: a vacuous review must not trap the user at Stop");
-  assert.match(
-    decision.systemMessage ?? "",
-    /skipped/i,
-    "a review that produced no verdict is a skipped gate, and the skip has to be visible"
-  );
+  assert.match(decision.systemMessage ?? "", /not reviewed/i, "an unreviewable committed edit must be named, not passed in silence");
 
   const job = storedJobs(repo).find((entry) => entry.id === "task-empty");
   assert.ok(job, "the seeded write task is still in the store");
-  assert.equal(
-    job.gateReviewedAt,
-    undefined,
-    "nothing was reviewed, so the one-shot mark must still be unspent"
+  assert.ok(job.gateReviewedAt, "an empty review is final: the mark must be spent so Stop stops re-arming");
+});
+
+test("stop-gate reviews edits the write task already committed, via its recorded base", () => {
+  const { repo, binDir } = setupRepo("review-clean");
+  commit(repo, "README.md", "seed\n");
+  const base = run("git", ["rev-parse", "HEAD"], { cwd: repo }).stdout.trim();
+  commit(repo, "src/app.js", "export const value = 1;\n");
+  seedState(
+    repo,
+    [{ id: "task-committed", status: "completed", jobClass: "task", write: true, kindLabel: "rescue", title: "Gemini Task", baseHeadCommit: base }],
+    { stopReviewGateEnabled: true }
   );
+
+  const result = runStopGate(repo, buildEnv(binDir));
+
+  assert.equal(result.status, 0, result.stderr);
+  const decision = JSON.parse(result.stdout);
+  assert.doesNotMatch(decision.systemMessage ?? "", /skipped|not reviewed/i, "the committed edit was in scope and must be reviewed");
+  const job = storedJobs(repo).find((entry) => entry.id === "task-committed");
+  assert.ok(job.gateReviewedAt, "a verdict was returned, so the mark is spent");
 });
 
 test("stop-gate does not consume the mark when the engine answered in prose", () => {

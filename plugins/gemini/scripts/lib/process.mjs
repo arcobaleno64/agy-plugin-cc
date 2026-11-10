@@ -578,23 +578,44 @@ export function terminateProcessTree(pid, options = {}) {
     throw new Error(formatCommandFailure(result));
   }
 
-  try {
-    killImpl(-pid, "SIGTERM");
-    return { attempted: true, delivered: true, method: "process-group" };
-  } catch (error) {
-    if (error?.code !== "ESRCH") {
-      try {
-        killImpl(pid, "SIGTERM");
-        return { attempted: true, delivered: true, method: "process" };
-      } catch (innerError) {
-        if (innerError?.code === "ESRCH") {
-          return { attempted: true, delivered: false, method: "process" };
-        }
-        throw innerError;
-      }
-    }
+  const term = signalPosix(pid, "SIGTERM", killImpl);
+  if (!term.delivered) {
+    return { attempted: true, ...term };
+  }
+  // SIGTERM is a request: a worker that ignores or is slow to honour it would be
+  // reported as cancelled while still running. Wait for the pid to go, and only
+  // then escalate.
+  if (waitForPidToExit(pid, isAliveImpl)) {
+    return { attempted: true, ...term };
+  }
 
-    return { attempted: true, delivered: false, method: "process-group" };
+  // ESRCH from SIGKILL means it exited between the check and the signal.
+  const kill = signalPosix(pid, "SIGKILL", killImpl);
+  if (!kill.delivered || waitForPidToExit(pid, isAliveImpl)) {
+    return { attempted: true, delivered: true, method: kill.delivered ? kill.method : term.method };
+  }
+  return { attempted: true, delivered: true, method: kill.method, treeIncomplete: true };
+}
+
+// Prefers the process group so the worker's children go with it; falls back to
+// the pid alone when there is no group to signal.
+function signalPosix(pid, signal, killImpl) {
+  try {
+    killImpl(-pid, signal);
+    return { delivered: true, method: "process-group" };
+  } catch (error) {
+    if (error?.code === "ESRCH") {
+      return { delivered: false, method: "process-group" };
+    }
+  }
+  try {
+    killImpl(pid, signal);
+    return { delivered: true, method: "process" };
+  } catch (innerError) {
+    if (innerError?.code === "ESRCH") {
+      return { delivered: false, method: "process" };
+    }
+    throw innerError;
   }
 }
 

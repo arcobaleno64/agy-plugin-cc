@@ -80,6 +80,7 @@ test("terminateProcessTree signals the process group on POSIX", () => {
   const signals = [];
   const outcome = terminateProcessTree(4321, {
     platform: "linux",
+    isPidAlive: () => false,
     killImpl(pid, signal) {
       signals.push({ pid, signal });
     }
@@ -87,6 +88,55 @@ test("terminateProcessTree signals the process group on POSIX", () => {
   assert.deepEqual(signals, [{ pid: -4321, signal: "SIGTERM" }]);
   assert.equal(outcome.method, "process-group");
   assert.equal(outcome.delivered, true);
+});
+
+test("terminateProcessTree escalates to SIGKILL on POSIX when SIGTERM is ignored", () => {
+  const signals = [];
+  let alive = true;
+  const outcome = terminateProcessTree(4321, {
+    platform: "linux",
+    isPidAlive: () => alive,
+    killImpl(pid, signal) {
+      signals.push({ pid, signal });
+      if (signal === "SIGKILL") alive = false;
+    }
+  });
+  assert.deepEqual(signals, [
+    { pid: -4321, signal: "SIGTERM" },
+    { pid: -4321, signal: "SIGKILL" }
+  ]);
+  assert.equal(outcome.delivered, true);
+  assert.equal(outcome.treeIncomplete, undefined);
+});
+
+test("terminateProcessTree reports an incomplete tree when the pid survives SIGKILL", () => {
+  const outcome = terminateProcessTree(4321, {
+    platform: "linux",
+    isPidAlive: () => true,
+    killImpl() {}
+  });
+  assert.equal(outcome.delivered, true);
+  assert.equal(outcome.treeIncomplete, true);
+});
+
+test("terminateProcessTree falls back to the pid for SIGKILL when the group is not signalable", () => {
+  const signals = [];
+  let alive = true;
+  terminateProcessTree(4321, {
+    platform: "linux",
+    isPidAlive: () => alive,
+    killImpl(pid, signal) {
+      signals.push({ pid, signal });
+      if (pid < 0) throw Object.assign(new Error("perm"), { code: "EPERM" });
+      if (signal === "SIGKILL") alive = false;
+    }
+  });
+  assert.deepEqual(signals, [
+    { pid: -4321, signal: "SIGTERM" },
+    { pid: 4321, signal: "SIGTERM" },
+    { pid: -4321, signal: "SIGKILL" },
+    { pid: 4321, signal: "SIGKILL" }
+  ]);
 });
 
 test("binaryAvailable detects an available binary", () => {

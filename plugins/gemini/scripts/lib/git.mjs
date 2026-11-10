@@ -101,6 +101,13 @@ export function getCurrentBranch(cwd) {
   return gitChecked(cwd, ["branch", "--show-current"]).stdout.trim() || "HEAD";
 }
 
+// Null rather than a throw: callers record this opportunistically (an unborn
+// branch or a non-repository has no HEAD) and must not fail because of it.
+export function getHeadCommit(cwd) {
+  const result = git(cwd, ["rev-parse", "--verify", "-q", "HEAD"]);
+  return result.status === 0 ? result.stdout.trim() || null : null;
+}
+
 export function getWorkingTreeState(cwd) {
   const splitPaths = (output) => output.split("\0").filter(Boolean);
   const staged = splitPaths(gitChecked(cwd, ["diff", "--cached", "--ignore-submodules=none", "--name-only", "-z"]).stdout);

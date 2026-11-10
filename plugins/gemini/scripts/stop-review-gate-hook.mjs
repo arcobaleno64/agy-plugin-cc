@@ -6,6 +6,7 @@ import process from "node:process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { getHeadCommit, getWorkingTreeState } from "./lib/git.mjs";
 import { getConfig, jobStoreUnreadableReason, listJobs, upsertJob } from "./lib/state.mjs";
 import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
 
@@ -79,20 +80,46 @@ function markGateReviewed(workspaceRoot, jobs) {
   }
 }
 
-function runAdversarialReview(cwd) {
+function runAdversarialReview(cwd, scopeArgs, timeout = GATE_REVIEW_TIMEOUT_MS) {
   try {
-    // The gate fires because a --write task completed; those edits live in the
-    // working tree (the plugin never commits), so review the working tree
-    // explicitly instead of relying on auto scope (which could resolve to an
-    // empty branch diff and pass vacuously).
     const output = execFileSync(
       process.execPath,
-      [COMPANION_SCRIPT, "adversarial-review", "--scope", "working-tree", "--json"],
-      { cwd, encoding: "utf8", timeout: GATE_REVIEW_TIMEOUT_MS }
+      [COMPANION_SCRIPT, "adversarial-review", ...scopeArgs, "--json"],
+      { cwd, encoding: "utf8", timeout }
     );
     return JSON.parse(output);
   } catch {
     return null;
+  }
+}
+
+// Exported for test. The gate fires because a --write task completed, and those
+// edits are not always in the working tree: the task (or the user, before Stop)
+// may have committed them, which leaves a clean tree that `--scope working-tree`
+// reads as empty — a vacuous pass. So the scopes follow where the edits can be:
+// uncommitted ones through the working tree, committed ones through
+// `baseHeadCommit..HEAD`, where baseHeadCommit is HEAD as the task started.
+// Both can be true at once, and both are then reviewed.
+export function resolveGateScopes({ dirty, head, baseHeadCommit }) {
+  const scopes = [];
+  if (dirty) scopes.push(["--scope", "working-tree"]);
+  if (baseHeadCommit && head && baseHeadCommit !== head) scopes.push(["--base", baseHeadCommit]);
+  // Nothing to look at, or no base to look from: review the working tree anyway
+  // so the empty answer comes from the companion rather than from this guess.
+  return scopes.length > 0 ? scopes : [["--scope", "working-tree"]];
+}
+
+function readGateRepositoryState(cwd, pending) {
+  try {
+    const dirty = getWorkingTreeState(cwd).isDirty;
+    const head = getHeadCommit(cwd);
+    // The oldest pending task started earliest, so its base covers the others.
+    const oldest = [...pending]
+      .filter((job) => job.baseHeadCommit)
+      .sort((a, b) => String(a.createdAt ?? "").localeCompare(String(b.createdAt ?? "")))[0];
+    return { dirty, head, baseHeadCommit: oldest?.baseHeadCommit ?? null };
+  } catch {
+    return { dirty: true, head: null, baseHeadCommit: null };
   }
 }
 
@@ -164,14 +191,42 @@ async function main() {
     return;
   }
 
-  const payload = runAdversarialReview(cwd);
+  const repositoryState = readGateRepositoryState(cwd, pending);
+  const deadline = Date.now() + GATE_REVIEW_TIMEOUT_MS;
+  const payloads = [];
+  for (const scopeArgs of resolveGateScopes(repositoryState)) {
+    payloads.push(runAdversarialReview(cwd, scopeArgs, Math.max(1, deadline - Date.now())));
+  }
+
   // The guard is "did it return a verdict", not "did it return anything". A
   // review that reviewed nothing still exits 0 with a whole JSON object: the
-  // companion returns `{ empty: true, result: null }` when the scope is empty,
-  // which is what a committed change looks like to `--scope working-tree`. That
-  // payload is truthy, so `!payload` let it through as a pass — the mark was
-  // spent, Stop was allowed, and nothing was said. Same for a run whose output
-  // did not parse: `result` is null while the exit status stays 0.
+  // companion returns `{ empty: true, result: null }` when the scope is empty.
+  // That payload is truthy, so `!payload` would let it through as if it were a
+  // verdict. Same for a run whose output did not parse: `result` is null while
+  // the exit status stays 0. An empty answer is a real answer only when the
+  // companion says so (`empty: true`); anything else without a verdict is a
+  // failed review.
+  if (payloads.length > 0 && payloads.every((entry) => entry?.empty === true)) {
+    // Nothing is in scope, so there is nothing left to review — and the mark must
+    // be spent anyway. Left armed, every later Stop re-ran this empty review and
+    // failed open again, forever.
+    markGateReviewed(workspaceRoot, pending);
+    if (!repositoryState.baseHeadCommit && repositoryState.head) {
+      // A task recorded before baseHeadCommit existed cannot say where it
+      // started, so a committed edit is indistinguishable from no edit.
+      emitDecision({
+        systemMessage: "Gemini review gate: no uncommitted changes and the write task recorded no starting commit, so edits it already committed were not reviewed. Run /gemini:adversarial-review --base <ref> --wait if you committed code."
+      });
+      return;
+    }
+    emitDecision({});
+    return;
+  }
+
+  const reviewed = payloads.filter((entry) => entry?.result?.verdict);
+  const payload = payloads.some((entry) => !entry?.result?.verdict && entry?.empty !== true)
+    ? null
+    : (reviewed.find((entry) => entry.result.verdict === "needs-attention") ?? reviewed[0]);
   if (!payload?.result?.verdict) {
     // Review failed, returned no verdict, or Gemini unavailable — fail OPEN
     // (never trap the user at Stop), but make the skip VISIBLE instead of silent

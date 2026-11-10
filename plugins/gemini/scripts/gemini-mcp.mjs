@@ -123,6 +123,7 @@ export const TOOLS = [
       base: { type: "string" },
       scope: enumSchema(["auto", "working-tree", "branch"], "auto"),
       model: { type: "string" },
+      effort: enumSchema(["none", "minimal", "low", "medium", "high", "xhigh"]),
       engine: enumSchema(["auto", "gemini", "agy"]),
       deep: { type: "boolean", default: false },
       timeout: timeoutSchema()
@@ -151,6 +152,7 @@ export const TOOLS = [
       base: { type: "string" },
       scope: enumSchema(["auto", "working-tree", "branch"], "auto"),
       model: { type: "string" },
+      effort: enumSchema(["none", "minimal", "low", "medium", "high", "xhigh"]),
       engine: enumSchema(["auto", "gemini", "agy"]),
       deep: { type: "boolean", default: false },
       focus: { type: "string", description: "What the review should concentrate on." },
@@ -269,6 +271,7 @@ export async function callTool(name, args = {}, { runtime = DEFAULT_RUNTIME } = 
       base: optionalString(args.base, "base"),
       scope: optionalEnum(args.scope, "scope", ["auto", "working-tree", "branch"]),
       model: optionalString(args.model, "model"),
+      effort: optionalEnum(args.effort, "effort", ["none", "minimal", "low", "medium", "high", "xhigh"]),
       engine: optionalEnum(args.engine, "engine", ["auto", "gemini", "agy"]),
       deep: optionalBoolean(args.deep, "deep") ?? false,
       // Validated here, not left to the schema: a client is expected to enforce

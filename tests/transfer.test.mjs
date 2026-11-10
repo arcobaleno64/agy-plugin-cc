@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { isSecretFile, checkGitConflict, pruneOldTransfers, buildTransferSnapshot, assertContained } from '../plugins/gemini/scripts/lib/transfer-context.mjs';
+import { isSecretFile, checkGitConflict, pruneOldTransfers, buildTransferSnapshot, assertContained, collectGitContext } from '../plugins/gemini/scripts/lib/transfer-context.mjs';
 import { parseTransferArgs } from '../plugins/gemini/scripts/transfer.mjs';
 import { initGitRepo, run } from './helpers.mjs';
 
@@ -324,4 +324,77 @@ test('assertContained fails closed when it cannot inspect the path', (t) => {
   assert.doesNotThrow(
     () => assertContained(repo, target, '.omc', { lstatImpl: () => { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; } })
   );
+});
+
+test('isSecretFile still matches a path git left quoted', () => {
+  assert.equal(isSecretFile('"dir/.env"'), true);
+  assert.equal(isSecretFile('"src/index.js"'), false);
+});
+
+// Three ways the old `git diff --name-only` lost a change: staged edits were
+// invisible, a non-ASCII directory made git quote the path (so `.env"` missed the
+// secret pattern and its content shipped), and an unborn branch has no HEAD.
+test('collectGitContext reports staged and unstaged changes and withholds a secret under a non-ASCII path', (t) => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-ctx-test-'));
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true }));
+  initGitRepo(repo);
+  run('git', ['config', 'core.quotepath', 'true'], { cwd: repo });
+  fs.mkdirSync(path.join(repo, '設定'));
+  fs.writeFileSync(path.join(repo, '設定', '.env'), 'TOKEN=old\n');
+  fs.writeFileSync(path.join(repo, 'staged.js'), 'a\n');
+  fs.writeFileSync(path.join(repo, 'unstaged.js'), 'a\n');
+  run('git', ['add', '-A'], { cwd: repo });
+  run('git', ['commit', '-m', 'init'], { cwd: repo });
+
+  fs.writeFileSync(path.join(repo, '設定', '.env'), 'TOKEN=SUPERSECRET\n');
+  fs.writeFileSync(path.join(repo, 'staged.js'), 'b\n');
+  fs.writeFileSync(path.join(repo, 'unstaged.js'), 'b\n');
+  run('git', ['add', 'staged.js'], { cwd: repo });
+
+  const { diff } = collectGitContext(repo);
+  assert.match(diff, /\+\+\+ b\/staged\.js/, 'a staged-only change must be included');
+  assert.match(diff, /\+\+\+ b\/unstaged\.js/);
+  assert.match(diff, /\[REDACTED SECRET FILE CONTENT\]/);
+  assert.doesNotMatch(diff, /SUPERSECRET/);
+});
+
+test('collectGitContext includes staged files on a branch with no commits yet', (t) => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-ctx-unborn-'));
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true }));
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, 'new.js'), 'x\n');
+  run('git', ['add', 'new.js'], { cwd: repo });
+
+  assert.match(collectGitContext(repo).diff, /\+\+\+ b\/new\.js/);
+});
+
+// A repository can name an external diff program (`diff.<driver>.command`, bound
+// to files by .gitattributes), and a plain `git diff` runs it. The transfer reads
+// the diff of a workspace it did not write, so that command would run on the
+// user's machine. `--no-ext-diff` is what keeps it from running.
+test('collectGitContext does not run an external diff command configured by the repository', (t) => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-ctx-extdiff-'));
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true }));
+  const sentinel = path.join(repo, 'extdiff-ran');
+  const driver = path.join(repo, 'extdiff-driver.cjs');
+  fs.writeFileSync(driver, `require('node:fs').writeFileSync(${JSON.stringify(sentinel)}, 'ran');\n`);
+
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, '.gitattributes'), '*.js diff=probe\n');
+  const slash = (p) => p.split(path.sep).join('/');
+  // shell: false, because cmd.exe would strip the quotes out of the stored command.
+  run('git', ['config', 'diff.probe.command', `"${slash(process.execPath)}" "${slash(driver)}"`], { cwd: repo, shell: false });
+  fs.writeFileSync(path.join(repo, 'a.js'), 'a\n');
+  run('git', ['add', '-A'], { cwd: repo });
+  run('git', ['commit', '-m', 'init'], { cwd: repo });
+  fs.writeFileSync(path.join(repo, 'a.js'), 'b\n');
+
+  // The setup must be live: without the flag git does run the driver here.
+  run('git', ['diff', '--', 'a.js'], { cwd: repo, shell: false });
+  assert.equal(fs.existsSync(sentinel), true, 'precondition: a plain git diff runs the driver');
+  fs.rmSync(sentinel);
+
+  const { diff } = collectGitContext(repo);
+  assert.equal(fs.existsSync(sentinel), false, 'the transfer must not run the repository-configured diff command');
+  assert.match(diff, /\+\+\+ b\/a\.js/);
 });
