@@ -367,3 +367,34 @@ test('collectGitContext includes staged files on a branch with no commits yet', 
 
   assert.match(collectGitContext(repo).diff, /\+\+\+ b\/new\.js/);
 });
+
+// A repository can name an external diff program (`diff.<driver>.command`, bound
+// to files by .gitattributes), and a plain `git diff` runs it. The transfer reads
+// the diff of a workspace it did not write, so that command would run on the
+// user's machine. `--no-ext-diff` is what keeps it from running.
+test('collectGitContext does not run an external diff command configured by the repository', (t) => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-ctx-extdiff-'));
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true }));
+  const sentinel = path.join(repo, 'extdiff-ran');
+  const driver = path.join(repo, 'extdiff-driver.cjs');
+  fs.writeFileSync(driver, `require('node:fs').writeFileSync(${JSON.stringify(sentinel)}, 'ran');\n`);
+
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, '.gitattributes'), '*.js diff=probe\n');
+  const slash = (p) => p.split(path.sep).join('/');
+  // shell: false, because cmd.exe would strip the quotes out of the stored command.
+  run('git', ['config', 'diff.probe.command', `"${slash(process.execPath)}" "${slash(driver)}"`], { cwd: repo, shell: false });
+  fs.writeFileSync(path.join(repo, 'a.js'), 'a\n');
+  run('git', ['add', '-A'], { cwd: repo });
+  run('git', ['commit', '-m', 'init'], { cwd: repo });
+  fs.writeFileSync(path.join(repo, 'a.js'), 'b\n');
+
+  // The setup must be live: without the flag git does run the driver here.
+  run('git', ['diff', '--', 'a.js'], { cwd: repo, shell: false });
+  assert.equal(fs.existsSync(sentinel), true, 'precondition: a plain git diff runs the driver');
+  fs.rmSync(sentinel);
+
+  const { diff } = collectGitContext(repo);
+  assert.equal(fs.existsSync(sentinel), false, 'the transfer must not run the repository-configured diff command');
+  assert.match(diff, /\+\+\+ b\/a\.js/);
+});
