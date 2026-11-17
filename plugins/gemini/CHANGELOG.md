@@ -113,6 +113,24 @@
   costs about 155 ms here, but cost is not the reason — with neither flag given,
   paying it would resolve an engine in order to discard the answer.
 
+- **Checked against AGY 1.5.9 (from 1.5.3) with nothing to change.** The version
+  floor still reads `1.1.12`; every flag `buildCliArgs` passes
+  (`--disable-slash-commands`, `--model`, `--effort`, `--output-format`,
+  `--print-timeout`, `--add-dir`, `--new-project`, `--conversation`) is still in
+  `agy --help`; `setup --probe-agy` still authenticates without a turn; and a
+  rejected `--model` sent through `buildCliArgs` still ends `ERROR` with
+  `num_turns: 0` and is still classified `model-unavailable`.
+
+  One upstream change worth knowing: AGY 1.5.7 made Auto the default Agent Mode
+  for headless `-p` runs. Measured on 1.5.9 through the plugin's own argv, one
+  `--new-project` turn still wrote both a file inside the workspace and, through
+  a shell command, a file outside it, so the "no read-only mode, writes are not
+  confined" position in `docs/THREAT-MODEL.md` 7.2 holds.
+
+  Not measured: `--conversation` resume and the `--print-timeout` stderr phrase
+  on 1.5.x, and the 1.5.4–1.5.9 release notes were searched by keyword rather
+  than read line by line. One write probe, not repeated.
+
 ## 0.25.0 - 2026-09-07 - A declared AGY floor, and a stop gate that stops guessing
 
 - **BREAKING: AGY 1.1.12 or newer is now required, and an older AGY is refused by
