@@ -95,6 +95,46 @@ test("a probe that fails for another reason leaves the state unknown", () => {
   assert.equal(status.loggedIn, false);
 });
 
+// AGY 1.5.11+ refuses `/quota` for a GEMINI_API_KEY. Verbatim from 1.5.16,
+// 2026-11-25, isolated home with `{"modelProvider":"gemini"}`. The same sentence
+// comes back for a made-up key, so it proves the route is configured and nothing
+// about whether the key works: not `verified`. Before this branch the `quota` in
+// the command's own name sent it to the rate-limit arm, and setup reported a
+// configured key as "did not answer the `/quota` probe (rate-limit)".
+test("an API-key AGY that refuses /quota is unknown, said as such, not a rate limit", () => {
+  const refusal = "/quota failed: not available with a Gemini API key; see https://aistudio.google.com/usage for the key's usage";
+  const runCommandFn = stubRun({
+    stdout: `${JSON.stringify({ ...AGY_ENVELOPE, status: "ERROR", response: "", error: refusal, finished_reason: "error" })}\n`,
+    stderr: `error: ${refusal}\n`,
+    status: 2
+  });
+
+  const status = probeAgyLogin({ runCommandFn, detectEngineFn: agyEngine("1.5.16") });
+
+  assert.equal(status.state, "unknown");
+  assert.equal(status.verifiable, false);
+  assert.equal(status.loggedIn, false);
+  assert.match(status.detail, /GEMINI_API_KEY/);
+  assert.match(status.detail, /cannot verify/);
+  assert.doesNotMatch(status.detail, /rate-limit/);
+});
+
+// The refusal is read from stderr too, so a run whose stdout did not parse as an
+// envelope is still told apart from a rate limit.
+test("the API-key refusal is recognised from stderr when there is no envelope", () => {
+  const runCommandFn = stubRun({
+    stdout: "",
+    stderr: "error: /quota failed: not available with a Gemini API key; see https://aistudio.google.com/usage for the key's usage\n",
+    status: 2
+  });
+
+  const status = probeAgyLogin({ runCommandFn, detectEngineFn: agyEngine("1.5.16") });
+
+  assert.equal(status.state, "unknown");
+  assert.match(status.detail, /cannot verify/);
+  assert.doesNotMatch(status.detail, /rate-limit/);
+});
+
 // ---------------------------------------------------------------------------
 // Readiness mapping
 // ---------------------------------------------------------------------------

@@ -108,12 +108,15 @@ once interactively — or to use one of AGY's non-interactive credentials (ADC a
 Enterprise/WIF on 1.1.10+, `GEMINI_API_KEY` with `modelProvider: "gemini"` on
 1.1.13+).
 
-The probe asks `/quota`, which the account answers without starting a turn. It is
-verified on two routes: an interactive login, and `GEMINI_API_KEY` with
-`modelProvider: "gemini"` — measured on AGY 1.1.15 in a temporary home containing
-nothing else, against the same home with no key as a control. Keyed it reports
-`verified`; unkeyed it reports `unknown` and passes through AGY's own message
-about the missing variable, rather than calling a misconfiguration a logout.
+The probe asks `/quota`, which the account answers without starting a turn. On an
+interactive login it reports `verified` (re-measured on AGY 1.5.16). On
+`GEMINI_API_KEY` with `modelProvider: "gemini"` it cannot verify: AGY refuses
+`/quota` for a key (its 1.5.11 release notes; measured on 1.5.16) without checking
+the key — a made-up key gets the same answer — so the probe reports `unknown` and
+says the route cannot be checked this way. (On AGY 1.1.15, the only earlier
+version measured, the keyed probe reported `verified`.) With no key set it
+reports `unknown` and passes through AGY's own message about the missing
+variable, rather than calling a misconfiguration a logout.
 
 ADC and Enterprise/WIF are not tested. If your AGY turns work on one of those and
 `--probe-agy` reports `logged-out`, that is a defect here rather than a real
