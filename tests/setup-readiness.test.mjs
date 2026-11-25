@@ -119,6 +119,22 @@ test("an API-key AGY that refuses /quota is unknown, said as such, not a rate li
   assert.doesNotMatch(status.detail, /rate-limit/);
 });
 
+// The refusal is read from stderr too, so a run whose stdout did not parse as an
+// envelope is still told apart from a rate limit.
+test("the API-key refusal is recognised from stderr when there is no envelope", () => {
+  const runCommandFn = stubRun({
+    stdout: "",
+    stderr: "error: /quota failed: not available with a Gemini API key; see https://aistudio.google.com/usage for the key's usage\n",
+    status: 2
+  });
+
+  const status = probeAgyLogin({ runCommandFn, detectEngineFn: agyEngine("1.5.16") });
+
+  assert.equal(status.state, "unknown");
+  assert.match(status.detail, /cannot verify/);
+  assert.doesNotMatch(status.detail, /rate-limit/);
+});
+
 // ---------------------------------------------------------------------------
 // Readiness mapping
 // ---------------------------------------------------------------------------

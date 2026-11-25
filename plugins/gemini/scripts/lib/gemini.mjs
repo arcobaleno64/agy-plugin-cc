@@ -1097,7 +1097,7 @@ export function getAgyLoginStatus() {
   // unkeyed, it returns `unknown` carrying AGY's own diagnostic, not `logged-out`.
   // So the key route neither fools the probe nor is mistaken for a logout.
   //
-  // That stopped holding at AGY 1.5.11, which refuses `/quota` for a key (see
+  // That no longer holds on 1.5.16, which refuses `/quota` for a key (see
   // AGY_PROBE_KEY_REFUSAL below): the key route now comes back `unknown` from
   // the probe, said as such, and only the interactive login still verifies.
   return {
@@ -1119,16 +1119,20 @@ export function getAgyLoginStatus() {
 // AGY and takes ~5 seconds, and `setup` is otherwise a local inspection.
 export const AGY_PROBE_TIMEOUT_MS = 30_000;
 
-// AGY 1.5.11 stopped answering `/quota` for a GEMINI_API_KEY ("in `-p` runs they
-// exit with code 2"). Measured on 1.5.16, 2026-11-25, in an isolated home holding
-// only `{"modelProvider":"gemini"}`: exit 2, `num_turns: 0`, and
+// AGY's 1.5.11 release notes say `/quota` is no longer answered for a
+// GEMINI_API_KEY ("in `-p` runs they exit with code 2"); the plugin has not
+// measured any version between 1.1.15 (answered) and 1.5.16. Measured on 1.5.16,
+// 2026-11-25, in an isolated home holding only `{"modelProvider":"gemini"}`:
+// exit 2, `num_turns: 0`, and
 //   /quota failed: not available with a Gemini API key; see https://aistudio.google.com/usage ...
-// A made-up key gets the same sentence, so AGY decides it from settings.json
-// alone and it says nothing about whether the key works — it must not be read
-// as `verified`. Without this branch the sentence reached classifyCliFailure,
+// A made-up key gets the same sentence, so AGY refuses without checking the key
+// and the refusal says nothing about whether it works — it must not be read as
+// `verified`. Without this branch the sentence reached classifyCliFailure,
 // whose rate-limit arm matched the `quota` in the command's own name, and setup
 // reported a configured key as a rate limit. If AGY rewords it, the probe falls
-// back to that classifier and still ends `unknown`, never `logged-out`.
+// back to that classifier, which is NOT guaranteed to end `unknown`: a rewording
+// that contains one of the auth arm's words (`unauth`, `authenticat`, ...) would
+// come back `logged-out`. The measured wording contains none of them.
 const AGY_PROBE_KEY_REFUSAL = /not available with a Gemini API key/i;
 
 export function probeAgyLogin({ runCommandFn = runCommand, detectEngineFn = detectEngine } = {}) {
@@ -1184,7 +1188,7 @@ export function probeAgyLogin({ runCommandFn = runCommand, detectEngineFn = dete
       loggedIn: false,
       state: "unknown",
       verifiable: false,
-      detail: `AGY ${version} is set up for a GEMINI_API_KEY, and from AGY 1.5.11 it does not answer \`/quota\` for a key, so this probe cannot verify that route. AGY decides the refusal from settings.json alone — a made-up key gets the same answer — so it says nothing about whether the key works; the first real AGY turn will. No turn was spent.${reason ? ` (${reason})` : ""}`
+      detail: `AGY ${version} is using a GEMINI_API_KEY and does not answer \`/quota\` for a key (AGY 1.5.11+), so this probe cannot verify that route. AGY refuses without checking the key — a made-up key gets the same answer — so this says nothing about whether the key works; only a real AGY turn uses it. No turn was spent.${reason ? ` (${reason})` : ""}`
     };
   }
   const failure = classifyCliFailure({
@@ -1200,7 +1204,7 @@ export function probeAgyLogin({ runCommandFn = runCommand, detectEngineFn = dete
       loggedIn: false,
       state: "logged-out",
       verifiable: true,
-      detail: `AGY ${version} rejected the \`/quota\` probe as unauthenticated. Run \`agy\` interactively once to sign in, or use a non-interactive credential (ADC/WIF on 1.1.10+, GEMINI_API_KEY with \`modelProvider: "gemini"\` on 1.1.13+). A key-configured AGY is answered by its own refusal before reaching this point, so this really is a rejection rather than an unrecognised credential; ADC and WIF remain untested here.${reason ? ` (${reason})` : ""}`
+      detail: `AGY ${version} rejected the \`/quota\` probe as unauthenticated. Run \`agy\` interactively once to sign in, or use a non-interactive credential (ADC/WIF on 1.1.10+, GEMINI_API_KEY with \`modelProvider: "gemini"\` on 1.1.13+). A working key has not been measured reaching this point (AGY 1.1.15 answered the probe for one; 1.5.16 refuses it with its own sentence, reported separately), so this is read as a rejection rather than an unrecognised credential; ADC and WIF remain untested here.${reason ? ` (${reason})` : ""}`
     };
   }
   return {

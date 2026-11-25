@@ -132,21 +132,23 @@
   than read line by line. One write probe, not repeated.
 
 - **`--probe-agy` on a `GEMINI_API_KEY` says it cannot verify that route, instead
-  of reporting a rate limit.** AGY 1.5.11 stopped answering `/quota` for a key:
-  in `-p` it exits 2 with "/quota failed: not available with a Gemini API key".
-  That sentence went to `classifyCliFailure`, whose rate-limit arm matched the
-  `quota` in the command's own name, so setup told a user with a configured key
-  that the probe "did not answer (rate-limit)". The README, `commands/setup.md`
-  and the probe's own messages also still promised a keyed probe would report
-  `verified`, which held only on 1.1.15–1.5.10.
+  of reporting a rate limit.** AGY's 1.5.11 release notes say `/quota` is no
+  longer answered for a key; measured on 1.5.16, `-p` exits 2 with "/quota
+  failed: not available with a Gemini API key". That sentence went to
+  `classifyCliFailure`, whose rate-limit arm matched the `quota` in the
+  command's own name, so setup told a user with a configured key that the probe
+  "did not answer (rate-limit)". The README, `commands/setup.md` and the probe's
+  own messages also still promised a keyed probe would report `verified`, which
+  was measured only on 1.1.15; no version between 1.1.15 and 1.5.16 was measured.
 
   The refusal is now recognised and reported as `unknown` with the reason. It is
   deliberately not read as `verified`: in an isolated home, a made-up key gets
-  the same sentence, so AGY decides it from settings.json alone and it says
-  nothing about whether the key works. Measured on 1.5.16 before and after the
-  change, `num_turns: 0`; the interactive login still reports `verified`. If AGY
-  rewords the sentence, the probe falls back to the old path and still ends
-  `unknown`, never `logged-out`. Field note `gi-2026-11-25-k7q3`.
+  the same sentence, so AGY refuses without checking the key and the refusal
+  says nothing about whether it works. Measured on 1.5.16 before and after the
+  change, `num_turns: 0`; the interactive login still reports `verified`. The
+  match is on AGY's wording: if AGY rewords it, the probe falls back to the
+  classifier, and a rewording that carries one of the auth arm's words would
+  come back `logged-out` rather than `unknown`. Field note `gi-2026-11-25-k7q3`.
 
 - **Checked against AGY 1.5.16 (from 1.5.9); one fix, above.** The 1.5.10–1.5.16
   release notes were read line by line this time. The version floor still reads
