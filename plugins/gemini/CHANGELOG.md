@@ -131,6 +131,62 @@
   on 1.5.x, and the 1.5.4–1.5.9 release notes were searched by keyword rather
   than read line by line. One write probe, not repeated.
 
+- **`--probe-agy` on a `GEMINI_API_KEY` says it cannot verify that route, instead
+  of reporting a rate limit.** AGY 1.5.11 stopped answering `/quota` for a key:
+  in `-p` it exits 2 with "/quota failed: not available with a Gemini API key".
+  That sentence went to `classifyCliFailure`, whose rate-limit arm matched the
+  `quota` in the command's own name, so setup told a user with a configured key
+  that the probe "did not answer (rate-limit)". The README, `commands/setup.md`
+  and the probe's own messages also still promised a keyed probe would report
+  `verified`, which held only on 1.1.15–1.5.10.
+
+  The refusal is now recognised and reported as `unknown` with the reason. It is
+  deliberately not read as `verified`: in an isolated home, a made-up key gets
+  the same sentence, so AGY decides it from settings.json alone and it says
+  nothing about whether the key works. Measured on 1.5.16 before and after the
+  change, `num_turns: 0`; the interactive login still reports `verified`. If AGY
+  rewords the sentence, the probe falls back to the old path and still ends
+  `unknown`, never `logged-out`. Field note `gi-2026-11-25-k7q3`.
+
+- **Checked against AGY 1.5.16 (from 1.5.9); one fix, above.** The 1.5.10–1.5.16
+  release notes were read line by line this time. The version floor still reads
+  `1.1.12`; every flag `buildCliArgs` passes is still in `agy --help` (1.5.16
+  adds `-r` and `--resume` as aliases of `--conversation`, which the plugin does
+  not use); `setup --probe-agy` still verifies an interactive login without a
+  turn; a rejected `--model` sent through `buildCliArgs` still ends `ERROR` and
+  is still classified `model-unavailable`.
+
+  The `--print-timeout` stderr anchor was measured this time, closing what the
+  1.5.9 check left open. One read-only turn through `runGeminiTurn` with the
+  timeout forced to 2s: exit 3, a stream-json `ERROR` envelope with an empty
+  response and `finished_reason: "print_timeout"`, and stderr still carrying
+  `[agy] print timeout after 2s with turn in progress; returning partial output`,
+  which `gemini.mjs` matches. The plugin classified it `timeout`. The same stderr
+  also held a live `AGY_ERROR` line, the first captured here (the 1.2.6 entry
+  below took its field names from the binary):
+  `{"short_error":"print timeout after 2s with the turn still in progress; the
+  response is partial","status":"DEADLINE_EXCEEDED","retryable":false,"reason":"print_timeout"}`.
+  It carries a `reason` field the binary scan did not list, and AGY marks it
+  `retryable: false` where the plugin's `timeout` stays retryable, since a larger
+  `--timeout` is the advice. Nothing changed for either.
+
+  Upstream changes that move behaviour without breaking the plugin:
+  - 1.5.14 lets Auto mode read outside the workspace without asking, and 1.5.16
+    lets it create or edit files outside the workspace without asking when the
+    file is in a version-controlled repository or the change only adds content.
+    Same direction as the "writes are not confined" position in
+    `docs/THREAT-MODEL.md` 7.2, with a larger surface; not re-measured.
+  - 1.5.16 discovers user-global skills in `~/.agents/skills` and offers them to
+    agent turns. `--disable-slash-commands` is documented as disabling skill
+    *expansion* in print mode, not the agent's own use of a skill, so turns the
+    plugin starts may now see those skills. Not measured.
+  - 1.5.13 fixed runs that succeeded after a retried model request reporting
+    `status: "ERROR"`. The plugin read those as failures; on 1.5.13+ they arrive
+    as `SUCCESS`.
+  - 1.5.10 stops at once on spend-cap, prepaid-balance and weekly-quota errors.
+    Their wording is the server's, not in the binary, so whether the classifier
+    files them as `quota` rather than `rate-limit` is unknown.
+
 ## 0.25.0 - 2026-09-07 - A declared AGY floor, and a stop gate that stops guessing
 
 - **BREAKING: AGY 1.1.12 or newer is now required, and an older AGY is refused by
