@@ -20,6 +20,12 @@ import { classifyCliFailure } from "./failures.mjs";
 import { binaryAvailable, runCommand } from "./process.mjs";
 import { resolveAgyBrainRoot, listConvDirs, recoverAgyResponse } from "./agy-transcript.mjs";
 import { readAgyStream } from "./agy-stream.mjs";
+import {
+  buildAgySettingsPayload,
+  collectWorkspaceSecretDenyRules,
+  inspectWorkspaceCustomizations,
+  withAgyTempContext
+} from "./agy-settings.mjs";
 import { describeReadOnlyWrites, detectWrites, snapshotWorkspace } from "./readonly-guard.mjs";
 
 const DEFAULT_SPAWN_TIMEOUT_MS = 600_000; // 10 minutes (gemini)
@@ -289,6 +295,158 @@ function describeAgyUsage(usage) {
   return `${total.toLocaleString("en-US")} tokens spent`;
 }
 
+function describeDeniedTools(deniedTools, { write = false } = {}) {
+  if (!deniedTools || !deniedTools.total) return null;
+  const uniqueTools = [...new Set((deniedTools.items ?? []).map((item) => item.tool).filter(Boolean))];
+  const names = uniqueTools.length > 0 ? uniqueTools.join(", ") : "unknown";
+  const countLabel = `${deniedTools.total} ${deniedTools.total === 1 ? "tool call" : "tool calls"}`;
+  const truncatedNote = deniedTools.countExact === false
+    ? " (list truncated; approximate count)"
+    : deniedTools.truncated
+      ? " (list truncated)"
+      : "";
+  if (!write) {
+    return `AGY blocked ${countLabel}${truncatedNote} under the read-only/safety policy (${names}). Inspect the prompt or diff for unexpected write/command attempts or prompt injection.`;
+  }
+  return `AGY blocked ${countLabel}${truncatedNote} under the active safety rules (${names}).`;
+}
+
+function isAbsoluteWorkspacePath(dir) {
+  if (typeof dir !== "string" || !dir) return false;
+  if (process.platform === "win32") {
+    return /^(?:[a-zA-Z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+)/.test(dir);
+  }
+  return path.isAbsolute(dir);
+}
+
+function normalizeWorkspacePathForCompare(dir) {
+  if (!isAbsoluteWorkspacePath(dir)) return null;
+  let resolved;
+  try {
+    resolved = fs.realpathSync.native(dir);
+  } catch {
+    resolved = path.resolve(dir);
+  }
+  if (process.platform === "win32") {
+    const normalized = resolved.replace(/\\/g, "/").replace(/\/+$/, "");
+    return (normalized || "/").toLowerCase();
+  }
+  if (resolved === "/") return "/";
+  return resolved.replace(/\/+$/, "") || "/";
+}
+
+function isWorkspaceCwdMismatch(cwd, initCwd) {
+  if (!initCwd) return false;
+  const expected = normalizeWorkspacePathForCompare(cwd);
+  const observed = normalizeWorkspacePathForCompare(initCwd);
+  return !expected || !observed || expected !== observed;
+}
+
+function resolveResumeWorkspaceNotice({ cwd, initCwd, resumeLast = false, write = false } = {}) {
+  if (!resumeLast || !initCwd) return null;
+  if (!isWorkspaceCwdMismatch(cwd, initCwd)) {
+    return null;
+  }
+  return write
+    ? `Resumed AGY conversation reported working directory ${initCwd} instead of ${cwd}; write edits may have landed in that directory.`
+    : `Resumed AGY conversation reported working directory ${initCwd} instead of ${cwd}.`;
+}
+
+function buildAgyProtection({
+  engineInfo,
+  mode,
+  settingsPassed,
+  isolatedCwd,
+  structured,
+  deniedTools = null,
+  customizationResult = null,
+  tempCleanupFailed = false,
+  agySecretScan = null,
+  extra = {}
+}) {
+  if (engineInfo.engine !== "agy") return null;
+  const settingsCapable = Boolean(engineInfo.supportsSettings);
+  const settingsSupportStatus = engineInfo.settingsSupportStatus ?? (settingsCapable ? "supported" : "unsupported");
+  const expectedPermissionMode = settingsPassed && (mode === "review-diff" || mode === "read-only")
+    ? "request-review"
+    : null;
+  const streamed = Boolean(structured?.streamed);
+  const initObserved = Boolean(structured?.initObserved);
+  const initPermissionMode = structured?.initPermissionMode ?? null;
+  const initPermissionModeMatches = expectedPermissionMode
+    ? Boolean(initObserved && initPermissionMode === expectedPermissionMode)
+    : null;
+  let degradedReason = null;
+  if (settingsSupportStatus === "probe-failed") {
+    degradedReason = "agy --help probe failed; --settings support could not be verified";
+  } else if (!settingsCapable) {
+    degradedReason = "agy binary does not advertise --settings";
+  } else if (settingsPassed && !initObserved) {
+    degradedReason = "stream-json init event not observed";
+  } else if (expectedPermissionMode && initPermissionMode !== expectedPermissionMode) {
+    degradedReason = `unexpected init permission_mode: ${initPermissionMode ?? "none"}`;
+  }
+
+  return {
+    settingsCapable,
+    settingsSupportStatus,
+    settingsPassed,
+    initObserved,
+    expectedPermissionMode,
+    initPermissionMode,
+    initPermissionModeMatches,
+    degradedReason,
+    mode,
+    isolatedCwd,
+    streamObserved: streamed,
+    denialTelemetryAvailable: Boolean(streamed && (structured?.stepUpdatesObserved || structured?.resultObserved)),
+    deniedToolsObserved: Boolean(deniedTools?.total > 0),
+    customizationCheck: customizationResult?.status ?? (isolatedCwd ? "not-applicable-isolated-cwd" : "none"),
+    customizationCheckScope: customizationResult?.check?.scope ?? (isolatedCwd ? "isolated-cwd" : "none"),
+    customizationRepoRootStatus: customizationResult?.check?.repoRootStatus ?? null,
+    tempCleanupFailed,
+    ...(agySecretScan ? {
+      secretScanComplete: Boolean(
+        agySecretScan.rootScanned &&
+        !agySecretScan.truncated &&
+        agySecretScan.readErrors === 0 &&
+        agySecretScan.skippedUnsafeNames === 0 &&
+        agySecretScan.skippedSymlinkDirs === 0 &&
+        agySecretScan.symlinkErrors === 0
+      ),
+      secretScanRootScanned: Boolean(agySecretScan.rootScanned),
+      secretScanTruncated: agySecretScan.truncated,
+      secretScanBudgetExhausted: agySecretScan.budgetExhausted,
+      secretScanDepthTruncated: agySecretScan.depthTruncated,
+      secretScanSkippedNames: agySecretScan.skippedUnsafeNames,
+      secretScanReadErrors: agySecretScan.readErrors,
+      secretScanSkippedSymlinkDirs: agySecretScan.skippedSymlinkDirs,
+      secretScanSymlinkErrors: agySecretScan.symlinkErrors,
+      secretScanExcludedFixedDirs: agySecretScan.skippedFixedDirsConfig ?? [],
+      secretScanSkippedFixedDirs: agySecretScan.skippedFixedDirsObserved ?? []
+    } : {}),
+    ...extra
+  };
+}
+
+function enforceAgyWorkspaceCustomizations(cwd, { allowRepoHooks = false } = {}) {
+  const check = inspectWorkspaceCustomizations(cwd);
+  if (check.missingCwd) {
+    return { status: "skipped-missing-cwd", check };
+  }
+  if (!check.checked) {
+    throw new Error(
+      `Refusing to start AGY in ${cwd}: could not verify whether auto-loaded workspace customization files exist (${check.error ?? "inspection failed"}). Fix directory permissions or inspect ${cwd} manually.`
+    );
+  }
+  if (check.found.length > 0 && !allowRepoHooks) {
+    throw new Error(
+      `Refusing to start AGY in ${cwd}: found auto-loaded workspace customization(s): ${check.found.join(", ")}. AGY headless executes workspace hooks even outside trustedWorkspaces. Remove or inspect them, or re-run via the native CLI with --allow-repo-hooks if you trust this repository (MCP tools intentionally omit this opt-in).`
+    );
+  }
+  return { status: check.found.length > 0 ? "allowed-with-flag" : "clean", check };
+}
+
 function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, engineInfo, brainRoot = null, conversationsBefore = null }) {
   // stream-json (1.1.12+) and plain json (1.1.8+) are both possible here, and
   // which one arrived is decided by what was actually printed rather than by the
@@ -297,6 +455,28 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
   const streamed = stream.looksLikeStream();
   const envelope = streamed ? readAgyEnvelopeObject(stream.envelope()) : readAgyEnvelope(rawStdout);
   const failedExit = exitCode === 0 ? 1 : exitCode;
+  const initObserved = streamed ? stream.initObserved() : false;
+  const stepUpdatesObserved = streamed ? stream.stepUpdatesObserved() : false;
+  const resultObserved = streamed ? stream.resultObserved() : false;
+  const initPermissionMode = streamed ? stream.permissionMode() : null;
+  const rawInitCwd = streamed ? stream.initCwd() : null;
+  const initConversationId = streamed ? stream.initConversationId() : null;
+  const initConversationConflict = streamed ? stream.initConversationConflict() : false;
+  const resolveBoundInitCwd = (targetThreadId) => {
+    const initConversationMismatch = Boolean(
+      initConversationConflict ||
+      (initConversationId && targetThreadId && initConversationId !== targetThreadId)
+    );
+    const boundInitCwd =
+      rawInitCwd &&
+      isAbsoluteWorkspacePath(rawInitCwd) &&
+      !initConversationMismatch &&
+      Boolean(targetThreadId ? initConversationId === targetThreadId : true)
+        ? rawInitCwd
+        : null;
+    return { initCwd: boundInitCwd, rawInitCwd, initConversationMismatch };
+  };
+  const deniedTools = streamed ? stream.deniedTools() : { items: [], total: 0, truncated: false, countExact: true };
 
   if (!envelope) {
     // Empty stdout, not merely unparseable stdout: agy was killed before it
@@ -308,6 +488,8 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
     const killedBeforePrinting = !String(rawStdout).trim();
     const recovered = brainRoot && killedBeforePrinting ? recoverAgyResponse(brainRoot, conversationsBefore) : null;
     if (recovered?.response) {
+      const recoveredThreadId = recovered.convDir ?? null;
+      const boundRecovered = resolveBoundInitCwd(recoveredThreadId);
       // No "the match may not be this run's" warning any more: recovery either
       // identifies one conversation or attributes none (agy-transcript.mjs
       // TODO-2). What is left — an unfinished transcript — travels as a non-zero
@@ -316,6 +498,14 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
       // discard, so it was invisible exactly where it mattered.
       return {
         streamed,
+        initObserved,
+        stepUpdatesObserved,
+        resultObserved,
+        initCwd: boundRecovered.initCwd,
+        rawInitCwd: boundRecovered.rawInitCwd,
+        initConversationMismatch: boundRecovered.initConversationMismatch,
+        initPermissionMode,
+        deniedTools,
         usage: null,
         text: String(recovered.response).trim(),
         // An unfinished transcript row is the same user-visible condition the
@@ -325,7 +515,7 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
         // that was still being written is what "unfinished" means here.
         salvagedText: recovered.done ? null : String(recovered.response).trim(),
         salvagedBlockComplete: false,
-        threadId: recovered.convDir ?? null,
+        threadId: recoveredThreadId,
         // A completed transcript row means the work finished even though the
         // envelope never made it out; an incomplete one is partial output, which
         // is worth returning but not worth calling success.
@@ -345,11 +535,27 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
       };
     }
 
+    const missingEnvelopeDeniedText =
+      !result.signal && !result.error && deniedTools.total > 0
+        ? deniedTools.items.map((item) => item.message).join("\n")
+        : null;
+    const boundNoEnvelope = resolveBoundInitCwd(stream.state.conversationId);
     return {
       streamed,
+      initObserved,
+      stepUpdatesObserved,
+      resultObserved,
+      initCwd: boundNoEnvelope.initCwd,
+      rawInitCwd: boundNoEnvelope.rawInitCwd,
+      initConversationMismatch: boundNoEnvelope.initConversationMismatch,
+      initPermissionMode,
+      deniedTools,
       usage: null,
       text: null,
-      threadId: null,
+      // Kept even without an envelope: the stored job is matched against its
+      // thread by this id (newerMismatchForThread), so dropping it would hide a
+      // workspace mismatch observed before the turn was killed.
+      threadId: stream.state.conversationId ?? null,
       exitCode: failedExit,
       failure: classifyCliFailure({
         engine: engineInfo.engine,
@@ -358,6 +564,8 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
         error: result.error,
         stdout: rawStdout,
         stderr: rawStderr,
+        structuredError: missingEnvelopeDeniedText,
+        policyDenied: Boolean(missingEnvelopeDeniedText),
         invalidJson: true,
         noOutput: !String(rawStdout).trim()
       })
@@ -385,8 +593,9 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
   // They never override a real response — only fill a gap the envelope left.
   // A response from a cut-off turn is itself salvage: whatever was written, and
   // no more.
+  const terminatedByProcess = Boolean(result.signal || result.error);
   const salvaged = envelopeText
-    ? (cutOffMidTurn ? envelopeText : "")
+    ? ((cutOffMidTurn || terminatedByProcess) ? envelopeText : "")
     : stream.partialText().trim();
   const text = envelopeText || salvaged;
 
@@ -401,16 +610,32 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
     && lastStep?.type === "agent_response"
     && lastStep?.state === "DONE";
 
-  // Success still requires the envelope's own response. Salvaged text is partial
-  // by definition; calling it success would let a cut-off run pass for a
-  // complete one.
-  const succeeded = envelope.status === "SUCCESS" && Boolean(envelopeText) && !cutOffMidTurn;
+  // Success requires no unexpected process termination/error alongside a
+  // complete SUCCESS envelope response. Salvaged text is partial by definition.
+  const succeeded = !terminatedByProcess && envelope.status === "SUCCESS" && Boolean(envelopeText) && !cutOffMidTurn;
+  const fallbackDeniedText =
+    !succeeded && !cutOffMidTurn && !terminatedByProcess && !envelope.error && deniedTools.total > 0
+      ? deniedTools.items.map((item) => item.message).join("\n")
+      : null;
+
+  const resolvedThreadId =
+    (typeof envelope.conversation_id === "string" && envelope.conversation_id ? envelope.conversation_id : null) ??
+    stream.state.conversationId;
+  const boundEnvelope = resolveBoundInitCwd(resolvedThreadId);
 
   return {
     // Which of the two output shapes actually arrived. The caller needs it to
     // decide whether rawStdout may stand in for an answer: under stream-json it
     // is a machine event log and never may.
     streamed,
+    initObserved,
+    stepUpdatesObserved,
+    resultObserved,
+    initCwd: boundEnvelope.initCwd,
+    rawInitCwd: boundEnvelope.rawInitCwd,
+    initConversationMismatch: boundEnvelope.initConversationMismatch,
+    initPermissionMode,
+    deniedTools,
     usage: envelope.usage ?? null,
     text,
     // What the caller needs to say "this is partial, and here is how far it
@@ -418,9 +643,7 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
     salvagedText: salvaged || null,
     salvagedBlockComplete,
     progressLabel: streamed && !succeeded ? stream.progressLabel() : null,
-    threadId:
-      (typeof envelope.conversation_id === "string" && envelope.conversation_id ? envelope.conversation_id : null) ??
-      stream.state.conversationId,
+    threadId: resolvedThreadId,
     exitCode: succeeded ? 0 : failedExit,
     failure: succeeded
       ? null
@@ -429,10 +652,10 @@ function resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, en
           status: failedExit,
           signal: result.signal,
           error: result.error,
-          // AGY's structured `error` carries the rate-limit and model-unavailable
-          // wording the classifier already matches on, and stderr is empty here.
-          stdout: envelope.error ?? rawStdout,
-          stderr: envelope.error ?? rawStderr,
+          stdout: rawStdout,
+          stderr: rawStderr,
+          structuredError: [envelope.error, fallbackDeniedText].filter(Boolean).join("\n") || null,
+          policyDenied: Boolean(fallbackDeniedText),
           // The same text, kept for the user rather than only for the match. It
           // is the only place a rejected `--model` names the ids AGY accepts, and
           // the only place a rate limit says when it resets.
@@ -473,7 +696,19 @@ export function resolveResumeMismatch({ resumeThreadId, threadId, engine, write 
 // a fixture there cannot report a chosen version, and spawn-driven tests cost
 // ~150s per suite against ~0.2s for direct calls.
 export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runCommand, detectEngineFn = detectEngine } = {}) {
-  const { prompt, effort: requestedEffort, write = true, resumeLast = false, resumeThreadId = null, engine: requestedEngine, timeoutSeconds = null, onProgress } = options;
+  const {
+    prompt,
+    effort: requestedEffort,
+    write = true,
+    resumeLast = false,
+    resumeThreadId = null,
+    resumeWorkspaceVerified = false,
+    allowUnverifiedResumeWorkspace = false,
+    engine: requestedEngine,
+    timeoutSeconds = null,
+    allowRepoHooks = false,
+    onProgress
+  } = options;
   let { model } = options;
   let effort = requestedEffort;
 
@@ -482,7 +717,14 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
   const engineInfo = detectEngineFn(requestedEngine ?? null);
   noticeUnverifiedAgy(engineInfo, onProgress);
 
+  let customizationResult = null;
   if (engineInfo.engine === "agy") {
+    if (resumeLast && write && !resumeWorkspaceVerified && !allowUnverifiedResumeWorkspace) {
+      throw new Error(
+        `Refusing to resume a write-capable AGY conversation (${resumeThreadId ?? "unknown"}) without verified workspace binding to ${cwd}. Pass allowUnverifiedResumeWorkspace only if you confirmed that conversation belongs to ${cwd}.`
+      );
+    }
+    customizationResult = enforceAgyWorkspaceCustomizations(cwd, { allowRepoHooks });
     if (model || effort) {
       model = normalizeAgyRequestedModel(model);
       effort = normalizeAgyEffort(effort);
@@ -512,40 +754,92 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
   let agyBrainRoot = null;
   let agyBefore = null;
   let agyPrintTimeoutMs = spawnTimeoutMs;
+  let agySecretScan = null;
+  let agySettingsPayload = null;
   if (engineInfo.engine === "agy") {
     agyBrainRoot = resolveAgyBrainRoot();
     agyBefore = listConvDirs(agyBrainRoot);
     agyPrintTimeoutMs = resolveAgyPrintTimeoutMs(spawnTimeoutMs);
+    if (engineInfo.supportsSettings === true) {
+      agySecretScan = collectWorkspaceSecretDenyRules(cwd);
+      agySettingsPayload = buildAgySettingsPayload({
+        mode: write ? "write" : "read-only",
+        workspaceDir: cwd,
+        secretDenyRules: agySecretScan.rules
+      });
+    } else {
+      const probeFailed = engineInfo.settingsSupportStatus === "probe-failed";
+      const scopeDesc = write ? ".git/ and secret-file rules are inactive" : "pre-execution read-only lock is inactive (relying on post-turn diff guard)";
+      onProgress?.({
+        message: probeFailed
+          ? `AGY --help probe failed; --settings support could not be verified, so ${scopeDesc}.`
+          : `AGY binary does not advertise --settings; ${scopeDesc}.`,
+        phase: "starting",
+        engine: engineInfo.engine
+      });
+    }
   }
-
-  const args = buildCliArgs(engineInfo.engine, {
-    prompt,
-    model,
-    effort,
-    write,
-    resumeLast,
-    resumeThreadId,
-    timeoutMs: engineInfo.engine === "agy" ? agyPrintTimeoutMs : spawnTimeoutMs,
-    agyVersion: engineInfo.version,
-    outputJson: useJson,
-    // Orients a read-only AGY turn on this repository. A write turn is already
-    // oriented by --new-project; buildCliArgs picks between them.
-    workspaceDir: cwd,
-  });
 
   onProgress?.({ message: `Starting ${engineInfo.engine} turn...`, phase: "running", engine: engineInfo.engine });
 
   // Snapshot before the turn, whatever mode it is in. A read-only turn needs it
-  // because nothing enforces read-only (see readonly-guard.mjs); a write turn
-  // needs it to report which files it actually changed.
+  // because older AGY builds lack `--settings` (see readonly-guard.mjs); a write
+  // turn needs it to report which files it actually changed.
   const workspaceBefore = snapshotWorkspace(cwd);
 
-  const result = runCommandFn(engineInfo.binary, args, {
-    cwd,
-    input: prompt,
-    maxBuffer: MAX_BUFFER,
-    timeout: spawnTimeoutMs, // hard kill — grace-later than agy's --print-timeout
-  });
+  let tempCleanupFailed = false;
+  const result = engineInfo.engine === "agy" && agySettingsPayload
+    ? await withAgyTempContext(
+        {
+          settingsPayload: agySettingsPayload,
+          isolatedCwd: false,
+          onCleanupError: () => {
+            tempCleanupFailed = true;
+          }
+        },
+        ({ settingsFile }) => {
+        const args = buildCliArgs(engineInfo.engine, {
+          prompt,
+          model,
+          effort,
+          write,
+          resumeLast,
+          resumeThreadId,
+          timeoutMs: agyPrintTimeoutMs,
+          agyVersion: engineInfo.version,
+          outputJson: useJson,
+          workspaceDir: cwd,
+          settingsFile
+        });
+        return runCommandFn(engineInfo.binary, args, {
+          cwd,
+          input: prompt,
+          maxBuffer: MAX_BUFFER,
+          timeout: spawnTimeoutMs
+        });
+      })
+    : (() => {
+        const args = buildCliArgs(engineInfo.engine, {
+          prompt,
+          model,
+          effort,
+          write,
+          resumeLast,
+          resumeThreadId,
+          timeoutMs: engineInfo.engine === "agy" ? agyPrintTimeoutMs : spawnTimeoutMs,
+          agyVersion: engineInfo.version,
+          outputJson: useJson,
+          // Orients a read-only AGY turn on this repository. A write turn is already
+          // oriented by --new-project; buildCliArgs picks between them.
+          workspaceDir: cwd
+        });
+        return runCommandFn(engineInfo.binary, args, {
+          cwd,
+          input: prompt,
+          maxBuffer: MAX_BUFFER,
+          timeout: spawnTimeoutMs // hard kill — grace-later than agy's --print-timeout
+        });
+      })();
 
   let rawStdout = stripAnsi(result.stdout ?? "");
   let rawStderr = stripAnsi(result.stderr ?? "");
@@ -583,6 +877,7 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
   let threadId = null;
   let reasoningSummary = extractReasoningSummary(rawStderr) ?? null;
   let recoveryFailure = null;
+  let structured = null;
   // "Text came back, and nothing established that it is complete." Set only by
   // the paths that know it first-hand — the stream's salvaged deltas and an
   // unfinished transcript row — rather than inferred from the failure category,
@@ -590,7 +885,7 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
   let partial = false;
 
   if (agyStructured) {
-    const structured = resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, engineInfo, brainRoot: agyBrainRoot, conversationsBefore: agyBefore });
+    structured = resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, engineInfo, brainRoot: agyBrainRoot, conversationsBefore: agyBefore });
     exitCode = structured.exitCode;
     recoveryFailure = annotateFailureWithProgress(structured.failure, structured);
     threadId = structured.threadId;
@@ -642,7 +937,7 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
 
   // Only report when there is something to report: a clean read-only turn says
   // nothing, so the warning keeps its meaning when it does appear.
-  const readOnlyNotice = write ? null : describeReadOnlyWrites(workspaceChanges);
+  const readOnlyNotice = write ? null : describeReadOnlyWrites(workspaceChanges, { policyLocked: Boolean(agySettingsPayload) });
   if (readOnlyNotice) {
     process.stderr.write(`[gemini-companion] ${readOnlyNotice}
 `);
@@ -653,6 +948,51 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
     process.stderr.write(`[gemini-companion] ${resumeNotice}
 `);
   }
+
+  const rawOrBoundInitCwd = structured?.rawInitCwd ?? structured?.initCwd ?? null;
+  const resumeWorkspaceNotice = resolveResumeWorkspaceNotice({
+    cwd,
+    initCwd: rawOrBoundInitCwd,
+    resumeLast,
+    write
+  });
+  if (resumeWorkspaceNotice) {
+    process.stderr.write(`[gemini-companion] ${resumeWorkspaceNotice}
+`);
+  }
+
+  const workspaceMismatch = Boolean(
+    resumeWorkspaceNotice ||
+    structured?.initConversationMismatch ||
+    isWorkspaceCwdMismatch(cwd, rawOrBoundInitCwd)
+  );
+
+  const deniedTools = structured?.deniedTools?.total ? structured.deniedTools : null;
+  const deniedToolsNotice = describeDeniedTools(deniedTools, { write });
+  if (deniedToolsNotice) {
+    process.stderr.write(`[gemini-companion] ${deniedToolsNotice}
+`);
+  }
+  const agyProtection = buildAgyProtection({
+    engineInfo,
+    mode: engineInfo.supportsSettings ? (write ? "write" : "read-only") : "none",
+    settingsPassed: Boolean(agySettingsPayload),
+    isolatedCwd: false,
+    structured,
+    deniedTools,
+    customizationResult,
+    tempCleanupFailed,
+    agySecretScan,
+    extra: {
+      resumedWorkspaceUnverified: Boolean(resumeLast && !resumeWorkspaceVerified),
+      resumedWorkspaceCoverage: !resumeLast
+        ? "not-resumed"
+        : (resumeWorkspaceVerified ? "verified-from-job-store" : "post-turn-init-cwd-only"),
+      initCwd: structured?.initCwd ?? null,
+      initConversationMismatch: Boolean(structured?.initConversationMismatch),
+      workspaceMismatch
+    }
+  });
 
   onProgress?.({ message: exitCode === 0 ? "Turn completed." : "Turn failed.", phase: exitCode === 0 ? "done" : "failed" });
 
@@ -669,15 +1009,19 @@ export async function runGeminiTurn(cwd, options = {}, { runCommandFn = runComma
     engine: engineInfo.engine,
     stderr: rawStderr,
     modelFallback: modelFallbackNote,
+    ...(agyProtection ? { agyProtection } : {}),
+    ...(deniedTools ? { deniedTools } : {}),
+    ...(deniedToolsNotice ? { deniedToolsNotice } : {}),
     ...(readOnlyNotice ? { readOnlyNotice, readOnlyWrites: workspaceChanges.written } : {}),
     ...(resumeNotice ? { resumeNotice, resumeExpectedThreadId: resumeThreadId } : {}),
+    ...(resumeWorkspaceNotice ? { resumeWorkspaceNotice } : {}),
     ...(failure ? { failure } : {})
   };
 }
 
 // Same injection seam as runGeminiTurn; see the note there.
 export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCommand, detectEngineFn = detectEngine } = {}) {
-  const { prompt, model: requestedModel, effort: requestedEffort, engine: requestedEngine, isAdversarial = true, deep = false, timeoutSeconds = null, onProgress } = options;
+  const { prompt, model: requestedModel, effort: requestedEffort, engine: requestedEngine, isAdversarial = true, deep = false, timeoutSeconds = null, allowRepoHooks = false, onProgress } = options;
 
   // Mode-aware label: the standard /review and adversarial /adversarial-review
   // share this runner, so the progress line must reflect the actual mode.
@@ -706,7 +1050,11 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
 
   let model;
   let effort = null;
+  let customizationResult = null;
   if (engineInfo.engine === "agy") {
+    customizationResult = deep
+      ? enforceAgyWorkspaceCustomizations(cwd, { allowRepoHooks })
+      : null;
     if (requestedModel || requestedEffort) {
       model = normalizeAgyRequestedModel(requestedModel);
       effort = normalizeAgyEffort(requestedEffort);
@@ -728,48 +1076,94 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
   let agyBrainRoot = null;
   let agyBefore = null;
   let agyPrintTimeoutMs = spawnTimeoutMs;
+  let agySecretScan = null;
+  let agySettingsPayload = null;
   if (engineInfo.engine === "agy") {
     agyBrainRoot = resolveAgyBrainRoot();
     agyBefore = listConvDirs(agyBrainRoot);
     agyPrintTimeoutMs = resolveAgyPrintTimeoutMs(spawnTimeoutMs);
+    if (engineInfo.supportsSettings === true) {
+      if (deep) {
+        agySecretScan = collectWorkspaceSecretDenyRules(cwd);
+        agySettingsPayload = buildAgySettingsPayload({
+          mode: "read-only",
+          workspaceDir: cwd,
+          secretDenyRules: agySecretScan.rules
+        });
+      } else {
+        agySettingsPayload = buildAgySettingsPayload({ mode: "review-diff" });
+      }
+    } else {
+      const probeFailed = engineInfo.settingsSupportStatus === "probe-failed";
+      onProgress?.({
+        message: probeFailed
+          ? "AGY --help probe failed; --settings support could not be verified, so pre-execution read-only lock is inactive (relying on post-turn diff guard)."
+          : "AGY binary does not advertise --settings; pre-execution read-only lock is inactive (relying on post-turn diff guard).",
+        phase: "reviewing",
+        engine: engineInfo.engine
+      });
+    }
   }
 
-  const args = buildCliArgs(engineInfo.engine, {
-    prompt,
-    model,
-    effort,
-    // Read-only: no --yolo, and deliberately no --approval-mode plan either.
-    // buildCliArgs explains why plan mode is the weaker read-only shape.
-    write: false,
-    outputJson: useJson,
-    timeoutMs: engineInfo.engine === "agy" ? agyPrintTimeoutMs : spawnTimeoutMs,
-    agyVersion: engineInfo.version,
-    // Only --deep gets a workspace, and it needs one to mean anything. A default
-    // review is single-shot from a diff already inside the prompt; --deep tells
-    // the model to go and read dependency manifests, callers and untracked files.
-    // Unoriented, an AGY turn's cwd is ~/.gemini/antigravity-cli/scratch, so those
-    // relative reads missed the repository entirely and landed next to `brain/` —
-    // the transcripts of every past conversation. So the flag both failed to do
-    // what it promises and pointed the model at the user's private data.
-    //
-    // This is not a permission change. AGY has no read-only mode and can reach any
-    // absolute path either way (docs/THREAT-MODEL.md 7.2); what --add-dir decides
-    // is where relative paths land. Whether anything was written is measured below
-    // rather than promised.
-    workspaceDir: deep ? cwd : null,
-  });
-
-  // A review is read-only by construction — no --yolo, no --write — but nothing
-  // enforces that, and --deep hands the model tools and a workspace. Same guard
-  // as the task path: silence has to mean "compared, unchanged".
+  // A review is read-only by construction — no --yolo, no --write — and
+  // non-deep AGY reviews additionally isolate `cwd` in an empty temporary
+  // directory so repository `.agents/hooks.json` files are never discovered.
+  // Snapshot the real repository `cwd` either way as a post-turn backstop.
   const workspaceBefore = snapshotWorkspace(cwd);
 
-  const result = runCommandFn(engineInfo.binary, args, {
-    cwd,
-    input: prompt,
-    maxBuffer: MAX_BUFFER,
-    timeout: spawnTimeoutMs, // hard kill — grace-later than agy's --print-timeout
-  });
+  let tempCleanupFailed = false;
+  let actualIsolatedCwd = false;
+  const useTempContext = engineInfo.engine === "agy" && (agySettingsPayload != null || !deep);
+  const result = useTempContext
+    ? await withAgyTempContext(
+        {
+          settingsPayload: agySettingsPayload,
+          isolatedCwd: !deep,
+          onCleanupError: () => {
+            tempCleanupFailed = true;
+          }
+        },
+        ({ settingsFile, isolatedCwdPath }) => {
+          const spawnCwd = !deep ? isolatedCwdPath : cwd;
+          actualIsolatedCwd = Boolean(isolatedCwdPath && spawnCwd === isolatedCwdPath);
+          const args = buildCliArgs(engineInfo.engine, {
+            prompt,
+            model,
+            effort,
+            write: false,
+            outputJson: useJson,
+            timeoutMs: agyPrintTimeoutMs,
+            agyVersion: engineInfo.version,
+            workspaceDir: deep ? cwd : null,
+            settingsFile
+          });
+          return runCommandFn(engineInfo.binary, args, {
+            cwd: spawnCwd,
+            input: prompt,
+            maxBuffer: MAX_BUFFER,
+            timeout: spawnTimeoutMs
+          });
+        }
+      )
+    : (() => {
+        const args = buildCliArgs(engineInfo.engine, {
+          prompt,
+          model,
+          effort,
+          // Read-only: no --yolo, and deliberately no --approval-mode plan either.
+          // buildCliArgs explains why plan mode is the weaker read-only shape.
+          write: false,
+          outputJson: useJson,
+          timeoutMs: engineInfo.engine === "agy" ? agyPrintTimeoutMs : spawnTimeoutMs,
+          ...(engineInfo.engine === "agy" ? { agyVersion: engineInfo.version, workspaceDir: deep ? cwd : null } : {})
+        });
+        return runCommandFn(engineInfo.binary, args, {
+          cwd,
+          input: prompt,
+          maxBuffer: MAX_BUFFER,
+          timeout: spawnTimeoutMs // hard kill — grace-later than agy's --print-timeout
+        });
+      })();
 
   let rawStdout = stripAnsi(result.stdout ?? "");
   let rawStderr = stripAnsi(result.stderr ?? "");
@@ -801,11 +1195,12 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
   let reviewJson = null;
   let reviewText = rawStdout.trim();
   let recoveryFailure = null;
+  let structured = null;
   // Same meaning as on the task path: text came back, completeness unestablished.
   let partial = false;
 
   if (agyStructured) {
-    const structured = resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, engineInfo, brainRoot: agyBrainRoot, conversationsBefore: agyBefore });
+    structured = resolveAgyStructuredResult({ rawStdout, rawStderr, exitCode, result, engineInfo, brainRoot: agyBrainRoot, conversationsBefore: agyBefore });
     exitCode = structured.exitCode;
     recoveryFailure = annotateFailureWithProgress(structured.failure, structured);
     // Same rule as the task path: a stream's rawStdout is an event log, so it
@@ -861,7 +1256,24 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
     : null);
 
   const workspaceChanges = detectWrites(workspaceBefore, cwd);
-  const readOnlyNotice = describeReadOnlyWrites(workspaceChanges);
+  const readOnlyNotice = describeReadOnlyWrites(workspaceChanges, { policyLocked: Boolean(agySettingsPayload) });
+  const deniedTools = structured?.deniedTools?.total ? structured.deniedTools : null;
+  const deniedToolsNotice = describeDeniedTools(deniedTools, { write: false });
+  if (deniedToolsNotice) {
+    process.stderr.write(`[gemini-companion] ${deniedToolsNotice}
+`);
+  }
+  const agyProtection = buildAgyProtection({
+    engineInfo,
+    mode: engineInfo.supportsSettings ? (deep ? "read-only" : "review-diff") : "none",
+    settingsPassed: Boolean(agySettingsPayload),
+    isolatedCwd: actualIsolatedCwd,
+    structured,
+    deniedTools,
+    customizationResult,
+    tempCleanupFailed,
+    agySecretScan
+  });
 
   onProgress?.({ message: exitCode === 0 ? "Review completed." : "Review failed.", phase: exitCode === 0 ? "done" : "failed" });
 
@@ -874,6 +1286,9 @@ export async function runGeminiReview(cwd, options = {}, { runCommandFn = runCom
     engine: engineInfo.engine,
     stderr: rawStderr,
     modelFallback: modelFallbackNote,
+    ...(agyProtection ? { agyProtection } : {}),
+    ...(deniedTools ? { deniedTools } : {}),
+    ...(deniedToolsNotice ? { deniedToolsNotice } : {}),
     ...(readOnlyNotice ? { readOnlyNotice, readOnlyWrites: workspaceChanges.written } : {}),
     ...(failure ? { failure } : {})
   };

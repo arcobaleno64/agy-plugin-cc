@@ -48,7 +48,7 @@ export const MODEL_ALIASES = new Map(MODEL_ALIAS_ENTRIES.map((entry) => [entry.a
 // AGY has its own model surface and takes exact ids from `agy models`; the two
 // namespaces do not overlap, which is why normalizeAgyRequestedModel rejects
 // Gemini aliases outright. The structural reason is what matters and does not
-// change: AGY encodes the effort tier into the id (`gemini-3.7-flash-high`),
+// change: AGY encodes the effort tier into the id (`gemini-3.8-flash-high`),
 // while this map keeps model and effort separate, so no AGY id is ever a valid
 // value here. AGY also accepts native --effort low|medium|high, which the
 // declared version floor (AGY_MINIMUM_VERSION in engine.mjs) guarantees.

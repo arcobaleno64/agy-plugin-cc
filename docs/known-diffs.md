@@ -29,10 +29,24 @@ campaign matrix for the full three-way comparison.
 - **`--write` means something different on each engine.** On Gemini CLI it maps
   to `--yolo`, which *is* a permission: without it the model is offered no write
   or shell tools at all. On AGY it maps to `--new-project` rather than
-  `--add-dir` — two ways of pointing the session at `cwd`, neither of which
-  withholds write, because headless print mode auto-approves edits regardless.
-  So on AGY it is a statement of intent, and on gemini a capability gate. The
-  same user-facing flag, two different mechanisms.
+  `--add-dir` (workspace orientation). Across all supported AGY versions,
+  non-`--deep` diff reviews spawn in an isolated empty temp `cwd`. On AGY
+  builds advertising `--settings` in `--help` (verified on 1.5.16), the plugin
+  additionally passes a one-shot `--settings` file: `review-diff` denies
+  `read_file(*)`, `write_file(*)`, `command(*)`, `mcp(*)`, `read_url(*)`, and
+  `execute_url(*)`; `--deep` reviews and read-only `rescue` turns deny
+  writes/commands/MCP/URLs and emit bounded workspace-relative `read_file(...)`
+  rules for scanned secrets (up to 5,000 entries, depth 6, skipping `.git`,
+  `node_modules`, `dist`, `build`, `.next`, `target`, `vendor`); and `--write`
+  turns apply file-tool rules on `.git`/scanned secrets while leaving `command`
+  enabled. `--deep` reviews and tasks also fail closed pre-spawn if cwd/Git-root
+  verification fails or `.agents`/`.agent`/`_agents`/`_agent` `hooks.json`,
+  `mcp_config.json`, `plugins.json`, or `plugins` exist within 64 parent hops
+  (unless native CLI strict boolean `--allow-repo-hooks` is passed; MCP omits
+  this flag), and write-capable `--conversation` resumes require verified job-store
+  workspace binding. Older AGY builds down to 1.1.12 omit `--settings` and fall
+  back to the post-turn `readonly-guard.mjs` snapshot, so `--write` remains an
+  intent + orientation boundary across the full supported floor.
   - Until v0.16.4 a read-only AGY turn was given no orientation flag at all,
     which read as a boundary and was not one: the model simply did not know
     where the repository was, while remaining able to reach any absolute path.

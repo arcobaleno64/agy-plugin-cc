@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import os from "node:os";
 import process from "node:process";
 import path from "node:path";
 
@@ -216,6 +218,65 @@ export const AGY_VERSION_UNVERIFIED_NOTICE =
   `Could not read the AGY version, so it was not checked. This plugin needs AGY ${AGY_MINIMUM_VERSION} or newer; ` +
   "if something behaves oddly, run `agy update` first.";
 
+const agySettingsSupportCache = new Map();
+const MAX_AGY_SETTINGS_CACHE_ENTRIES = 32;
+
+export function resetAgyCapabilityCacheForTesting() {
+  agySettingsSupportCache.clear();
+}
+
+/**
+ * Probe whether the AGY binary advertises `--settings` in `--help`.
+ * Distinguishes `"supported"`, `"unsupported"` (exited 0 without `--settings`),
+ * and `"probe-failed"` (failed or timed out before `--help` could complete),
+ * skipping caching for `"probe-failed"` or when stat fingerprinting fails.
+ */
+export function probeAgySettingsSupport(binary, version, binaryAvailableFn = binaryAvailable, { useCache = true } = {}) {
+  let statSuffix = null;
+  try {
+    const stat = fs.statSync(binary);
+    statSuffix = `\0${stat.mtimeMs}\0${stat.size}`;
+  } catch {
+    statSuffix = null;
+  }
+  const canCache = Boolean(useCache && statSuffix !== null);
+  const cacheKey = canCache ? `${binary}\0${version ?? ""}${statSuffix}` : null;
+  if (canCache && agySettingsSupportCache.has(cacheKey)) {
+    const supported = agySettingsSupportCache.get(cacheKey);
+    return { supported, status: supported ? "supported" : "unsupported" };
+  }
+  // Evict stale entries for this binary on any new-fingerprint probe, even if it
+  // later fails, so reverting to an earlier (mtimeMs, size) cannot reuse stale state.
+  if (canCache) {
+    const binaryPrefix = `${binary}\0`;
+    for (const existingKey of agySettingsSupportCache.keys()) {
+      if (existingKey.startsWith(binaryPrefix)) {
+        agySettingsSupportCache.delete(existingKey);
+      }
+    }
+  }
+  const probe = binaryAvailableFn(binary, ["--help"], { timeout: 5_000, cwd: os.tmpdir() });
+  if (!probe?.available) {
+    return { supported: false, status: "probe-failed" };
+  }
+  const supported = /^\s*--settings(?=$|[\s=,<[])/m.test(String(probe.detail ?? ""));
+  if (canCache) {
+    agySettingsSupportCache.set(cacheKey, supported);
+    if (agySettingsSupportCache.size > MAX_AGY_SETTINGS_CACHE_ENTRIES) {
+      const oldestKey = agySettingsSupportCache.keys().next().value;
+      agySettingsSupportCache.delete(oldestKey);
+    }
+  }
+  return { supported, status: supported ? "supported" : "unsupported" };
+}
+
+/**
+ * Boolean helper wrapper around `probeAgySettingsSupport`.
+ */
+export function checkAgySupportsSettings(binary, version, binaryAvailableFn = binaryAvailable, { useCache = true } = {}) {
+  return probeAgySettingsSupport(binary, version, binaryAvailableFn, { useCache }).supported;
+}
+
 export function detectEngine(requestedEngine = null, options = {}) {
   const {
     hasGeminiCredentialsImpl: hasGeminiCredentialsFn = hasGeminiCredentials,
@@ -242,9 +303,19 @@ export function detectEngine(requestedEngine = null, options = {}) {
     const version = status.detail ?? "unknown";
     const floor = agyMeetsFloor(version);
     if (floor === "too-old") throw new Error(agyFloorRefusal(version));
+    const settingsProbe = probeAgySettingsSupport(binary, version, binaryAvailableFn, {
+      useCache: binaryAvailableFn === binaryAvailable
+    });
     // "unreadable" runs anyway; the caller surfaces the notice once so the user
     // knows the check did not happen rather than believing it passed.
-    return { engine: "agy", binary, version, versionUnverified: floor === "unreadable" };
+    return {
+      engine: "agy",
+      binary,
+      version,
+      versionUnverified: floor === "unreadable",
+      supportsSettings: settingsProbe.supported,
+      settingsSupportStatus: settingsProbe.status
+    };
   }
 
   if (normalized === "gemini") {
@@ -291,7 +362,17 @@ export function detectEngine(requestedEngine = null, options = {}) {
     const agyVersion = agyStatus.detail ?? "unknown";
     const agyFloor = agyMeetsFloor(agyVersion);
     if (agyFloor === "too-old") throw new Error(agyFloorRefusal(agyVersion, { geminiUsable: false }));
-    return { engine: "agy", binary: agyBinary, version: agyVersion, versionUnverified: agyFloor === "unreadable" };
+    const settingsProbe = probeAgySettingsSupport(agyBinary, agyVersion, binaryAvailableFn, {
+      useCache: binaryAvailableFn === binaryAvailable
+    });
+    return {
+      engine: "agy",
+      binary: agyBinary,
+      version: agyVersion,
+      versionUnverified: agyFloor === "unreadable",
+      supportsSettings: settingsProbe.supported,
+      settingsSupportStatus: settingsProbe.status
+    };
   }
 
   // Nothing usable. Distinguish "no engine installed" from "gemini installed but
@@ -323,7 +404,7 @@ export function formatAgyTimeout(timeoutMs) {
 }
 
 export function buildCliArgs(engine, options = {}) {
-  const { prompt = "", model, effort, write = false, resumeLast = false, resumeThreadId = null, outputJson = false, timeoutMs, agyVersion = null, workspaceDir = null } = options;
+  const { prompt = "", model, effort, write = false, resumeLast = false, resumeThreadId = null, outputJson = false, timeoutMs, agyVersion = null, workspaceDir = null, settingsFile = null } = options;
 
   if (engine === "agy") {
     // The prompt is always piped on stdin, so there is no positional form left to
@@ -408,6 +489,12 @@ export function buildCliArgs(engine, options = {}) {
       // ability to investigate anything: `/gemini:rescue` without --write is
       // documented for exactly that, and on AGY it was reading a scratch dir.
       args.push("--add-dir", workspaceDir);
+    }
+    if (settingsFile != null) {
+      if (typeof settingsFile !== "string" || !settingsFile || settingsFile.includes("\u0000") || !path.isAbsolute(settingsFile)) {
+        throw new Error("settingsFile must be a non-empty absolute path without NUL bytes.");
+      }
+      args.push("--settings", settingsFile);
     }
     const timeout = formatAgyTimeout(timeoutMs);
     if (timeout) args.push("--print-timeout", timeout);

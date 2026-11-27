@@ -321,11 +321,45 @@ function splitAgyErrorLine(text) {
   return { text: rewritten + source.slice(cursor), category: null };
 }
 
+export const AGY_POLICY_DENIED_RE =
+  /permission check failed for|permission denied for (?:read_file|write_file|command|mcp|read_url|execute_url|unsandboxed)\(|matches user-configured deny rule|(?:tool call )?denied by pre-tool hook/i;
+const OS_PERMISSION_ERROR_RE =
+  /\b(?:EACCES|EPERM)\b.*(?:permission denied|operation not permitted)|spawn\s+\S*\s+(?:EACCES|EPERM)|permission denied,\s*(?:open|read|write|stat|lstat|scandir|mkdir|unlink|access)\b/i;
+const QUOTA_RE =
+  /spend(ing)? cap|billing account|monthly (spend|quota|limit)|per.?day|daily (quota|limit)|exceeded your (monthly|daily)|credits balance is too low|resets? in\s+\d+\s*(?:h(?:ours?|rs?)?|d(?:ays?)?)(?![a-z])/i;
+const RATE_LIMIT_RE = /\b429\b|too many requests|rate.?limit|quota|RESOURCE_EXHAUSTED/i;
+
 export function classifyCliFailure(input = {}) {
   const data = typeof input === "string" ? { message: input } : (input ?? {});
   const already = explicitFailure(data);
   if (already) {
     return already;
+  }
+
+  const code = errorCode(data);
+  const signal = compactText(data.signal);
+  // Process termination signals and spawn buffer exhaustion outrank stream/stderr prose.
+  if (signal === "SIGINT") {
+    return normalizeFailure("cancelled", data);
+  }
+  if (code === "ENOBUFS") {
+    return normalizeFailure("unknown", {
+      ...data,
+      retryable: false,
+      summary: data.summary ?? "CLI output exceeded subprocess buffer limit (ENOBUFS).",
+      nextStep: data.nextStep ?? "Narrow the review scope or prompt size to reduce CLI output volume."
+    });
+  }
+  if (code === "ETIMEDOUT" || data.timedOut || signal === "SIGTERM" || signal === "SIGKILL") {
+    return normalizeFailure("timeout", data);
+  }
+  if (signal === "SIGABRT" || signal === "SIGSEGV" || signal === "SIGBUS") {
+    return normalizeFailure("unknown", {
+      ...data,
+      retryable: true,
+      summary: data.summary ?? `CLI process crashed with signal ${signal}.`,
+      nextStep: data.nextStep ?? "Retry the command or inspect local runtime stability if the crash repeats."
+    });
   }
 
   const trusted = combinedTrustedText(data);
@@ -336,10 +370,8 @@ export function classifyCliFailure(input = {}) {
     return normalizeFailure(agyError.category, data);
   }
   const structuredText = agyError.text;
-  const code = errorCode(data);
-  const signal = compactText(data.signal);
 
-  if (data.cancelled || /cancel(l)?ed|aborted|SIGINT/i.test(structuredText) || signal === "SIGINT") {
+  if (data.cancelled || /cancel(l)?ed|aborted|SIGINT/i.test(structuredText)) {
     return normalizeFailure("cancelled", data);
   }
   // Ahead of `auth` deliberately. The floor refusal's own text mentions
@@ -358,6 +390,34 @@ export function classifyCliFailure(input = {}) {
   // a context window, not what the plugin used to say about argv.
   if (/prompt .*too long|context length|token limit/i.test(structuredText)) {
     return normalizeFailure("prompt-too-long", data);
+  }
+  // Explicit AGY policy/hook tool denials must be classified BEFORE the `auth`
+  // arm below (`permission denied` would otherwise match auth and advise
+  // `/gemini:setup`), while letting quota/rate-limit signals take precedence.
+  if (data.policyDenied === true || AGY_POLICY_DENIED_RE.test(structuredText)) {
+    if (QUOTA_RE.test(structuredText)) {
+      return normalizeFailure("quota", data);
+    }
+    if (RATE_LIMIT_RE.test(structuredText)) {
+      return normalizeFailure("rate-limit", data);
+    }
+    return normalizeFailure("tool-permission-denied", {
+      ...data,
+      summary: data.summary ?? "AGY blocked a tool call under the active read-only/safety policy.",
+      nextStep:
+        data.nextStep ??
+        "The denied tool is disallowed under the active policy. Re-run with `--write` only if edits or commands are intended, or narrow the request."
+    });
+  }
+  // OS local filesystem permission errors (`EACCES`/`EPERM`) are local OS/ACL
+  // failures, not Google API auth errors.
+  if (code === "EACCES" || code === "EPERM" || OS_PERMISSION_ERROR_RE.test(structuredText)) {
+    return normalizeFailure("unknown", {
+      ...data,
+      retryable: false,
+      summary: data.summary ?? "Local filesystem permission error (EACCES/EPERM).",
+      nextStep: data.nextStep ?? "Check local file and directory permissions before retrying."
+    });
   }
   // `api key not valid` and `API_KEY_INVALID` are Google's actual wording, and
   // they are not word-order variants of `invalid api key` — a live 400 from

@@ -188,12 +188,18 @@ export async function runTrackedJob(job, runner, options = {}) {
           errorMessage: execution.summary
         }))
       : null;
+    const observedWorkspaceCwd = execution.payload?.agyProtection?.initCwd ?? null;
+    const workspaceMismatch = Boolean(
+      execution.payload?.resumeWorkspaceNotice || execution.payload?.agyProtection?.workspaceMismatch
+    );
     writeJobFile(job.workspaceRoot, job.id, {
       ...runningRecord,
       status: completionStatus,
       threadId: execution.threadId ?? null,
       turnId: execution.turnId ?? null,
       engine: execution.engine ?? runningRecord.engine ?? null,
+      observedWorkspaceCwd,
+      workspaceMismatch,
       pid: null,
       phase: completionStatus === "completed" ? "done" : completionStatus,
       completedAt,
@@ -207,6 +213,8 @@ export async function runTrackedJob(job, runner, options = {}) {
       threadId: execution.threadId ?? null,
       turnId: execution.turnId ?? null,
       engine: execution.engine ?? runningRecord.engine ?? null,
+      observedWorkspaceCwd,
+      workspaceMismatch,
       summary: execution.summary,
       phase: completionStatus === "completed" ? "done" : completionStatus,
       pid: null,

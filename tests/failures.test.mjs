@@ -496,3 +496,100 @@ test("an AGY_ERROR line with no closing brace changes nothing", () => {
   const failure = classifyCliFailure({ engine: "agy", status: 3, stderr: "AGY_ERROR: {not json at all" });
   assert.equal(failure.category, "unknown");
 });
+
+test("AGY policy-denied write/read errors classify as tool-permission-denied ahead of auth", () => {
+  const failure = classifyCliFailure({
+    engine: "agy",
+    status: 1,
+    stderr: "Permission denied for write_file(/etc/passwd) by policy"
+  });
+  assert.equal(failure.category, "tool-permission-denied");
+  assert.equal(failure.retryable, false);
+  assert.doesNotMatch(failure.nextStep, /authenticate/i);
+
+  const generic403 = classifyCliFailure({
+    engine: "gemini",
+    status: 1,
+    stderr: "HTTP 403 Permission denied from API backend"
+  });
+  assert.equal(generic403.category, "auth");
+
+  const timedOutMixed = classifyCliFailure({
+    engine: "agy",
+    status: 1,
+    signal: "SIGTERM",
+    code: "ETIMEDOUT",
+    structuredError: "Permission denied for write_file(x.txt) by policy"
+  });
+  assert.equal(timedOutMixed.category, "timeout");
+
+  const quotaMixed = classifyCliFailure({
+    engine: "agy",
+    status: 1,
+    stderr: "Permission denied for write_file(x.txt) by policy\nIndividual quota reached. Resets in 2h0m0s."
+  });
+  assert.equal(quotaMixed.category, "quota");
+
+  const rateMixed = classifyCliFailure({
+    engine: "agy",
+    status: 1,
+    stderr: "Permission denied for write_file(x.txt) by policy\n429 RESOURCE_EXHAUSTED"
+  });
+  assert.equal(rateMixed.category, "rate-limit");
+
+  const osEacces = classifyCliFailure({
+    engine: "agy",
+    status: 1,
+    stderr: "Error: EACCES: permission denied, open '/tmp/locked.txt'"
+  });
+  assert.equal(osEacces.category, "unknown");
+  assert.equal(osEacces.retryable, false);
+
+  const osEperm = classifyCliFailure({
+    engine: "agy",
+    status: 1,
+    stderr: "EPERM: operation not permitted, open 'D:\\locked.txt'"
+  });
+  assert.equal(osEperm.category, "unknown");
+  assert.equal(osEperm.retryable, false);
+
+  const spawnEacces = classifyCliFailure({
+    engine: "agy",
+    status: 1,
+    stderr: "spawn agy.exe EACCES"
+  });
+  assert.equal(spawnEacces.category, "unknown");
+  assert.equal(spawnEacces.retryable, false);
+
+  const structEacces = classifyCliFailure({
+    engine: "agy",
+    error: Object.assign(new Error("forbidden"), { code: "EACCES" })
+  });
+  assert.equal(structEacces.category, "unknown");
+  assert.equal(structEacces.retryable, false);
+
+  assert.equal(classifyCliFailure({ code: "ENOBUFS" }).category, "unknown");
+  assert.equal(classifyCliFailure({ code: "ENOBUFS" }).retryable, false);
+  const enobufsWithSigterm = classifyCliFailure({
+    engine: "agy",
+    status: null,
+    signal: "SIGTERM",
+    error: Object.assign(new Error("spawnSync agy ENOBUFS"), { code: "ENOBUFS" })
+  });
+  assert.equal(enobufsWithSigterm.category, "unknown");
+  assert.equal(enobufsWithSigterm.retryable, false);
+  assert.match(enobufsWithSigterm.summary, /ENOBUFS/);
+  assert.equal(classifyCliFailure({ signal: "SIGABRT" }).category, "unknown");
+  assert.equal(
+    classifyCliFailure({ signal: "SIGTERM", stderr: 'AGY_ERROR: {"status":"Unauthenticated","code":16}' }).category,
+    "timeout"
+  );
+
+  const truncatedPolicyFlag = classifyCliFailure({
+    engine: "agy",
+    status: 1,
+    structuredError: "short truncated message...",
+    policyDenied: true
+  });
+  assert.equal(truncatedPolicyFlag.category, "tool-permission-denied");
+});

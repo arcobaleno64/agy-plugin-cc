@@ -386,17 +386,20 @@ export function assembleReviewContent(sections) {
 // first: `cwd` itself is routinely a symlinked path (macOS /tmp -> /private/tmp,
 // and every test that runs under one), so comparing an unresolved cwd against a
 // resolved target reports every file as an escape.
-function resolvesInsideWorkspace(cwd, absolutePath) {
+function resolveInsideWorkspace(cwd, absolutePath) {
   let workspace;
   let target;
   try {
     workspace = fs.realpathSync.native(cwd);
     target = fs.realpathSync.native(absolutePath);
   } catch {
-    return false;
+    return null;
   }
   const relative = path.relative(workspace, target);
-  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
+    return null;
+  }
+  return { workspace, target, relative };
 }
 
 export function formatUntrackedFile(cwd, relativePath) {
@@ -408,39 +411,95 @@ export function formatUntrackedFile(cwd, relativePath) {
     return `### ${relativePath}\n${SECRET_DIFF_PLACEHOLDER}`;
   }
 
-  let stat;
+  let openTarget = absolutePath;
+  let isSymlink = false;
   try {
     const linkStat = fs.lstatSync(absolutePath);
     if (linkStat.isSymbolicLink()) {
+      isSymlink = true;
       if (!fs.existsSync(absolutePath)) {
         return `### ${relativePath}\n(skipped: broken symlink or unreadable file)`;
       }
       // isSecretFile matched the link name, which the planter chooses. A symlink
       // called `notes.txt` pointing at ~/.ssh/id_rsa passed that check and was
       // then read through with readFileSync, sending the target's contents to
-      // the model. Content only ever leaves the workspace being reviewed.
-      if (!resolvesInsideWorkspace(cwd, absolutePath)) {
+      // the model. Content only ever leaves the workspace being reviewed, and an
+      // in-repo symlink targeting a secret file (e.g. `notes.txt -> .env`) is
+      // redacted just like the target itself.
+      const resolved = resolveInsideWorkspace(cwd, absolutePath);
+      if (!resolved) {
         return `### ${relativePath}\n(skipped: symlink resolves outside the workspace)`;
       }
+      if (isSecretFile(resolved.target) || isSecretFile(resolved.relative)) {
+        return `### ${relativePath}\n${SECRET_DIFF_PLACEHOLDER}`;
+      }
+      openTarget = resolved.target;
+    } else if (linkStat.isDirectory()) {
+      return `### ${relativePath}\n(skipped: directory)`;
+    } else if (!linkStat.isFile()) {
+      return `### ${relativePath}\n(skipped: non-regular file)`;
     }
-    stat = fs.statSync(absolutePath);
   } catch {
     return `### ${relativePath}\n(skipped: broken symlink or unreadable file)`;
   }
 
-  if (stat.isDirectory()) {
-    return `### ${relativePath}\n(skipped: directory)`;
-  }
-
-  if (stat.size > MAX_UNTRACKED_BYTES) {
-    return `### ${relativePath}\n(skipped: ${stat.size} bytes exceeds ${MAX_UNTRACKED_BYTES} byte limit)`;
-  }
-
+  let fd;
   let buffer;
   try {
-    buffer = fs.readFileSync(absolutePath);
+    const openFlags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0);
+    fd = fs.openSync(openTarget, openFlags);
+    const stat = fs.fstatSync(fd);
+    if (stat.isDirectory()) {
+      return `### ${relativePath}\n(skipped: directory)`;
+    }
+    if (!stat.isFile()) {
+      return `### ${relativePath}\n(skipped: non-regular file)`;
+    }
+    if (stat.size > MAX_UNTRACKED_BYTES) {
+      return `### ${relativePath}\n(skipped: ${stat.size} bytes exceeds ${MAX_UNTRACKED_BYTES} byte limit)`;
+    }
+    const postResolved = resolveInsideWorkspace(cwd, openTarget);
+    if (!postResolved) {
+      return `### ${relativePath}\n(skipped: path resolves outside the workspace)`;
+    }
+    if (isSecretFile(postResolved.target) || isSecretFile(postResolved.relative)) {
+      return `### ${relativePath}\n${SECRET_DIFF_PLACEHOLDER}`;
+    }
+    const postStat = fs.statSync(postResolved.target);
+    const inoUnavailable = stat.ino === 0 || postStat.ino === 0;
+    if (
+      stat.dev !== postStat.dev ||
+      (!inoUnavailable && stat.ino !== postStat.ino) ||
+      (inoUnavailable && (stat.size !== postStat.size || stat.mtimeMs !== postStat.mtimeMs)) ||
+      (!isSymlink && fs.lstatSync(absolutePath).isSymbolicLink())
+    ) {
+      return `### ${relativePath}\n(skipped: file changed during read)`;
+    }
+
+    const chunks = [];
+    let totalRead = 0;
+    const chunk = Buffer.allocUnsafe(4096);
+    while (true) {
+      const toRead = Math.min(chunk.length, MAX_UNTRACKED_BYTES + 1 - totalRead);
+      const bytesRead = fs.readSync(fd, chunk, 0, toRead, null);
+      if (bytesRead === 0) break;
+      totalRead += bytesRead;
+      if (totalRead > MAX_UNTRACKED_BYTES) {
+        return `### ${relativePath}\n(skipped: >${MAX_UNTRACKED_BYTES} bytes exceeds ${MAX_UNTRACKED_BYTES} byte limit)`;
+      }
+      chunks.push(Buffer.from(chunk.subarray(0, bytesRead)));
+    }
+    buffer = Buffer.concat(chunks, totalRead);
   } catch {
     return `### ${relativePath}\n(skipped: broken symlink or unreadable file)`;
+  } finally {
+    if (fd !== undefined) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        // Ignore close failure.
+      }
+    }
   }
 
   if (!isProbablyText(buffer)) {
