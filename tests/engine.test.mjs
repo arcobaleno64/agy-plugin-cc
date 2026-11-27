@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -10,6 +13,9 @@ import {
   mapEffortToModel,
   buildCliArgs,
   detectEngine,
+  checkAgySupportsSettings,
+  probeAgySettingsSupport,
+  resetAgyCapabilityCacheForTesting,
   agyMeetsFloor,
   agyFloorRefusal,
   AGY_MINIMUM_VERSION
@@ -648,4 +654,199 @@ test("explicit gemini selection ignores the credential check", () => {
     hasGeminiCredentialsImpl: () => false
   });
   assert.equal(info.engine, "gemini");
+});
+
+test("buildCliArgs forwards validated absolute settingsFile before --print-timeout on AGY", () => {
+  const settingsPath = process.platform === "win32" ? "C:/tmp/agy-settings.json" : "/tmp/agy-settings.json";
+  const args = buildCliArgs("agy", {
+    prompt: "hello",
+    agyVersion: "1.5.16",
+    workspaceDir: "C:/repo",
+    settingsFile: settingsPath,
+    timeoutMs: 60_000
+  });
+  const settingsIdx = args.indexOf("--settings");
+  const timeoutIdx = args.indexOf("--print-timeout");
+  assert.ok(settingsIdx !== -1);
+  assert.equal(args[settingsIdx + 1], settingsPath);
+  assert.ok(timeoutIdx > settingsIdx, "--settings must precede --print-timeout");
+
+  for (const bad of ["relative/settings.json", "", "C:/tmp/bad\u0000.json"]) {
+    assert.throws(
+      () => buildCliArgs("agy", { prompt: "hello", agyVersion: "1.5.16", settingsFile: bad }),
+      /settingsFile must be a non-empty absolute path without NUL bytes/
+    );
+  }
+});
+
+test("checkAgySupportsSettings requires zero exit, exact --settings token, stat fingerprint, and independent invalidation", () => {
+  resetAgyCapabilityCacheForTesting();
+  assert.equal(
+    checkAgySupportsSettings("/fake/agy.exe", "1.5.16", () => ({
+      available: true,
+      detail: "Options:\n  --settings <file>  Load settings file\n"
+    }), { useCache: false }),
+    true
+  );
+  assert.equal(
+    checkAgySupportsSettings("/fake/agy.exe", "1.5.16", () => ({
+      available: true,
+      detail: "Options:\n  --settings-path <file>  Different flag\n"
+    }), { useCache: false }),
+    false
+  );
+  assert.equal(
+    checkAgySupportsSettings("/fake/agy.exe", "1.5.16", () => ({
+      available: false,
+      detail: "error: unknown option --settings"
+    }), { useCache: false }),
+    false
+  );
+  assert.equal(
+    checkAgySupportsSettings("/fake/agy.exe", "1.5.16", () => ({
+      available: true,
+      detail: "Options:\n  --model <model>  Select model\n"
+    }), { useCache: false }),
+    false
+  );
+
+  // Un-statted synthetic path must NOT cache when fs.statSync fails (re-probes on next call)
+  let probes = 0;
+  const uncachedProbe = () => {
+    probes += 1;
+    return { available: true, detail: "  --settings <file>\n" };
+  };
+  assert.equal(checkAgySupportsSettings("/fake/nonexistent-agy.exe", "1.5.16", uncachedProbe, { useCache: true }), true);
+  assert.equal(checkAgySupportsSettings("/fake/nonexistent-agy.exe", "1.5.16", uncachedProbe, { useCache: true }), true);
+  assert.equal(probes, 2);
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "engine-cache-stat-"));
+  try {
+    const bin = path.join(tmpDir, "agy.exe");
+    fs.writeFileSync(bin, "v1", "utf8");
+    let flag = "  --settings <file>\n";
+    let realProbes = 0;
+    const probeReal = () => {
+      realProbes += 1;
+      return { available: true, detail: flag };
+    };
+    assert.equal(checkAgySupportsSettings(bin, "1.5.16", probeReal, { useCache: true }), true);
+    assert.equal(checkAgySupportsSettings(bin, "1.5.16", probeReal, { useCache: true }), true);
+    assert.equal(realProbes, 1);
+
+    // Same size, mtime changed independently
+    fs.writeFileSync(bin, "v2", "utf8");
+    const bumped = new Date(Date.now() + 5000);
+    fs.utimesSync(bin, bumped, bumped);
+    assert.equal(checkAgySupportsSettings(bin, "1.5.16", probeReal, { useCache: true }), true);
+    assert.equal(realProbes, 2);
+
+    // Size changed with restored mtime
+    const prevStat = fs.statSync(bin);
+    fs.writeFileSync(bin, "v3-updated-size", "utf8");
+    fs.utimesSync(bin, prevStat.atime, prevStat.mtime);
+    flag = "  --model <m>\n";
+    assert.equal(checkAgySupportsSettings(bin, "1.5.16", probeReal, { useCache: true }), false);
+    assert.equal(realProbes, 3);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    resetAgyCapabilityCacheForTesting();
+  }
+});
+
+test("detectEngine surfaces supportsSettings and distinguishes probe-failed from unsupported", () => {
+  assert.deepEqual(
+    probeAgySettingsSupport("/fake/agy.exe", "1.5.16", () => ({
+      available: true,
+      detail: "  --settings <path>\n"
+    }), { useCache: false }),
+    { supported: true, status: "supported" }
+  );
+  assert.deepEqual(
+    probeAgySettingsSupport("/fake/agy.exe", "1.5.16", () => ({
+      available: true,
+      detail: "  --model <m>\n"
+    }), { useCache: false }),
+    { supported: false, status: "unsupported" }
+  );
+  assert.deepEqual(
+    probeAgySettingsSupport("/fake/agy.exe", "1.5.16", () => ({
+      available: false,
+      detail: "timed out"
+    }), { useCache: false }),
+    { supported: false, status: "probe-failed" }
+  );
+
+  // probe-failed must NOT be cached even for an existing binary
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "engine-probe-fail-"));
+  try {
+    const bin = path.join(tmpDir, "agy.exe");
+    fs.writeFileSync(bin, "v1", "utf8");
+    let probes = 0;
+    const flakyProbe = () => {
+      probes += 1;
+      return probes === 1
+        ? { available: false, detail: "timed out" }
+        : { available: true, detail: "  --settings <file>\n" };
+    };
+    resetAgyCapabilityCacheForTesting();
+    assert.deepEqual(probeAgySettingsSupport(bin, "1.5.16", flakyProbe, { useCache: true }), {
+      supported: false,
+      status: "probe-failed"
+    });
+    assert.deepEqual(probeAgySettingsSupport(bin, "1.5.16", flakyProbe, { useCache: true }), {
+      supported: true,
+      status: "supported"
+    });
+    assert.equal(probes, 2);
+
+    // Changing fingerprint + probe-failed must evict old cached entry so reverting mtime/size re-probes
+    const stat1 = fs.statSync(bin);
+    fs.writeFileSync(bin, "v2-changed-size", "utf8");
+    const bumped = new Date(Date.now() + 5000);
+    fs.utimesSync(bin, bumped, bumped);
+    assert.deepEqual(
+      probeAgySettingsSupport(bin, "1.5.16", () => ({ available: false, detail: "timeout" }), { useCache: true }),
+      { supported: false, status: "probe-failed" }
+    );
+    fs.writeFileSync(bin, "v1", "utf8");
+    fs.utimesSync(bin, stat1.atime, stat1.mtime);
+    assert.deepEqual(
+      probeAgySettingsSupport(bin, "1.5.16", () => ({ available: true, detail: "  --model <m>\n" }), { useCache: true }),
+      { supported: false, status: "unsupported" }
+    );
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    resetAgyCapabilityCacheForTesting();
+  }
+
+  const agyWithSettings = detectEngine("agy", {
+    resolveBinaryPathImpl: () => "/fake/agy.exe",
+    binaryAvailableImpl: (_bin, args) =>
+      args[0] === "--version"
+        ? { available: true, detail: "1.5.16" }
+        : { available: true, detail: "  --settings <path>\n" }
+  });
+  assert.equal(agyWithSettings.supportsSettings, true);
+  assert.equal(agyWithSettings.settingsSupportStatus, "supported");
+
+  const agyWithoutSettings = detectEngine("agy", {
+    resolveBinaryPathImpl: () => "/fake/agy.exe",
+    binaryAvailableImpl: (_bin, args) =>
+      args[0] === "--version"
+        ? { available: true, detail: "1.5.16" }
+        : { available: true, detail: "  --model <m>\n" }
+  });
+  assert.equal(agyWithoutSettings.supportsSettings, false);
+  assert.equal(agyWithoutSettings.settingsSupportStatus, "unsupported");
+
+  const agyProbeFailed = detectEngine("agy", {
+    resolveBinaryPathImpl: () => "/fake/agy.exe",
+    binaryAvailableImpl: (_bin, args) =>
+      args[0] === "--version"
+        ? { available: true, detail: "1.5.16" }
+        : { available: false, detail: "timeout" }
+  });
+  assert.equal(agyProbeFailed.supportsSettings, false);
+  assert.equal(agyProbeFailed.settingsSupportStatus, "probe-failed");
 });

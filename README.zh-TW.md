@@ -273,7 +273,7 @@ AGY 請用 `/gemini:setup --engine agy` 驗證所選引擎；auto／Gemini 請�
 
 **前三個會排入背景工作並立即回傳** `jobId`。那個回應裡沒有結果——要以 `gemini_job_status` 輪詢，再用 `gemini_job_result` 取回。**起了不收等於白花錢**，這是本外掛最貴的失敗模式。
 
-**未要求寫入只是意圖，不是沙箱。** `gemini_rescue` 的 `write` 預設為 false，兩個 review 工具也沒有 write 選項；但 AGY 沒有強制唯讀模式，三種 turn 都仍可能改檔案。執行前後會比對工作區並回報實際寫入了什麼。因此三者皆標註 `readOnlyHint: false` 與 `destructiveHint: true`：annotation 描述的是工具**最壞**能做到什麼，且無法隨參數變動。詳見 [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) §7.2。
+**未要求寫入在舊版 AGY 上仍是意圖，而非跨所有支援版本的通用沙箱。** `gemini_rescue` 的 `write` 預設為 false，兩個 review 工具也沒有 write 選項。在 AGY 上，非 `--deep` diff 審查一律在空暫存 `cwd` 隔離啟動；當 `agy --help` 宣告支援 `--settings` 時（1.5.16 實測），本外掛額外傳入一次性 `--settings` 工具層拒絕規則：`review-diff` 模式封鎖 `read_file(*)`、`write_file(*)`、`command(*)`、`mcp(*)`、`read_url(*)`、`execute_url(*)`；唯讀（`read-only`）模式封鎖寫入、指令、MCP 與 URL 工具並對受掃描上限約束（最多 5,000 筆、深度 6）的工作區 `.env`/`.env.<suffix>`/`*.env`/`.npmrc`/`.netrc`/金鑰與憑證檔加上相對路徑 `read_file(...)` 拒絕規則；`--write` 模式保留 `command` 能力並僅針對檔案工具防護 `.git/` 與掃描到的機密檔。`--deep` 審查與一般工作亦會在啟動前檢查目錄／Git 根目錄與 `.agents`/`.agent`/`_agents`/`_agent` 自動載入設定，發現異常或設定時 fail-closed 拒跑（原生 CLI 提供嚴格布林 `--allow-repo-hooks`，MCP 工具則刻意不提供）。向下相容至 `1.1.12` 的舊版 AGY 省略 `--settings`，且 `--write` 工作仍具執行指令能力，因此執行前後仍會比對工作區、回報完整防護遙測（`initPermissionModeMatches`、`secretScanComplete`、`degradedReason`），且三者維持標註 `readOnlyHint: false` 與 `destructiveHint: true`。詳見 [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) §7.2。
 
 **三個 job 工具以 job id 定址，且刻意跨 session。** 持有 id 的呼叫者已經指明了是哪個 job，那道用來讓**發現**路徑保持誠實的 session 過濾對他們毫無作用——而套上去反而直接弄壞它們，因為這個 server 從來收不到 session id（見下）。
 

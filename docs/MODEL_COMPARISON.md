@@ -71,6 +71,30 @@ Probed on this machine (gemini CLI **0.44.1**, then-current on npm), 2026-06-02:
 
 - **AGY (antigravity 1.0.4)** exposed **no `--model`/`--effort`** flag in the original 2026-06-02 probe. By 2026-07-06, local AGY 1.0.16 exposed `--model` and `agy models`.
   **Superseded since — current behavior (verified on AGY 1.1.12, 2026-08-12):** the plugin forwards both. `--effort <low|medium|high>` is passed to AGY natively, and `--model` is passed through as an exact AGY model id from `agy models`. What it still does *not* do is translate Gemini aliases into AGY ids — `flash` and `pro` are Gemini aliases only — and the two flags cannot be combined, because the AGY model ids reject the pairing. The 1.1.10 gate that used to guard this is gone: below that version AGY accepted `--model`/`--effort` and then ignored them in headless runs, and the 1.1.12 floor now refuses those versions outright, so the selection is always applied rather than silently falling back to the persisted model.
+- **AGY's own model listing, read 2026-11-27 on AGY 1.5.18.** `agy models` returns 27 ids:
+
+  | Family | Ids |
+  |---|---|
+  | Gemini 4 Neon | `gemini-4-neon-high` · `-xhigh` · `-medium` · `-low` |
+  | Gemini 4 Hydrogen | `gemini-4-hydrogen-high` · `-xhigh` · `-medium` · `-low` |
+  | Gemini 4 Carbon | `gemini-4-carbon-medium` · `-high` · `-low` |
+  | Gemini 4 Argon | `gemini-4-argon-medium` · `-high` · `-low` |
+  | Orchestrator | `gemini-pro-orchestrator-neon` · `gemini-pro-orchestrator` (Carbon) · `gemini-pro-orchestrator-argon` |
+  | Gemini 3.8 Flash | `gemini-3.8-flash-high` · `-medium` · `-low` |
+  | Claude 5.5 | `claude-opus-5-5-low` · `-medium` · `-high`; `claude-sonnet-5-5-low` · `-medium` · `-high` |
+  | Other vendors | `gpt-oss-120b-medium` |
+
+  Against the 1.1.24 reading below: the Gemini 4 families and the three
+  Orchestrator ids are new; **3.7 Flash, 3.6 Flash and 3.1 Pro are gone**; the
+  Claude 4.6 ids (`claude-sonnet-4-6`, `claude-opus-4-6-thinking`) are replaced by
+  Claude 5.5 ids with `-low`/`-medium`/`-high` suffixes. Two shape changes: some
+  families now expose an `-xhigh` id, although native `--effort` still accepts
+  only `low|medium|high`; and the Orchestrator ids carry no effort suffix. Any
+  example in this repo that names a 3.x id (or a Claude 4.6 id) is an
+  illustration of the shape, not a current id — run `agy models`. Not checked:
+  whether each id actually serves a request (this is the listing, not a per-id
+  probe), and the Gemini-engine alias table, which needs an API key to re-probe.
+
 - **AGY's own model listing, read 2026-09-02 on AGY 1.1.24.** `agy models` returns 14 ids:
 
   | Family | Ids |

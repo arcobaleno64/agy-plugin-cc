@@ -82,3 +82,13 @@ test("prompt text is never re-parsed as flags, whatever it starts with", () => {
   const inlineValue = normalizeArgv(["--json", "--cwd=/c/My Folder"]);
   assert.equal(parseArgs(inlineValue, TASK_CONFIG).options.cwd, "/c/My Folder");
 });
+
+test("strictBooleanOptions accepts bare flag, =true, and =false while rejecting typos", () => {
+  const config = { strictBooleanOptions: ["allow-repo-hooks"] };
+  assert.equal(parseArgs(["--allow-repo-hooks"], config).options["allow-repo-hooks"], true);
+  assert.equal(parseArgs(["--allow-repo-hooks=true"], config).options["allow-repo-hooks"], true);
+  assert.equal(parseArgs(["--allow-repo-hooks=false"], config).options["allow-repo-hooks"], false);
+  for (const bad of ["--allow-repo-hooks=typo", "--allow-repo-hooks=0", "--allow-repo-hooks=no", "--allow-repo-hooks=true=invalid"]) {
+    assert.throws(() => parseArgs([bad], config), /Invalid boolean value/);
+  }
+});

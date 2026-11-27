@@ -1,6 +1,7 @@
 export function parseArgs(argv, config = {}) {
   const valueOptions = new Set(config.valueOptions ?? []);
-  const booleanOptions = new Set(config.booleanOptions ?? []);
+  const strictBooleanOptions = new Set(config.strictBooleanOptions ?? []);
+  const booleanOptions = new Set([...(config.booleanOptions ?? []), ...strictBooleanOptions]);
   const aliasMap = config.aliasMap ?? {};
   const options = {};
   const positionals = [];
@@ -25,10 +26,16 @@ export function parseArgs(argv, config = {}) {
     }
 
     if (token.startsWith("--")) {
-      const [rawKey, inlineValue] = token.slice(2).split("=", 2);
+      const body = token.slice(2);
+      const eqIndex = body.indexOf("=");
+      const rawKey = eqIndex === -1 ? body : body.slice(0, eqIndex);
+      const inlineValue = eqIndex === -1 ? undefined : body.slice(eqIndex + 1);
       const key = aliasMap[rawKey] ?? rawKey;
 
       if (booleanOptions.has(key)) {
+        if (strictBooleanOptions.has(key) && inlineValue !== undefined && inlineValue !== "true" && inlineValue !== "false") {
+          throw new Error(`Invalid boolean value "${inlineValue}" for --${rawKey}. Use --${rawKey} or --${rawKey}=true|false.`);
+        }
         options[key] = inlineValue === undefined ? true : inlineValue !== "false";
         continue;
       }

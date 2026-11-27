@@ -1,7 +1,12 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { isSecretFile, redactSecretsFromDiff, SECRET_DIFF_PLACEHOLDER } from "../plugins/gemini/scripts/lib/secrets.mjs";
+import { decodeGitQuotedPath, isSecretFile, redactSecretsFromDiff, SECRET_DIFF_PLACEHOLDER } from "../plugins/gemini/scripts/lib/secrets.mjs";
+import { formatUntrackedFile } from "../plugins/gemini/scripts/lib/git.mjs";
+import { initGitRepo } from "./helpers.mjs";
 
 test("isSecretFile matches on the basename, including nested paths", () => {
   assert.equal(isSecretFile(".env"), true);
@@ -160,6 +165,116 @@ test("a deleted ordinary file is left alone", () => {
   assert.deepEqual(redactedFiles, []);
 });
 
-// Not covered here: a newly added secret file. Its `--- /dev/null` sits on the
-// a-side, which bSidePath never reads, so it takes the identical path to the
-// ordinary case above and would assert nothing the first test does not.
+test("decodeGitQuotedPath decodes each C-escape sequence cleanly without decoding unquoted paths", () => {
+  assert.equal(decodeGitQuotedPath('"a\\a"'), "a\x07");
+  assert.equal(decodeGitQuotedPath('"b\\b"'), "b\x08");
+  assert.equal(decodeGitQuotedPath('"f\\f"'), "f\x0c");
+  assert.equal(decodeGitQuotedPath('"v\\v"'), "v\x0b");
+  assert.equal(decodeGitQuotedPath('"t\\t\\n\\r"'), "t\t\n\r");
+  assert.equal(decodeGitQuotedPath('"q\\\\\\"\\056env"'), 'q\\".env');
+  assert.equal(decodeGitQuotedPath('"dir/\\t🔑\\056env"'), "dir/\t🔑.env");
+  assert.equal(decodeGitQuotedPath("plain\\056txt"), "plain\\056txt");
+});
+
+test("isSecretFile covers .netrc, SSH private keys, quoted C-escapes, and avoids unquoted escape mangling or public keys", () => {
+  for (const file of [".netrc", "home/user/.netrc", "keys/id_rsa", "id_rsa.bak", "id_rsa.old", "keys/id_rsa_work", "keys/id_ed25519", "keys/id_ed25519.bak", "keys/id_ecdsa", "keys/id_dsa", "keys/id_ed25519.key", '"dir/secret\\303\\247.env"', '"dir/\\a\\b\\f\\v\\056env"', '"dir/\\t🔑\\056env"']) {
+    assert.equal(isSecretFile(file), true, `${file} must match`);
+  }
+  for (const file of ["keys/id_ed25519.pub", "keys/id_rsa.pub", "keys/id_rsa_work.pub", "src/my_id_dsa_helper.js", "C:\\temp\\notes.txt", "plain\\056txt"]) {
+    assert.equal(isSecretFile(file), false, `${file} must NOT match`);
+  }
+});
+
+test("redactSecretsFromDiff catches copy-to secrets, private key backups, and decoded C-quoted filenames", () => {
+  const backupDiff = [
+    "diff --git a/id_rsa.bak b/id_rsa.bak",
+    "new file mode 100644",
+    "--- /dev/null",
+    "+++ b/id_rsa.bak",
+    "@@ -0,0 +1 @@",
+    "+-----BEGIN OPENSSH PRIVATE KEY-----",
+    "diff --git a/id_rsa.old b/id_rsa.old",
+    "new file mode 100644",
+    "--- /dev/null",
+    "+++ b/id_rsa.old",
+    "@@ -0,0 +1 @@",
+    "+-----BEGIN RSA PRIVATE KEY-----",
+    ""
+  ].join("\n");
+  const redactedBackups = redactSecretsFromDiff(backupDiff);
+  assert.ok(!redactedBackups.text.includes("PRIVATE KEY"));
+  assert.deepEqual(redactedBackups.redactedFiles, ["id_rsa.bak", "id_rsa.old"]);
+  const copyDiff = [
+    "diff --git a/template.txt b/keys/id_ed25519",
+    "similarity index 100%",
+    "copy from template.txt",
+    "copy to keys/id_ed25519",
+    "+PRIVATE_KEY_BODY",
+    ""
+  ].join("\n");
+  const copied = redactSecretsFromDiff(copyDiff);
+  assert.ok(!copied.text.includes("PRIVATE_KEY_BODY"));
+  assert.deepEqual(copied.redactedFiles, ["keys/id_ed25519"]);
+
+  const cQuotedDiff = [
+    'diff --git "a/dir/\\056env" "b/dir/notes.txt"',
+    "rename from \"dir/\\056env\"",
+    "rename to dir/notes.txt",
+    "-SECRET=OCTAL_ESCAPED",
+    ""
+  ].join("\n");
+  const decoded = redactSecretsFromDiff(cQuotedDiff);
+  assert.ok(!decoded.text.includes("OCTAL_ESCAPED"));
+});
+
+test("formatUntrackedFile skips files exceeding MAX_UNTRACKED_BYTES", () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "secrets-size-"));
+  try {
+    initGitRepo(repo);
+    fs.writeFileSync(path.join(repo, "big.txt"), "A".repeat(25 * 1024), "utf8");
+    const formatted = formatUntrackedFile(repo, "big.txt");
+    assert.match(formatted, /exceeds 24576 byte limit/);
+    assert.ok(!formatted.includes("AAAA"));
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("redactSecretsFromDiff withholds the body when a secret file is renamed to an ordinary path", () => {
+  const diff = [
+    "diff --git a/.env b/notes.txt",
+    "similarity index 90%",
+    "rename from .env",
+    "rename to notes.txt",
+    "--- a/.env",
+    "+++ b/notes.txt",
+    "@@ -1,2 +1,2 @@",
+    "-API_TOKEN=RENAMED_SECRET_VALUE",
+    "+API_TOKEN=RENAMED_SECRET_VALUE_NEW",
+    ""
+  ].join("\n");
+
+  const { text, redactedFiles } = redactSecretsFromDiff(diff);
+  assert.ok(!text.includes("RENAMED_SECRET_VALUE"), "a-side secret content must be redacted");
+  assert.deepEqual(redactedFiles, [".env"]);
+});
+
+test("formatUntrackedFile redacts an in-repo symlink targeting a secret file", (t) => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "secrets-link-"));
+  try {
+    initGitRepo(repo);
+    fs.writeFileSync(path.join(repo, ".env"), "TOP_SECRET=123\n", "utf8");
+    const linkPath = path.join(repo, "notes.txt");
+    try {
+      fs.symlinkSync(path.join(repo, ".env"), linkPath, "file");
+    } catch {
+      t.skip("file symlinks require elevated privilege on this host");
+      return;
+    }
+    const formatted = formatUntrackedFile(repo, "notes.txt");
+    assert.ok(!formatted.includes("TOP_SECRET=123"));
+    assert.ok(formatted.includes(SECRET_DIFF_PLACEHOLDER));
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});

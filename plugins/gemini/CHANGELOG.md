@@ -2,6 +2,64 @@
 
 ## 0.26.0 - Unreleased
 
+- **Recorded the AGY 1.5.18 model listing.** `agy models` now returns 27 ids:
+  the Gemini 4 families (Neon, Hydrogen, Carbon, Argon) and three Orchestrator
+  ids are new; Gemini 3.7 Flash, 3.6 Flash and 3.1 Pro are gone; the Claude 4.6
+  ids are replaced by Claude 5.5. The dated reading is in
+  `docs/MODEL_COMPARISON.md`; no plugin behavior changed, because nothing keeps
+  an AGY id roster (an id AGY no longer lists is refused by AGY itself). The
+  `model-map.mjs` comment example now names `gemini-3.8-flash-high`. Not
+  re-probed: the Gemini-engine alias table (needs an API key).
+
+- **Pre-execution `--settings` policy locking, untrusted `.agents/` fail-closed guard,
+  denied-tool observability, and pre-spawn secret leak fixes for AGY.**
+  - `detectEngine` now probes `agy --help` (requiring exit 0 and an exact
+    `--settings` flag token, skipping caching unless binary `stat` succeeds and
+    evicting stale per-binary cache entries) and exposes `supportsSettings` and
+    `settingsSupportStatus` (`supported` / `unsupported` / `probe-failed`)
+    without raising the `1.1.12` floor; `buildCliArgs("agy", { settingsFile })`
+    forwards it cleanly ahead of `--print-timeout`.
+  - Added `plugins/gemini/scripts/lib/agy-settings.mjs`: non-`--deep` AGY
+    diff reviews now always run in an isolated empty temp `cwd` (and when
+    `--settings` is supported, apply `review-diff` denying `read_file(*)`,
+    `write_file(*)`, `command(*)`, `mcp(*)`, `read_url(*)`, `execute_url(*)`);
+    `--deep` reviews and read-only `rescue` turns lock writes/commands/MCP/URLs
+    and emit bounded workspace-relative `read_file(...)` deny rules for existing
+    secret files (up to 5,000 entries, depth 6, `.env`, `.env.<suffix>`, `*.env`,
+    `.npmrc`, `.netrc`, keys/creds, skipping `.git`, `node_modules`, `dist`,
+    `build`, `.next`, `target`, `vendor`, rejecting backslashes in POSIX paths and
+    always checking symlinks independently of basename) with explicit scan
+    completeness telemetry (`secretScanComplete`, `secretScanRootScanned`);
+    `--write` turns guard `.git/` and scanned secrets on file tools while
+    keeping shell `command` enabled.
+  - Because AGY 1.5.16 headless still auto-executes `<ws>/.agents/hooks.json`
+    even outside `trustedWorkspaces`, `--deep` reviews and tasks now fail closed
+    pre-spawn if `cwd` is a non-directory or unreadable (non-existent paths are
+    recorded as `skipped-missing-cwd` and left to downstream spawn/git handling),
+    Git root verification errors or any Git discovery env override (`GIT_DIR`,
+    `GIT_WORK_TREE`, `GIT_COMMON_DIR`, `GIT_CEILING_DIRECTORIES`, or
+    `GIT_DISCOVERY_ACROSS_FILESYSTEM`, even empty) is present,
+    traversal hits the 64-hop limit, or `.agents`/`.agent`/`_agents`/`_agent`
+    `hooks.json`, `mcp_config.json`, `plugins.json`, or `plugins` are found
+    unless strict boolean `--allow-repo-hooks` is passed on the native CLI (MCP
+    tools intentionally omit this flag); write-capable AGY conversation resumes
+    also require prior verified `init.cwd` binding for the same conversation ID.
+  - `agy-stream.mjs` now captures `init.permission_mode`, `init.cwd` (detecting
+    resumed workspace mismatches), `initObserved`, and bounded deduplicated
+    `TOOL_ERROR` policy denials, surfacing `deniedToolsNotice` and detailed
+    `agyProtection` telemetry (`settingsCapable`, `settingsPassed`, `initObserved`,
+    `initPermissionModeMatches`, `denialTelemetryAvailable`, `deniedToolsObserved`,
+    `degradedReason`, `secretScanComplete`, `tempCleanupFailed`); `failures.mjs`
+    ensures process termination signals (`SIGTERM`/`ETIMEDOUT` even with a
+    `SUCCESS` envelope) and `quota`/`rate-limit` (preserving `stderr` alongside
+    `envelope.error`) outrank earlier denied tools, separates OS `EACCES`/`EPERM`
+    from `auth`, and routes explicit AGY policy/hook denials to `tool-permission-denied`.
+  - `secrets.mjs` and `git.mjs` now decode Git C-escaped quoted paths (`\a`/`\b`/`\f`/`\v`/octal)
+    only for quoted Git paths, check both diff `a`-side and `b`-side paths
+    (including `copy to`), open untracked files with `O_NOFOLLOW` + post-open
+    workspace/device-inode verification + bounded `MAX_UNTRACKED_BYTES` reads,
+    and cover `.netrc` plus SSH private keys and backups (`id_(rsa|ed25519|ecdsa|dsa)*` excluding `*.pub`).
+
 - **AGY's "credits balance is too low" refusal is reported as exhausted quota,
   not retried.** AGY 1.2.15 stops at once, instead of retrying for about two and
   a half minutes, when the plan quota is used up and the AI credits balance

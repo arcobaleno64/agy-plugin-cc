@@ -110,11 +110,11 @@ function agyEngine(version) {
   return () => ({ engine: "agy", binary: "/fake/agy.exe", version });
 }
 
-function stubRun({ stdout = "", stderr = "", status = 0 } = {}) {
+function stubRun({ stdout = "", stderr = "", status = 0, ...rest } = {}) {
   const calls = [];
   const fn = (binary, args, opts) => {
     calls.push({ binary, args, opts });
-    return { stdout, stderr, status };
+    return { stdout, stderr, status, ...rest };
   };
   fn.calls = calls;
   return fn;
@@ -528,4 +528,136 @@ test("a cut-off review is partial too, and keeps the findings it produced", asyn
 
   assert.equal(result.partial, true);
   assert.equal(result.reviewJson.verdict, "needs-attention");
+});
+
+test("stream reader exposes init permissionMode, initCwd, and bounded deduplicated deniedTools without counting OS EACCES", () => {
+  const lines = [
+    `{"event":"init","conversation_id":"${CONV}","init":{"cwd":"D:\\\\repo","permission_mode":"request-review"}}`,
+    `{"event":"step_update","step_update":{"conversation_id":"${CONV}","step_index":1,"state":"ERROR","step_type":"tool","tool_name":"write_file","tool_info":{"error":"Permission denied for write_file(x.txt) by policy"}}}`,
+    `{"event":"step_update","step_update":{"conversation_id":"${CONV}","step_index":1,"state":"ERROR","step_type":"tool","tool_name":"write_file","tool_info":{"error":"Permission denied for write_file(x.txt) by policy"}}}`,
+    `{"event":"step_update","step_update":{"conversation_id":"${CONV}","step_index":2,"state":"ERROR","step_type":"tool","tool_name":"read_file","tool_info":{"error":"EACCES: permission denied, open '/tmp/foo'"}}}`,
+    `{"event":"step_update","step_update":{"conversation_id":"${CONV}","state":"ERROR","step_type":"tool","tool_name":"${"very_long_tool_".repeat(10)}","tool_info":{"error":"Permission check failed: matches user-configured deny rule"}}}`
+  ];
+  for (let i = 3; i <= 505; i += 1) {
+    lines.push(
+      `{"event":"step_update","step_update":{"conversation_id":"${CONV}","step_index":${i},"state":"ERROR","step_type":"tool","tool_name":"read_file","tool_info":{"error":"Permission check failed: read_file(.env) matches user-configured deny rule ${"x".repeat(300)}"}}}`
+    );
+  }
+  lines.push(`{"event":"result","result":{"conversation_id":"${CONV}","status":"SUCCESS","response":"ok"}}`);
+
+  const reader = readAgyStream(lines.join("\n"));
+  assert.equal(reader.permissionMode(), "request-review");
+  assert.equal(reader.initCwd(), "D:\\repo");
+  const denied = reader.deniedTools();
+  assert.equal(denied.total, 505, "OS EACCES must not be counted, duplicate step 1 counted once, indexless event kept distinct");
+  assert.equal(denied.truncated, true);
+  assert.equal(denied.countExact, false);
+  assert.equal(denied.items.length, 20);
+  assert.equal(denied.items[0].tool, "write_file");
+  assert.ok(denied.items[1].tool.length <= 80);
+  assert.ok(denied.items[2].message.length <= 240);
+});
+
+test("timeout and signal are preserved alongside deniedTools telemetry even with SUCCESS envelope, and stderr rate-limit/quota outrank policy envelope", async () => {
+  const timedOutStream = [
+    `{"event":"init","conversation_id":"${CONV}","init":{"cwd":"/repo","permission_mode":"request-review"}}`,
+    `{"event":"step_update","step_update":{"conversation_id":"${CONV}","step_index":1,"state":"ERROR","step_type":"tool","tool_name":"write_file","tool_info":{"error":"Permission denied for write_file(x.txt) by policy"}}}`,
+    `{"event":"result","result":{"conversation_id":"${CONV}","status":"SUCCESS","response":"partial answer"}}`
+  ].join("\n");
+
+  const timedOut = await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
+    runCommandFn: stubRun({ stdout: timedOutStream, stderr: "", status: 1, signal: "SIGTERM", error: Object.assign(new Error("timed out"), { code: "ETIMEDOUT" }) }),
+    detectEngineFn: agyEngine("1.5.16")
+  });
+  assert.notEqual(timedOut.status, 0);
+  assert.equal(timedOut.partial, true);
+  assert.equal(timedOut.failure?.category, "timeout");
+  assert.equal(timedOut.deniedTools?.total, 1);
+  assert.match(timedOut.deniedToolsNotice, /write_file/);
+
+  const policyEnvelopeStream = [
+    `{"event":"init","conversation_id":"${CONV}","init":{"cwd":"/repo","permission_mode":"request-review"}}`,
+    `{"event":"step_update","step_update":{"conversation_id":"${CONV}","step_index":1,"state":"ERROR","step_type":"tool","tool_name":"write_file","tool_info":{"error":"Permission denied for write_file(x.txt) by policy"}}}`,
+    `{"event":"result","result":{"conversation_id":"${CONV}","status":"ERROR","response":"","error":"Permission denied for write_file(x.txt) by policy"}}`
+  ].join("\n");
+
+  const rateLimited = await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
+    runCommandFn: stubRun({ stdout: policyEnvelopeStream, stderr: "429 RESOURCE_EXHAUSTED", status: 1 }),
+    detectEngineFn: agyEngine("1.5.16")
+  });
+  assert.equal(rateLimited.failure?.category, "rate-limit");
+  assert.equal(rateLimited.deniedTools?.total, 1);
+
+  const creditsLow = await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
+    runCommandFn: stubRun({ stdout: policyEnvelopeStream, stderr: "Your AI credits balance is too low to continue.", status: 1 }),
+    detectEngineFn: agyEngine("1.5.16")
+  });
+  assert.equal(creditsLow.failure?.category, "quota");
+  assert.equal(creditsLow.deniedTools?.total, 1);
+
+  const policyPlusChatter = [
+    `{"event":"init","conversation_id":"${CONV}","init":{"cwd":"/repo","permission_mode":"request-review"}}`,
+    `{"event":"step_update","step_update":{"conversation_id":"${CONV}","step_index":1,"state":"ERROR","step_type":"tool","tool_name":"write_file","tool_info":{"error":"Permission denied for write_file(x.txt) by policy"}}}`,
+    `{"event":"result","result":{"conversation_id":"${CONV}","status":"ERROR","response":"","error":""}}`
+  ].join("\n");
+  const deniedWithWarning = await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
+    runCommandFn: stubRun({ stdout: policyPlusChatter, stderr: "warning: diagnostic note on stderr", status: 1 }),
+    detectEngineFn: agyEngine("1.5.16")
+  });
+  assert.equal(deniedWithWarning.failure?.category, "tool-permission-denied");
+  assert.equal(deniedWithWarning.deniedTools?.total, 1);
+
+  // An isolated init event without valid step_update or result does not claim denialTelemetryAvailable
+  const initOnly = await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
+    runCommandFn: stubRun({ stdout: `{"event":"init","conversation_id":"${CONV}","init":{"cwd":"/repo","permission_mode":"request-review"}}`, stderr: "", status: 1 }),
+    detectEngineFn: agyEngine("1.5.16")
+  });
+  assert.equal(initOnly.agyProtection?.streamObserved, true);
+  assert.equal(initOnly.agyProtection?.denialTelemetryAvailable, false);
+
+  // Malformed step_update/result events lacking complete required payload fields keep denialTelemetryAvailable false
+  const malformedPayloadStream = [
+    `{"event":"init","conversation_id":"${CONV}","init":{"cwd":"/repo","permission_mode":"request-review"}}`,
+    '{"event":"step_update"}',
+    '{"event":"step_update","step_update":{}}',
+    '{"event":"step_update","step_update":{"state":""}}',
+    '{"event":"step_update","step_update":{"step_index":-1}}',
+    '{"event":"result"}',
+    '{"event":"result","result":{}}',
+    '{"event":"result","result":{"status":"SUCCESS"}}',
+    '{"event":"result","result":{"response":""}}'
+  ].join("\n");
+  const malformedReader = readAgyStream(malformedPayloadStream);
+  assert.equal(malformedReader.stepUpdatesObserved(), false);
+  assert.equal(malformedReader.resultObserved(), false);
+  const malformedTurn = await runGeminiTurn("/repo", { prompt: "hi", write: false }, {
+    runCommandFn: stubRun({ stdout: malformedPayloadStream, stderr: "", status: 1 }),
+    detectEngineFn: agyEngine("1.5.16")
+  });
+  assert.equal(malformedTurn.agyProtection?.denialTelemetryAvailable, false);
+
+  for (const singleBadLine of [
+    '{"event":"step_update","step_update":{"state":""}}',
+    '{"event":"step_update","step_update":{"step_index":-1}}',
+    '{"event":"result","result":{"status":"SUCCESS"}}',
+    '{"event":"result","result":{"response":""}}'
+  ]) {
+    const r = readAgyStream(`{"event":"init","conversation_id":"${CONV}","init":{"cwd":"/repo"}}\n${singleBadLine}`);
+    assert.equal(r.stepUpdatesObserved(), false, `stepUpdatesObserved must stay false for ${singleBadLine}`);
+    assert.equal(r.resultObserved(), false, `resultObserved must stay false for ${singleBadLine}`);
+  }
+
+  // Conflicting init events (cross-event mixing or outer/inner id conflict) invalidate initCwd binding
+  const crossInitReader = readAgyStream([
+    '{"event":"init","init":{"cwd":"D:\\\\repo"}}',
+    '{"event":"init","conversation_id":"conv-b","init":{}}'
+  ].join("\n"));
+  assert.equal(crossInitReader.initConversationConflict(), true);
+  assert.equal(crossInitReader.initCwd(), null);
+
+  const outerInnerConflictReader = readAgyStream(
+    '{"event":"init","conversation_id":"conv-outer","init":{"conversation_id":"conv-inner","cwd":"D:\\\\repo"}}'
+  );
+  assert.equal(outerInnerConflictReader.initConversationConflict(), true);
+  assert.equal(outerInnerConflictReader.initCwd(), null);
 });

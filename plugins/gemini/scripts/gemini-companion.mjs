@@ -114,9 +114,9 @@ function printUsage() {
     [
       "Usage:",
       "  node scripts/gemini-companion.mjs setup [--json] [--probe-agy] [--probe-gemini] [--enable-review-gate|--disable-review-gate]",
-      "  node scripts/gemini-companion.mjs adversarial-review [--wait|--background] [--deep] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--effort <level>] [--engine agy|gemini|auto] [--engines gemini,agy] [--timeout <seconds>] [focus text]",
-      "  node scripts/gemini-companion.mjs review [--wait|--background] [--deep] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--effort <level>] [--engine agy|gemini|auto] [--timeout <seconds>]",
-      "  node scripts/gemini-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--model <model>] [--effort <none|minimal|low|medium|high|xhigh>] [--engine agy|gemini|auto] [--timeout <seconds>] [prompt]",
+      "  node scripts/gemini-companion.mjs adversarial-review [--wait|--background] [--deep] [--allow-repo-hooks] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--effort <level>] [--engine agy|gemini|auto] [--engines gemini,agy] [--timeout <seconds>] [focus text]",
+      "  node scripts/gemini-companion.mjs review [--wait|--background] [--deep] [--allow-repo-hooks] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--effort <level>] [--engine agy|gemini|auto] [--timeout <seconds>]",
+      "  node scripts/gemini-companion.mjs task [--background] [--write] [--allow-repo-hooks] [--resume-last|--resume|--fresh] [--model <model>] [--effort <none|minimal|low|medium|high|xhigh>] [--engine agy|gemini|auto] [--timeout <seconds>] [prompt]",
       "  node scripts/gemini-companion.mjs status [job-id] [--all] [--json]",
       "  node scripts/gemini-companion.mjs result [job-id] [--json]",
       "  node scripts/gemini-companion.mjs cancel [job-id] [--json]",
@@ -650,12 +650,56 @@ async function resolveLatestTrackedTaskThread(cwd, options = {}) {
     throw new Error(`Task ${activeTask.id} is still running. Use /gemini:status before continuing it.`);
   }
 
-  const trackedTask = jobs.find((job) => job.jobClass === "task" && (job.status === "completed" || job.status === "partial") && job.threadId);
-  if (trackedTask) {
-    return { id: trackedTask.threadId };
+  const trackedIndex = jobs.findIndex(
+    (job) => job.jobClass === "task" && (job.status === "completed" || job.status === "partial") && job.threadId
+  );
+  if (trackedIndex !== -1) {
+    const trackedTask = jobs[trackedIndex];
+    const newerMismatchForThread = jobs
+      .slice(0, trackedIndex)
+      .some((job) => job.jobClass === "task" && job.threadId === trackedTask.threadId && Boolean(job.workspaceMismatch));
+    return {
+      id: trackedTask.threadId,
+      observedWorkspaceCwd: trackedTask.observedWorkspaceCwd ?? null,
+      workspaceMismatch: Boolean(trackedTask.workspaceMismatch || newerMismatchForThread),
+      engine: trackedTask.engine ?? null
+    };
   }
 
   return null;
+}
+
+function isAbsoluteTrackedPath(dir) {
+  if (typeof dir !== "string" || !dir) return false;
+  if (process.platform === "win32") {
+    return /^(?:[a-zA-Z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+)/.test(dir);
+  }
+  return path.isAbsolute(dir);
+}
+
+function normalizeTrackedPathForCompare(dir) {
+  if (!isAbsoluteTrackedPath(dir)) return null;
+  let resolved;
+  try {
+    resolved = fs.realpathSync.native(dir);
+  } catch {
+    resolved = path.resolve(dir);
+  }
+  if (process.platform === "win32") {
+    const normalized = resolved.replace(/\\/g, "/").replace(/\/+$/, "");
+    return (normalized || "/").toLowerCase();
+  }
+  if (resolved === "/") return "/";
+  return resolved.replace(/\/+$/, "") || "/";
+}
+
+function isTrackedWorkspaceBindingConfirmed(workspaceRoot, latestThread) {
+  if (!latestThread || latestThread.workspaceMismatch || !latestThread.observedWorkspaceCwd) {
+    return false;
+  }
+  const expected = normalizeTrackedPathForCompare(workspaceRoot);
+  const observed = normalizeTrackedPathForCompare(latestThread.observedWorkspaceCwd);
+  return Boolean(expected && observed && expected === observed);
 }
 
 export function buildReviewPrompt(request) {
@@ -727,7 +771,7 @@ function renderTruncationBanner(truncation) {
   return `${lines.join("\n")}\n\n`;
 }
 
-async function executeReviewRun(request) {
+export async function executeReviewRun(request, deps = {}) {
   const reviewName = request.reviewName ?? "Adversarial Review";
   const templateName = request.templateName ?? "adversarial-review";
   const { context, prompt } = request.preparedReview ?? buildReviewPrompt(request);
@@ -774,12 +818,14 @@ async function executeReviewRun(request) {
     // that appended the deep-review guidance to the prompt — a model told to go
     // and read the repository with no repository to read is the shape this fixes.
     deep: Boolean(request.deep),
+    allowRepoHooks: Boolean(request.allowRepoHooks),
     timeoutSeconds: request.timeoutSeconds ?? null,
     onProgress: request.onProgress
   }, {
     // Only a detached worker can afford to sleep out an AGY rate limit; see the
     // note on request.detached in runStoredJobWorker.
-    rateLimitWaitBudgetMs: request.detached ? AGY_RATE_LIMIT_MAX_WAIT_MS : 0
+    rateLimitWaitBudgetMs: request.detached ? AGY_RATE_LIMIT_MAX_WAIT_MS : 0,
+    ...deps
   });
 
   const parsed = result.reviewJson
@@ -800,6 +846,9 @@ async function executeReviewRun(request) {
     gemini: { status: result.status, stdout: result.reviewText, stderr: result.stderr ?? "" },
     result: parsed.parsed,
     ...(truncation ? { truncation } : {}),
+    ...(result.agyProtection ? { agyProtection: result.agyProtection } : {}),
+    ...(result.deniedTools ? { deniedTools: result.deniedTools } : {}),
+    ...(result.deniedToolsNotice ? { deniedToolsNotice: result.deniedToolsNotice } : {}),
     ...(result.readOnlyNotice ? { readOnlyNotice: result.readOnlyNotice, readOnlyWrites: result.readOnlyWrites } : {}),
     ...(result.failure ? { failure: result.failure } : {})
   };
@@ -808,6 +857,7 @@ async function executeReviewRun(request) {
   // A review that changed the tree is not a review finding — it is the review
   // itself having done something nobody asked for, so it goes above everything.
   const writeBanner = result.readOnlyNotice ? `> ⚠️ ${result.readOnlyNotice}\n\n` : "";
+  const deniedBanner = result.deniedToolsNotice ? `> 🛡️ ${result.deniedToolsNotice}\n\n` : "";
 
   return {
     exitStatus: result.status,
@@ -816,7 +866,7 @@ async function executeReviewRun(request) {
     turnId: null,
     engine: result.engine ?? null,
     payload,
-    rendered: writeBanner + fallbackBanner + renderTruncationBanner(truncation) + renderReviewResult(parsed, {
+    rendered: writeBanner + deniedBanner + fallbackBanner + renderTruncationBanner(truncation) + renderReviewResult(parsed, {
       reviewLabel: reviewName,
       targetLabel: describeReviewTarget(context.target),
       reasoningSummary: result.reasoningSummary
@@ -833,11 +883,12 @@ async function executeReviewRun(request) {
   };
 }
 
-async function executeTaskRun(request) {
+export async function executeTaskRun(request, deps = {}) {
   const workspaceRoot = resolveWorkspaceRoot(request.cwd);
 
   let resumeLast = false;
   let resumeThreadId = null;
+  let resumeWorkspaceVerified = false;
   if (request.resumeLast) {
     const latestThread = await resolveLatestTrackedTaskThread(workspaceRoot, { excludeJobId: request.jobId });
     if (!latestThread) {
@@ -849,6 +900,7 @@ async function executeTaskRun(request) {
     // conversation", which is not the same thread and, on AGY, is not even
     // scoped to this project.
     resumeThreadId = latestThread.id;
+    resumeWorkspaceVerified = isTrackedWorkspaceBindingConfirmed(workspaceRoot, latestThread);
   }
 
   if (!request.prompt && !resumeLast) {
@@ -861,11 +913,13 @@ async function executeTaskRun(request) {
     effort: request.effort,
     engine: request.engine,
     write: request.write,
+    allowRepoHooks: Boolean(request.allowRepoHooks),
     resumeLast,
     resumeThreadId,
+    resumeWorkspaceVerified,
     timeoutSeconds: request.timeoutSeconds ?? null,
     onProgress: request.onProgress
-  });
+  }, deps);
 
   const rawOutput = result.finalMessage ?? "";
   const failureMessage = result.stderr ?? "";
@@ -883,8 +937,12 @@ async function executeTaskRun(request) {
     rawOutput,
     touchedFiles: result.touchedFiles,
     reasoningSummary: result.reasoningSummary,
+    ...(result.agyProtection ? { agyProtection: result.agyProtection } : {}),
+    ...(result.deniedTools ? { deniedTools: result.deniedTools } : {}),
+    ...(result.deniedToolsNotice ? { deniedToolsNotice: result.deniedToolsNotice } : {}),
     ...(result.readOnlyNotice ? { readOnlyNotice: result.readOnlyNotice, readOnlyWrites: result.readOnlyWrites } : {}),
     ...(result.resumeNotice ? { resumeNotice: result.resumeNotice, resumeExpectedThreadId: result.resumeExpectedThreadId } : {}),
+    ...(result.resumeWorkspaceNotice ? { resumeWorkspaceNotice: result.resumeWorkspaceNotice } : {}),
     ...(failure ? { failure } : {})
   };
 
@@ -893,7 +951,7 @@ async function executeTaskRun(request) {
   // the output rather than into the log alone. Both can be true at once, and the
   // resume notice comes first because it says the whole reply may be about a
   // different project — which changes how the rest should be read.
-  const notices = [result.resumeNotice, result.readOnlyNotice].filter(Boolean);
+  const notices = [result.resumeNotice, result.resumeWorkspaceNotice, result.readOnlyNotice, result.deniedToolsNotice].filter(Boolean);
   const renderedWithNotice = notices.length
     ? `${notices.map((notice) => `> ⚠️ ${notice}`).join("\n>\n")}
 
@@ -987,7 +1045,7 @@ function buildTaskJob(workspaceRoot, taskMetadata, write, engine = null) {
   });
 }
 
-function buildTaskRequest({ cwd, model, effort, engine, prompt, write, resumeLast, jobId, timeoutSeconds = null }) {
+function buildTaskRequest({ cwd, model, effort, engine, prompt, write, resumeLast, jobId, timeoutSeconds = null, allowRepoHooks = false }) {
   return {
     cwd,
     model,
@@ -997,6 +1055,7 @@ function buildTaskRequest({ cwd, model, effort, engine, prompt, write, resumeLas
     write,
     resumeLast,
     jobId,
+    ...(allowRepoHooks ? { allowRepoHooks: true } : {}),
     ...(timeoutSeconds != null ? { timeoutSeconds } : {})
   };
 }
@@ -1005,7 +1064,7 @@ function buildTaskRequest({ cwd, model, effort, engine, prompt, write, resumeLas
 // review re-resolves base/scope when the worker runs. A grouped blind review may
 // supply one preparedReview snapshot so every engine receives byte-identical
 // input even if the working tree changes between worker starts.
-function buildReviewRequest({ cwd, base, scope, model, effort, engine, focusText, reviewName, templateName, deep = false, preparedReview = null, timeoutSeconds = null }) {
+function buildReviewRequest({ cwd, base, scope, model, effort, engine, focusText, reviewName, templateName, deep = false, preparedReview = null, timeoutSeconds = null, allowRepoHooks = false }) {
   return {
     cwd,
     base,
@@ -1017,6 +1076,7 @@ function buildReviewRequest({ cwd, base, scope, model, effort, engine, focusText
     reviewName,
     templateName,
     deep,
+    ...(allowRepoHooks ? { allowRepoHooks: true } : {}),
     ...(timeoutSeconds != null ? { timeoutSeconds } : {}),
     ...(preparedReview ? { preparedReview } : {})
   };
@@ -1186,6 +1246,7 @@ export function dispatchBackgroundReview(request, { spawnFn = spawn, detectEngin
     reviewName,
     templateName,
     deep: request.deep,
+    allowRepoHooks: Boolean(request.allowRepoHooks),
     timeoutSeconds: request.timeoutSeconds ?? null,
     preparedReview: request.preparedReview
   });
@@ -1279,6 +1340,7 @@ export function dispatchBackgroundTask(request, { spawnFn = spawn, detectEngineF
     engine: request.engine ?? null,
     prompt,
     write: Boolean(request.write),
+    allowRepoHooks: Boolean(request.allowRepoHooks),
     resumeLast,
     jobId: job.id,
     timeoutSeconds: request.timeoutSeconds ?? null
@@ -1303,6 +1365,7 @@ async function handleReviewCommand(argv, { reviewName, templateName, supportsFoc
   const { options, positionals } = parseCommandInput(argv, {
     valueOptions: ["base", "scope", "model", "effort", "engine", "cwd", "timeout", "focus-file", ...(supportsEngines ? ["engines"] : [])],
     booleanOptions: ["json", "wait", "background", "deep"],
+    strictBooleanOptions: ["allow-repo-hooks"],
     aliasMap: { m: "model" }
   });
 
@@ -1328,6 +1391,7 @@ async function handleReviewCommand(argv, { reviewName, templateName, supportsFoc
       engines: String(options.engines).split(","),
       focusText,
       deep: options.deep,
+      allowRepoHooks: Boolean(options["allow-repo-hooks"]),
       timeoutSeconds
     });
     if (dispatch.groupId) {
@@ -1360,6 +1424,7 @@ async function handleReviewCommand(argv, { reviewName, templateName, supportsFoc
       reviewName,
       templateName,
       deep: options.deep,
+      allowRepoHooks: Boolean(options["allow-repo-hooks"]),
       timeoutSeconds
     });
     outputCommandResult(payload, renderQueuedTaskLaunch(payload), options.json);
@@ -1394,6 +1459,7 @@ async function handleReviewCommand(argv, { reviewName, templateName, supportsFoc
         reviewName,
         templateName,
         deep: options.deep,
+        allowRepoHooks: Boolean(options["allow-repo-hooks"]),
         timeoutSeconds,
         onProgress: progress
       }),
@@ -1418,6 +1484,7 @@ async function handleTask(argv) {
   const { options, positionals } = parseCommandInput(argv, {
     valueOptions: ["model", "effort", "engine", "cwd", "prompt-file", "timeout"],
     booleanOptions: ["json", "write", "resume-last", "resume", "fresh", "background"],
+    strictBooleanOptions: ["allow-repo-hooks"],
     aliasMap: { m: "model" }
   });
 
@@ -1435,6 +1502,7 @@ async function handleTask(argv) {
     throw new Error("Choose either --resume/--resume-last or --fresh.");
   }
   const write = Boolean(options.write);
+  const allowRepoHooks = Boolean(options["allow-repo-hooks"]);
   const taskMetadata = buildTaskRunMetadata({ prompt, resumeLast });
 
   if (options.background) {
@@ -1445,6 +1513,7 @@ async function handleTask(argv) {
       engine,
       prompt,
       write,
+      allowRepoHooks,
       resumeLast,
       timeoutSeconds
     });
@@ -1463,6 +1532,7 @@ async function handleTask(argv) {
         engine,
         prompt,
         write,
+        allowRepoHooks,
         resumeLast,
         timeoutSeconds,
         jobId: job.id,

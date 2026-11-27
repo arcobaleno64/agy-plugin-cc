@@ -202,10 +202,13 @@ export function detectWrites(before, cwd) {
 /**
  * The sentence a user needs to see, or null when there is nothing to say.
  */
-export function describeReadOnlyWrites(detection) {
+export function describeReadOnlyWrites(detection, { policyLocked = false } = {}) {
   if (!detection) return null;
   if (!detection.checked) {
-    return `Read-only turn: the workspace could not be compared before and after (${detection.reason}), so whether the delegated engine wrote anything is unknown. AGY has no enforced read-only mode; treat the workspace as possibly modified.`;
+    const modeNote = policyLocked
+      ? "AGY --settings read-only policy rules were passed, but no post-turn workspace diff backstop was available."
+      : "AGY has no enforced read-only mode; treat the workspace as possibly modified.";
+    return `Read-only turn: the workspace could not be compared before and after (${detection.reason}), so whether the delegated engine wrote anything is unknown. ${modeNote}`;
   }
   if (detection.written.length === 0) return null;
   const names = detection.written.slice(0, 10).join(", ");
